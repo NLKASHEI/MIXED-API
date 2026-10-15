@@ -109,7 +109,8 @@ quick.disabled=true;try{
   let attempts=0;
   const monitor=async()=>{attempts++;try{const status=await request('/api/status');const val=status.processes?.['setup:'+b.id]||'';progress.textContent='一键接入：'+val;
     if(val.startsWith('ready:')){cfg=await request('/api/config');render();await models();toast('✓ '+val);return}
-    if(val.startsWith('failed:')||val.startsWith('needs_runtime:')){toast(val,true);return}
+    if(val.startsWith('auth_pending:')){progress.textContent='等待账号授权：'+val;}
+    if(val.startsWith('failed:')||val.startsWith('needs_runtime:')||val.startsWith('needs_auth:')){toast(val,true);return}
     if(attempts<1000)setTimeout(monitor,1800);
   }catch(e){progress.textContent=e.message}};setTimeout(monitor,1300);
 }catch(e){toast('一键接入：'+e.message,true)}finally{quick.disabled=false}};

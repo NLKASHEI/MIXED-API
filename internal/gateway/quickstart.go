@@ -5,6 +5,7 @@ package gateway
 // launching the managed child. Account authorization is never synthesized.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -74,7 +75,7 @@ func (s *Server) quickstartBackend(id string) error {
 	}
 	s.mu.Lock()
 	status := s.status["setup:"+id]
-	if strings.HasPrefix(status, "installing") || strings.HasPrefix(status, "quickstart") {
+	if strings.HasPrefix(status, "installing") || strings.HasPrefix(status, "quickstart") || strings.HasPrefix(status, "auth_pending:") {
 		s.mu.Unlock()
 		return errors.New("已有部署任务正在进行")
 	}
@@ -86,7 +87,7 @@ func (s *Server) quickstartBackend(id string) error {
 			return err
 		}
 		if id == "codex" {
-			s.backendState(id, "ready: CLI 已安装。首次需要点击授权登录，登录后自动可用")
+			s.finishCodexQuickstart()
 			return nil
 		}
 		if err := s.launchInstalled(id); err != nil {
@@ -146,7 +147,7 @@ func (s *Server) quickstartBackend(id string) error {
 					return
 				}
 				if id == "codex" {
-					s.backendState(id, "ready: CLI 已安装；首次需要本人授权 ChatGPT 登录")
+					s.finishCodexQuickstart()
 					return
 				}
 				if err := s.launchInstalled(id); err != nil {
@@ -159,4 +160,56 @@ func (s *Server) quickstartBackend(id string) error {
 		}
 	}()
 	return nil
+}
+
+// The official CLI owns its tokens. We only read a non-secret login summary.
+// Reject API-key logins; only ChatGPT subscription sign-in is eligible.
+func codexStatusIsSubscription(output string) bool {
+    out := strings.ToLower(output)
+    return strings.Contains(out, "logged in") && strings.Contains(out, "chatgpt") && !strings.Contains(out, "api key")
+}
+
+func codexSubscriptionReady() bool {
+    ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+    defer cancel()
+    cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "codex", "login", "status")
+    out, err := cmd.CombinedOutput()
+    return err == nil && codexStatusIsSubscription(string(out))
+}
+
+// The user makes one click. We launch the official login when required and
+// observe only its success state, never collecting or storing auth tokens.
+func (s *Server) finishCodexQuickstart() {
+    const id = "codex"
+    if !toolAvailable("codex") {
+        s.backendState(id, "needs_runtime: 安装后当前进程找不到 Codex CLI，请重启 MIXED-API 再点一次一键接入")
+        return
+    }
+    if codexSubscriptionReady() {
+        s.backendState(id, "ready: 已确认 ChatGPT 订阅登录，可以刷新 Codex 模型")
+        return
+    }
+    if err := s.loginInstalled(id); err != nil {
+        s.backendState(id, "needs_auth: 无法打开官方 Codex 登录窗口："+err.Error())
+        return
+    }
+    s.backendState(id, "auth_pending: 已自动打开官方登录窗口，请本人完成 ChatGPT 授权；无需填写任何 Token")
+    go func() {
+        ticker := time.NewTicker(5 * time.Second)
+        defer ticker.Stop()
+        deadline := time.NewTimer(12 * time.Minute)
+        defer deadline.Stop()
+        for {
+            select {
+            case <-deadline.C:
+                s.backendState(id, "needs_auth: 尚未检测到 ChatGPT 登录；完成官方授权后重新点一键接入")
+                return
+            case <-ticker.C:
+                if codexSubscriptionReady() {
+                    s.backendState(id, "ready: ChatGPT 官方登录完成，已启用 Codex，模型可以刷新")
+                    return
+                }
+            }
+        }
+    }()
 }

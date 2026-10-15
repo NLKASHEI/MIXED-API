@@ -44,7 +44,7 @@ Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览�
 
 **首次使用请先看 [零基础使用指南](docs/quickstart-zh.md)**。管理后台的每张上游卡片也内置逐步教程和官方网址，解释每个 Key 的来源。
 
-- **Codex：已直连 CLI，不需要 SillyTavern**。Windows 点击「一键安装 Codex」→「打开账号授权窗口」→ 启用并刷新模型。第一次需本人通过 ChatGPT 正式授权；MIXED-API 不保存 OAuth Token。仅使用 ChatGPT 订阅账号，拒绝 API Key 登录和任何 MCP/工具。
+- **Codex：已直连 CLI，不需要 SillyTavern**。Windows 点击「一键安装 Codex」→「打开账号授权窗口」→ 启用并刷新模型。首次会自动弹出 Codex 官方登录窗口，需要本人确认 ChatGPT 授权；MIXED-API 不保存 OAuth Token。仅使用 ChatGPT 订阅账号，拒绝 API Key 登录和任何 MCP/工具。
 - **WorkBuddy：** Windows 点击「一键准备环境」→「启动后端」。程序从可信仓库固定提交下载中转并由上游自动检测已登录的正版 WorkBuddy 客户端；第一次仍需本人在客户端登录。
 - **AI Studio Build：** Windows 点击「一键准备环境」→「打开账号授权窗口」→「启动后端」。自动安装 Node 依赖并设置本地随机上游密钥/回环监听；原项目 Camoufox 登录需要本人完成一次。无需浏览器认证时请考虑官方 Express Key 模式而不是 Build App 浏览器代理。
 - **其余三项：** 在控制台按每个来源的「从零开始配置向导」安装对应项目，填写它们各自的服务器 Key 和 API 地址。
