@@ -142,7 +142,7 @@ public final class BridgeHttpServer implements AutoCloseable {
             HttpURLConnection c=null;
             try{
                 c=connection(b,"/models","GET");c.setReadTimeout(8000);int status=c.getResponseCode();
-                if(status!=200){errors.put(b.getString("id"),"HTTP "+status);continue;}
+                if(status!=200){errors.put(b.getString("id"),"HTTP "+status);BridgeLogs.add(status,b.optString("id"),"/v1/models","模型列表返回错误");continue;}
                 byte[] data=bounded(c.getInputStream(),5*1024*1024);
                 JSONArray original=new JSONObject(new String(data,StandardCharsets.UTF_8)).getJSONArray("data");
                 for(int k=0;k<original.length();k++){
@@ -154,9 +154,10 @@ public final class BridgeHttpServer implements AutoCloseable {
                         all.put(new JSONObject().put("id",publicID).put("object","model").put("owned_by",b.getString("id")).put("original_id",model));
                     }
                 }
-            }catch(Exception e){errors.put(b.getString("id"),"Unavailable or invalid model list");}
+            }catch(Exception e){errors.put(b.getString("id"),"Unavailable or invalid model list");BridgeLogs.add(502,b.optString("id"),"/v1/models","连接上游失败："+e.getClass().getSimpleName());}
             finally{if(c!=null)c.disconnect();}
         }
+        BridgeLogs.add(200,"aggregate","/v1/models","模型总数 "+all.length());
         json(out,200,new JSONObject().put("object","list").put("data",all).put("backend_errors",errors));
     }
     private void forward(OutputStream out,String path,byte[] body,JSONObject cfg,Map<String,String> headers)throws Exception{
@@ -174,7 +175,7 @@ public final class BridgeHttpServer implements AutoCloseable {
                 JSONObject item=bs.getJSONObject(i);
                 if(item.optBoolean("enabled")&&"pc".equals(item.optString("id"))){b=item;break;}
             }
-            if(b==null){fail(out,404,"Backend not enabled: "+id+"; enable the PC bridge or the backend locally");return;}
+            if(b==null){BridgeLogs.add(404,id,path,"该模型的上游未启用");fail(out,404,"Backend not enabled: "+id+"; enable the PC bridge or the backend locally");return;}
             upstreamModel=model;
         }
         input.put("model",upstreamModel);byte[] packet=input.toString().getBytes(StandardCharsets.UTF_8);
@@ -184,14 +185,14 @@ public final class BridgeHttpServer implements AutoCloseable {
             for(String field:new String[]{"anthropic-version","anthropic-beta","openai-beta"})if(headers.containsKey(field))c.setRequestProperty(field,headers.get(field));
             c.setFixedLengthStreamingMode(packet.length);
             try(OutputStream upload=c.getOutputStream()){upload.write(packet);}
-            int status=c.getResponseCode();String content=c.getContentType();if(content==null||content.contains("\r")||content.contains("\n"))content="application/json";
+            int status=c.getResponseCode();BridgeLogs.add(status,id,path,status==401?"上游认证失败，请检查 Key / 登录状态":status==429?"上游返回限流或额度限制":status>=400?"上游返回 HTTP "+status:"");String content=c.getContentType();if(content==null||content.contains("\r")||content.contains("\n"))content="application/json";
             String header="HTTP/1.1 "+status+" "+status(status)+"\r\nContent-Type: "+content+"\r\nTransfer-Encoding: chunked\r\nConnection: close\r\nCache-Control: no-store\r\nX-Mixed-Backend: "+id+"\r\n\r\n";
             out.write(header.getBytes(StandardCharsets.UTF_8));out.flush();started=true;
             try(InputStream resp=status>=400?c.getErrorStream():c.getInputStream()){
                 if(resp!=null){byte[] buf=new byte[16384];int n;while((n=resp.read(buf))!=-1){if(n==0)continue;out.write((Integer.toHexString(n)+"\r\n").getBytes(StandardCharsets.US_ASCII));out.write(buf,0,n);out.write("\r\n".getBytes(StandardCharsets.US_ASCII));out.flush();}}
             }
             out.write("0\r\n\r\n".getBytes(StandardCharsets.US_ASCII));out.flush();
-        }catch(Exception e){Log.e("MIXED-API","Upstream error: "+id,e);if(!started){try{fail(out,502,"Backend unavailable: "+id);}catch(Exception ignored){}}}
+        }catch(Exception e){BridgeLogs.add(502,id,path,"无法连接上游："+e.getClass().getSimpleName());Log.e("MIXED-API","Upstream error: "+id,e);if(!started){try{fail(out,502,"Backend unavailable: "+id);}catch(Exception ignored){}}}
         finally{if(c!=null)c.disconnect();}
     }
 }

@@ -33,6 +33,8 @@ type Server struct {
 	client   *http.Client
 	children map[string]*exec.Cmd
 	status   map[string]string
+	logsMu   sync.Mutex
+	logs     []RequestLog
 }
 
 func NewServer(path string, cfg Config) *Server {
@@ -88,6 +90,9 @@ func APIOnly(next http.Handler) http.Handler {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only inference routes are logged; never record prompts or admin secrets.
+	w, finishLog := s.tracked(w, r)
+	defer finishLog()
 	if r.URL.Path == "/assets/hero.webp" && r.Method == http.MethodGet {
 		data, e := static.ReadFile("assets/hero.webp")
 		if e != nil {
@@ -227,6 +232,9 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
 			}
 		}
 	}
+	for source, reason := range errorsByBackend {
+		s.addLog(RequestLog{Time: time.Now().Format(time.RFC3339), Method: "GET", Path: "/v1/models", Backend: source, Status: 502, Error: safeDiagnostic([]byte(reason))})
+	}
 	jsonResult(w, 200, map[string]any{"object": "list", "data": models, "backend_errors": errorsByBackend})
 }
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
@@ -262,6 +270,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 		jsonError(w, 404, "Backend not enabled: "+id)
 		return
 	}
+	if observed, ok := w.(*observedResponse); ok { observed.backend = id }
 	if b.Kind == "codex_cli" {
 		if r.URL.Path != "/v1/chat/completions" {
 			jsonError(w, 501, "Codex CLI supports /v1/chat/completions only")
@@ -321,6 +330,8 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 }
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 	switch {
+	case r.URL.Path == "/api/logs" && (r.Method == http.MethodGet || r.Method == http.MethodDelete):
+		s.writeLogs(w,r)
 	case r.URL.Path == "/api/config" && r.Method == "GET":
 		jsonResult(w, 200, c)
 	case r.URL.Path == "/api/guides" && r.Method == "GET":

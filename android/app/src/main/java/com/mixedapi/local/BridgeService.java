@@ -11,6 +11,7 @@ import android.os.IBinder;
 import android.util.Log;
 
 public final class BridgeService extends Service {
+    public static volatile boolean running=false;
     private BridgeHttpServer server;
     @Override public void onCreate(){super.onCreate();}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -24,9 +25,9 @@ public final class BridgeService extends Service {
                 .setContentText("本地接口 http://127.0.0.1:8765/v1")
                 .setContentIntent(pending).setOngoing(true).build();
         startForeground(2048,n);
-        if(server==null){server=new BridgeHttpServer(this);try{server.start();}catch(Exception ex){Log.e("MIXED-API","Server failed",ex);stopSelf();}}
+        if(server==null){server=new BridgeHttpServer(this);try{server.start();running=true;BridgeLogs.add(200,"system","start","本地端口 8765 正在监听");}catch(Exception ex){running=false;BridgeLogs.add(500,"system","start","端口启动失败");Log.e("MIXED-API","Server failed",ex);stopSelf();}}
         return START_NOT_STICKY;
     }
-    @Override public void onDestroy(){if(server!=null){server.close();server=null;}super.onDestroy();}
+    @Override public void onDestroy(){running=false;if(server!=null){server.close();server=null;}super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
 }

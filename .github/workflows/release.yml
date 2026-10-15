@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p windows
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.${GITHUB_RUN_NUMBER}' -o windows/MIXED-API.exe ./cmd/mixed-api
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.${GITHUB_RUN_NUMBER}' -o windows/MIXED-API.exe ./cmd/mixed-api
           cp Start-MIXED-API.cmd Start-MIXED-API-LAN.cmd README.md windows/
           cp windows/MIXED-API.exe MIXED-API-Windows-x64.exe
           python3 - <<'PY'
@@ -62,7 +62,7 @@ jobs:
           go test ./...
           if ($LASTEXITCODE -ne 0) { throw "Windows Go unit tests failed" }
           New-Item -ItemType Directory -Path windows -Force | Out-Null
-          go build -trimpath -ldflags="-s -w -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.$env:GITHUB_RUN_NUMBER" -o "windows/MIXED-API.exe" ./cmd/mixed-api
+          go build -trimpath -ldflags="-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.$env:GITHUB_RUN_NUMBER" -o "windows/MIXED-API.exe" ./cmd/mixed-api
           if ($LASTEXITCODE -ne 0) { throw "Windows native Go build failed" }
       - name: Build NSIS one-click installer
         shell: pwsh

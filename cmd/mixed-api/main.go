@@ -32,6 +32,14 @@ func main() {
 		log.Fatal(err)
 	}
 	server := gateway.NewServer(*file, cfg)
+	// Desktop: open a real native Win32 window. The gateway still serves APIs
+	// inside this EXE. Use --no-browser for headless/automation mode.
+	if runtime.GOOS == "windows" && !*noBrowser {
+		if err := startNative(cfg, server, *lan); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	url := "http://" + cfg.Listen
 	fmt.Println("MIXED-API running at", url)
 	fmt.Println("API base URL: ", url+"/v1")
