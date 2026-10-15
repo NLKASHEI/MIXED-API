@@ -100,7 +100,7 @@ function guideRender(g,b){const el=node('details',{class:'wizard'}),summary=node
   rtBtn.onclick=async()=>{if(!confirm('将通过 Windows winget 下载并安装官方运行时（可能需要几分钟和 Windows 授权）。继续？'))return;rtBtn.disabled=true;try{await request('/api/assist/'+runtimeId+'/install','POST');toast('已开始安装，完成后重启 MIXED-API，继续部署后端。')}catch(e){toast(e.message,true)}finally{rtBtn.disabled=false}};
   area.append(rtBtn);
 }
-const quick=node('button',{class:'button primary tiny',type:'button'},'▶ 一键接入（自动配置 + 启动）');
+const quick=node('button',{class:'button primary tiny quick-launch',type:'button'},'▶ 一键接入（自动配置 + 启动）');
 quick.onclick=async()=>{if(b.id==='aps'&&!confirm('APS2api 有非商业使用限制且默认监听全部网卡。请确认理解其许可证及局域网风险。是否继续？'))return;
 quick.disabled=true;try{
   capture();await request('/api/config','PUT',cfg);
@@ -119,6 +119,12 @@ el.append(ordered);el.append(node('p',{class:'note warn'},'注意：'+g.tips));c
 function render(){if(!cfg)return;const target=$('#providers'),overview=$('#overview-providers');target.replaceChildren();overview.replaceChildren();for(const b of cfg.backends){const g=guides[b.id];const native=b.kind==='codex_cli'&&environment?.native_codex_supported===true;
 const mini=node('article',{class:'service-card'}),top=node('div',{class:'service-top'}),t=node('div');t.append(node('h3',{},names[b.id]||b.name),node('div',{class:'tag'},b.id+'/ · '+(b.enabled?'已启用':'尚未启用')));top.append(logo(b.id),t);mini.append(top);const foot=node('div',{class:'service-foot'}),s=node('span',{class:'mini-status','data-source':b.id},'○ '+(b.enabled?'等待检测':'未启用')),btn=node('button',{class:'button tiny',type:'button'},'配置管理 →');btn.onclick=()=>{page('providers');const card=$('#provider-'+b.id);card?.scrollIntoView({behavior:'smooth',block:'start'})};foot.append(s,btn);mini.append(foot);overview.append(mini);
 const card=node('section',{class:'provider',id:'provider-'+b.id}),head=node('div',{class:'p-head'}),source=node('div',{class:'source-title'}),heading=node('div');heading.append(node('h3',{},names[b.id]||b.name),node('p',{},'模型前缀：'+(b.id==='pc'?'原始来源 ID 保持不变':b.id+'/')+' · '+(native?'Windows 内置 Codex CLI':b.id==='pc'?'连接电脑的局域网 API':'HTTP 上游适配器')));source.append(logo(b.id),heading);const toggle=node('label',{class:'check'}),check=node('input',{type:'checkbox'});check.checked=b.enabled;toggle.append(check,node('span',{},'启用这个来源'));head.append(source,toggle);card.append(head);
+if(g?.auto?.length&&environment?.platform==='windows'){
+  const instant=node('div',{class:'provider-actions'}),go=node('button',{class:'button primary',type:'button'},'⚡ 一键接入 · 安装、配置、启动');
+  go.onclick=()=>{const internal=card.querySelector('.quick-launch');if(internal)internal.click()};
+  instant.append(go,node('span',{class:'small muted'},'仅官方账号首次授权需要本人操作；本地端口与随机密钥由软件填写。'));
+  card.append(instant);
+}
 const fields=node('div',{class:'provider-main'}),url=input('上游 API Base URL（不是本机统一地址）',b.url,'backend-url'),key=input('自动生成的上游通信 Key（通常无需手填）',b.key,'backend-key',true),auth=node('div',{class:'field'});auth.append(node('label',{},'上游验证方式'));const select=node('select',{class:'input auth-type'});for(const typ of ['bearer','x-api-key','none']){const o=node('option',{},typ);o.value=typ;select.append(o)}select.value=b.auth;auth.append(select);if(native){url.classList.add('hide');key.classList.add('hide');auth.classList.add('hide');card.append(node('p',{class:'note'},'此来源直接调用 Codex CLI，无须填写 HTTP 地址、OAuth Token 或上游 Key。先按配置指引完成官方 ChatGPT 账号授权。'))}fields.append(url,key,auth);card.append(fields);
 if(b.id==='opencode'||b.id==='vertex'){
   const official=input(b.id==='opencode'?'OpenCode Zen Key（可留空，使用上游匿名模式）':'Google Express Key（用于 Vertex 官方 Express 模式）',b.provider_key||'','provider-credential',true);
