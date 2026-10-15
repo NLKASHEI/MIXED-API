@@ -44,6 +44,21 @@ jobs:
           path: MIXED-API-Windows-x64.zip
           if-no-files-found: error
 
+  windows-native-tests:
+    name: Windows native smoke tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Windows go tests and compilation
+        shell: pwsh
+        run: |
+          go test ./...
+          go build -o "$env:RUNNER_TEMP\MIXED-API.exe" ./cmd/mixed-api
+
   android:
     name: Android APK (debug signed)
     runs-on: ubuntu-24.04
@@ -80,7 +95,7 @@ jobs:
 
   release:
     name: Publish GitHub prerelease
-    needs: [windows, android]
+    needs: [windows, windows-native-tests, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -99,12 +114,18 @@ jobs:
           test -s dist/MIXED-API-Android.apk
           tag="v0.1.0-preview.${GITHUB_RUN_NUMBER}"
           cat > notes.md <<'NOTES'
-          MIXED-API 本地六上游 OpenAI 兼容网关预览版。
+          MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI 和 Windows 一键配置助手。
 
           - Windows：下载 `MIXED-API-Windows-x64.zip`，解压，双击 `Start-MIXED-API.cmd`。
           - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
           - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
-          - 六个上游默认禁用，先安装/启动各自后端并配置凭证后再启用。APK 不内置 Codex/WorkBuddy/Camoufox 等桌面环境。
+          - 六个上游默认禁用；后台附带详尽的中文小白向导。
+          - Windows 原生 Codex：无需安装 SillyTavern，可一键安装 Codex CLI、弹出账号授权，直接通过 app-server 对话。
+          - Windows WorkBuddy：一键拉取并启动固定源码版本，自动识别已登录的 WorkBuddy 客户端。
+          - Windows AIStudioToAPI：一键拉取/安装依赖，弹出 Google 首次登录流程，自动设置 localhost 与随机 API Key。
+          - 网页账号授权必须由用户本人完成；绝不静默抓取 Cookie/密码/Token。
+          - APK 是独立网关，不内置桌面 Codex / WorkBuddy / Camoufox；六家后端的能力仍取决于所在平台的原始上游。
+          - 保姆级配置指南：https://github.com/NLKASHEI/MIXED-API/blob/main/docs/quickstart-zh.md
           - 请遵守上游许可证和服务条款。
 
           **注意：Android 为 Debug 签名的预览 APK，云端编译成功不等于手机运行实测通过。**

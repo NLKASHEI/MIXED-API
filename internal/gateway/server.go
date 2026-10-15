@@ -146,6 +146,26 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
 		if !b.Enabled {
 			continue
 		}
+		if b.Kind == "codex_cli" {
+			ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+			cli, err := openCodex(ctx)
+			if err != nil {
+				errorsByBackend[b.ID] = err.Error()
+				cancel()
+				continue
+			}
+			ids, err := cli.models(ctx)
+			cli.close()
+			cancel()
+			if err != nil {
+				errorsByBackend[b.ID] = err.Error()
+				continue
+			}
+			for _, id := range ids {
+				models = append(models, Model{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id})
+			}
+			continue
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		q, e := s.backendRequest(ctx, b, "GET", "/models", nil)
 		if e != nil {
@@ -214,6 +234,14 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 	}
 	if b == nil {
 		jsonError(w, 404, "Backend not enabled: "+id)
+		return
+	}
+	if b.Kind == "codex_cli" {
+		if r.URL.Path != "/v1/chat/completions" {
+			jsonError(w, 501, "Codex CLI supports /v1/chat/completions only")
+			return
+		}
+		s.forwardCodex(w, r, model, upstreamModel, payload)
 		return
 	}
 	payload["model"], _ = json.Marshal(upstreamModel)
@@ -298,6 +326,32 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		s.cfg = next
 		s.mu.Unlock()
 		jsonResult(w, 200, map[string]bool{"saved": true})
+	case r.URL.Path == "/api/assist/status" && r.Method == "GET":
+		jsonResult(w, 200, s.assistStatus())
+	case strings.HasPrefix(r.URL.Path, "/api/assist/") && r.Method == "POST":
+		target := strings.TrimPrefix(r.URL.Path, "/api/assist/")
+		id, action, ok := strings.Cut(target, "/")
+		if !ok {
+			jsonError(w, 404, "Unknown action")
+			return
+		}
+		var err error
+		switch action {
+		case "install":
+			err = s.setupBackend(id)
+		case "launch":
+			err = s.launchInstalled(id)
+		case "login":
+			err = s.loginInstalled(id)
+		default:
+			jsonError(w, 404, "Unknown action")
+			return
+		}
+		if err != nil {
+			jsonError(w, 400, err.Error())
+			return
+		}
+		jsonResult(w, 200, map[string]any{"ok": true, "message": "操作已发起；可刷新状态确认结果"})
 	case r.URL.Path == "/api/status" && r.Method == "GET":
 		out := map[string]string{}
 		s.mu.RLock()
@@ -392,4 +446,66 @@ func (s *Server) stopProcess(id string) {
 func loopback(addr string) bool {
 	host, _, e := net.SplitHostPort(addr)
 	return e == nil && (host == "127.0.0.1" || host == "::1" || host == "localhost")
+}
+
+func (s *Server) forwardCodex(w http.ResponseWriter, r *http.Request, publicModel, model string, payload map[string]json.RawMessage) {
+	ctx, cancel := context.WithTimeout(r.Context(), 14*time.Minute)
+	defer cancel()
+	cli, err := openCodex(ctx)
+	if err != nil {
+		jsonError(w, 502, err.Error())
+		return
+	}
+	defer cli.close()
+	var stream bool
+	_ = json.Unmarshal(payload["stream"], &stream)
+	var effort string
+	_ = json.Unmarshal(payload["reasoning_effort"], &effort)
+	id := fmt.Sprintf("chatcmpl-mixed-%d", time.Now().UnixNano())
+	created := time.Now().Unix()
+	started := false
+	send := func(delta string) error {
+		if !started {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("X-Accel-Buffering", "no")
+			w.WriteHeader(200)
+			started = true
+		}
+		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": delta}, "finish_reason": nil}}}
+		b, _ := json.Marshal(chunk)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			return err
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		return nil
+	}
+	var emit func(string) error
+	if stream {
+		emit = send
+	}
+	content, err := cli.chat(ctx, model, payload["messages"], effort, emit)
+	if err != nil {
+		if !started {
+			jsonError(w, 502, err.Error())
+		} else {
+			msg, _ := json.Marshal(map[string]any{"error": map[string]string{"message": err.Error(), "type": "codex_error"}})
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}
+		return
+	}
+	if stream {
+		if !started {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+		}
+		last := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}}
+		b, _ := json.Marshal(last)
+		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b)
+		return
+	}
+	jsonResult(w, 200, map[string]any{"id": id, "object": "chat.completion", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "message": map[string]string{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
 }

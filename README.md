@@ -6,6 +6,18 @@
 
 本项目只实现一个本地网关，**不复制、捆绑、不尝试绕过上游认证**。上游授权、额度、收费和软件许可证继续生效。
 
+## 一键使用与保姆级反代指引（最新）
+
+**首次使用请先看 [零基础使用指南](docs/quickstart-zh.md)**。管理后台的每张上游卡片也内置逐步教程和官方网址，解释每个 Key 的来源。
+
+- **Codex：已直连 CLI，不需要 SillyTavern**。Windows 点击「一键安装 Codex」→「打开账号授权窗口」→ 启用并刷新模型。第一次需本人通过 ChatGPT 正式授权；MIXED-API 不保存 OAuth Token。仅使用 ChatGPT 订阅账号，拒绝 API Key 登录和任何 MCP/工具。
+- **WorkBuddy：** Windows 点击「一键准备环境」→「启动后端」。程序从可信仓库固定提交下载中转并由上游自动检测已登录的正版 WorkBuddy 客户端；第一次仍需本人在客户端登录。
+- **AI Studio Build：** Windows 点击「一键准备环境」→「打开账号授权窗口」→「启动后端」。自动安装 Node 依赖并设置本地随机上游密钥/回环监听；原项目 Camoufox 登录需要本人完成一次。无需浏览器认证时请考虑官方 Express Key 模式而不是 Build App 浏览器代理。
+- **其余三项：** 在控制台按每个来源的「从零开始配置向导」安装对应项目，填写它们各自的服务器 Key 和 API 地址。
+
+> **平台差异：** Windows 版拥有本机 Codex 适配器和部分自动安装功能；Android APK 提供统一 HTTP 网关与教程，但不能在 APK 内运行桌面版 Codex、WorkBuddy、Camoufox。所有来源依赖各自权限/额度，未经真实账号登录不保证端到端成功。
+
+
 ## 快速开始
 
 ### Windows（x64）
@@ -32,7 +44,7 @@
 | 上游 ID | 上游项目 | 默认 API URL | 需要先做什么 |
 |---|---|---|---|
 | `vertex` | [vertex2openai](https://github.com/bad-woman/vertex2openai) | `http://127.0.0.1:8050/v1` | Express Key 或 Cookie/Project ID；启动原版服务 |
-| `codex` | [SillyTavern-Subscriptions](https://github.com/LukaTheHero/SillyTavern-Subscriptions) | `http://127.0.0.1:8901/codex/v1` | 在运行 SillyTavern 的电脑安装服务端插件、Codex CLI，并执行 `codex login` |
+| `codex` | [Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern）](https://github.com/LukaTheHero/Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern）) | `http://127.0.0.1:8901/codex/v1` | 在运行 SillyTavern 的电脑安装服务端插件、Codex CLI，并执行 `codex login` |
 | `opencode` | [opencode2api](https://github.com/jasonxu114514/opencode2api) | `http://127.0.0.1:8080/v1` | 设置 upstream/本地 server key，启动 Go 版服务 |
 | `workbuddy` | [workboddy-proxy](https://github.com/sitingge/workboddy-proxy) | `http://127.0.0.1:8790/v1` | 安装并登录桌面 WorkBuddy，运行 `node wb-relay.js` |
 | `aps` | [APS2api](https://github.com/DeconstructedCube/APS2api) | `http://127.0.0.1:2156/v1` | 启动程序并在 `/admin/` 建立本地 API Key |
@@ -75,6 +87,6 @@ Android project under `android/` (Gradle + Android Java, without Python runtime)
 - 本地随机生成两套密钥：**Client API Key** 只能用 API，**Admin Key** 才可查看和更改包含上游密钥的配置。Desktop 密钥文件权限设为 `0600`；Android 通过私有 SharedPreferences 保存，**没有加密备份/硬件密钥库**。
 - 不要把 Google Cookie、OpenAI 授权 token、WorkBuddy 会话或本地配置文件提交到 GitHub，也不要将这些信息发给不受信任的人。
 - 订阅额度不等同于可供任意软件使用的通用 API。请遵守各自的许可证、服务条款、额度以及授权用途。本项目不保证使用第三方反向代理不触发服务商限制。
-- 本仓库只发行**自行编写的网关**，使用上游的公开 HTTP 接口；**不会把原项目源码重新打包分发**。特别注意 OpenCode 的 GPL-3、SillyTavern-Subscriptions 的 AGPL-3、APS2api 的 PolyForm Noncommercial 和 AIStudioToAPI 的 CC BY-NC 4.0，均有各自分发或使用条件。
+- 本仓库只发行**自行编写的网关**，使用上游的公开 HTTP 接口；**不会把原项目源码重新打包分发**。特别注意 OpenCode 的 GPL-3、Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern） 的 AGPL-3、APS2api 的 PolyForm Noncommercial 和 AIStudioToAPI 的 CC BY-NC 4.0，均有各自分发或使用条件。
 
 开发约定见 [`AGENTS.md`](AGENTS.md)、[`GLOSSARY.md`](GLOSSARY.md)、[`docs/adr/0001-gateway-adapters.md`](docs/adr/0001-gateway-adapters.md)，以模块边界、TDD 和安全审查为中心，参考 [mattpocock/skills](https://github.com/mattpocock/skills) 的工程实践，**没有直接复制其 skills 内容**。
