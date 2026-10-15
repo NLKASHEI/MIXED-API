@@ -60,6 +60,7 @@ jobs:
         shell: pwsh
         run: |
           go test ./...
+          if ($LASTEXITCODE -ne 0) { throw "Windows Go unit tests failed" }
           New-Item -ItemType Directory -Path windows -Force | Out-Null
           go build -trimpath -ldflags="-s -w" -o "windows/MIXED-API.exe" ./cmd/mixed-api
           if ($LASTEXITCODE -ne 0) { throw "Windows native Go build failed" }

@@ -5,8 +5,8 @@ Unicode true
 !define PRODUCT_NAME "MIXED-API"
 !define PRODUCT_VERSION "0.2.0"
 
-Name "\${PRODUCT_NAME}"
-OutFile "MIXED-API-Windows-x64-Setup.exe"
+Name "${PRODUCT_NAME}"
+OutFile "..\..\MIXED-API-Windows-x64-Setup.exe"
 InstallDir "$LOCALAPPDATA\MIXED-API"
 InstallDirRegKey HKCU "Software\MIXED-API" "InstallDir"
 RequestExecutionLevel user
@@ -33,10 +33,10 @@ VIAddVersionKey "FileVersion" "0.2.0"
 Section "安装 MIXED-API" SecMain
     SetShellVarContext current
     SetOutPath "$INSTDIR"
-    File "windows\MIXED-API.exe"
-    File "Start-MIXED-API.cmd"
-    File "Start-MIXED-API-LAN.cmd"
-    File "README.md"
+    File "..\..\windows\MIXED-API.exe"
+    File "..\..\Start-MIXED-API.cmd"
+    File "..\..\Start-MIXED-API-LAN.cmd"
+    File "..\..\README.md"
 
     CreateDirectory "$SMPROGRAMS\MIXED-API"
     CreateShortCut "$SMPROGRAMS\MIXED-API\MIXED-API.lnk" "$INSTDIR\MIXED-API.exe"
@@ -49,7 +49,7 @@ Section "安装 MIXED-API" SecMain
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "DisplayName" "MIXED-API"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "UninstallString" '"$INSTDIR\Uninstall.exe"'
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "DisplayIcon" "$INSTDIR\MIXED-API.exe"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "DisplayVersion" "\${PRODUCT_VERSION}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "DisplayVersion" "${PRODUCT_VERSION}"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "Publisher" "NLKASHEI"
     WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "NoModify" 1
     WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MIXED-API" "NoRepair" 1

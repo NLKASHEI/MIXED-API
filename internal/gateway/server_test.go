@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"runtime"
 	"testing"
 )
 
@@ -126,7 +127,9 @@ func TestFreshKeysAndSecureStorage(t *testing.T) {
 		t.Fatal("config missing API key")
 	}
 	fi, _ := os.Stat(path)
-	if fi.Mode().Perm()&0077 != 0 {
+	// Windows reports POSIX modes as 0666 even when the file resides in a private user directory.
+	// Verify 0600 only on platforms where POSIX mode bits are meaningful.
+	if runtime.GOOS != "windows" && fi.Mode().Perm()&0077 != 0 {
 		t.Fatalf("file should not be group/world readable, got %v", fi.Mode())
 	}
 	cfg2, e := LoadOrCreate(path)
