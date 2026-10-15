@@ -21,6 +21,20 @@
 
 ## 六个来源逐一说明
 
+## 安卓使用 Windows 的全部六路后端（最重要）
+
+这里是之前漏掉的关键架构：**电脑为后端宿主机，手机为前端网关。** 安卓 APK 不会、也无法直接启动 Windows Codex/WorkBuddy/Camoufox；现在提供电脑的 **API-only LAN 端口** 做桥接。
+
+1. **电脑：**先让 Windows MIXED-API 后台中的 Codex、WorkBuddy 等上游可用，刷新出真实模型。然后关闭旧启动窗口，双击 `Start-MIXED-API-LAN.cmd`。
+2. **电脑：**打开 `http://127.0.0.1:8765`，复制 **客户端 API Key**。千万别复制 Admin Key。
+3. **电脑：**运行 `ipconfig`，找到联网网卡 IPv4，比如 `192.168.1.20`；防火墙仅允许 **专用网络** TCP 8766 入站。不要给端口做公网映射。
+4. **手机：**安装新版 MIXED-API APK，启动并进入管理后台，打开 **「电脑 MIXED-API」** 卡片。填地址 `http://192.168.1.20:8766/v1`（改成电脑真实 IP），**上游 Key** 填第 2 步的电脑客户端 Key，方式选 `bearer`，勾选启用、保存。
+5. **手机：**刷新模型，应显示 `codex/gpt-...`、`workbuddy/...`、`aistudio/...` 等，不会多一个 `pc/`。在手机上的任何 OpenAI 兼容客户端填手机本地 `http://127.0.0.1:8765/v1`，Key 则复制**手机自己的客户端 Key**。
+
+**严格区分三种地址/密钥：**电脑后台 `127.0.0.1:8765`（Admin Key）→ 电脑的 LAN API `电脑IPv4:8766/v1`（电脑客户端 Key）→ 手机本机 API `127.0.0.1:8765/v1`（手机客户端 Key）。
+
+**安全限制：** LAN 端口没有 `/api/config` 或管理后台，不会把 Google Cookie 或登录 Token 作为配置返回；但是 LAN HTTP 本身不加密，只能在可信的家用/私有网络内使用。换 Wi-Fi 或电脑休眠就会断开。公网请使用 VPN，绝不要转发 8766。
+
 ### 1. Vertex2OpenAI（`vertex/`）
 
 **官网**：<https://github.com/bad-woman/vertex2openai>；Google Express 申请入口：<https://console.cloud.google.com/expressmode>。
@@ -83,7 +97,7 @@
 
 **“刷新模型显示 0 个模型”**：来源是否启用并保存？原服务后台本身能打开吗？原项目是否已成功登录？MIXED-API 的 URL 应填到 `/v1`，不要写成 `/v1/models`；上游 Key 和 MIXED-API 的 Client Key 不一样。
 
-**“127.0.0.1 连接不上另一台设备”**：这是预期行为。127.0.0.1 不是电脑的局域网 IP；当前 MIXED-API 设计故意禁止开放外部监听，避免暴露第三方订阅凭证。
+**“127.0.0.1 连接不上另一台设备”**：这是预期行为。新版 Windows 的显式 LAN 启动脚本提供只带 API 的 8766 端口；从手机连接时使用电脑真实 IPv4，例如 `192.168.1.20:8766`，绝不能填 `127.0.0.1:8766`。
 
 **“Codex 没显示模型”**：先在 Windows PowerShell 运行 `codex --version`、`codex login status`。升级 `npm install -g @openai/codex@latest`。如果 Codex 配置带有 MCP 或第三方 Base URL，本项目会拒绝，以免泄露凭证或在角色对话中运行工具。
 

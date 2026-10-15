@@ -146,7 +146,13 @@ public final class BridgeHttpServer implements AutoCloseable {
                 byte[] data=bounded(c.getInputStream(),5*1024*1024);
                 JSONArray original=new JSONObject(new String(data,StandardCharsets.UTF_8)).getJSONArray("data");
                 for(int k=0;k<original.length();k++){
-                    String model=original.getJSONObject(k).optString("id");if(!model.isEmpty())all.put(new JSONObject().put("id",b.getString("id")+"/"+model).put("object","model").put("owned_by",b.getString("id")).put("original_id",model));
+                    String model=original.getJSONObject(k).optString("id");
+                    if(!model.isEmpty()) {
+                        // PC gateway already prefixes models (codex/gpt, workbuddy/...),
+                        // so preserve those IDs exactly rather than adding pc/ in Android.
+                        String publicID="pc".equals(b.optString("id"))?model:b.getString("id")+"/"+model;
+                        all.put(new JSONObject().put("id",publicID).put("object","model").put("owned_by",b.getString("id")).put("original_id",model));
+                    }
                 }
             }catch(Exception e){errors.put(b.getString("id"),"Unavailable or invalid model list");}
             finally{if(c!=null)c.disconnect();}
@@ -161,7 +167,16 @@ public final class BridgeHttpServer implements AutoCloseable {
         JSONObject b=null;JSONArray bs=enabled(cfg);for(int i=0;i<bs.length();i++){
             JSONObject item=bs.getJSONObject(i);if(item.optBoolean("enabled")&&id.equals(item.optString("id"))){b=item;break;}
         }
-        if(b==null){fail(out,404,"Backend not enabled: "+id);return;}
+        if(b==null){
+            // Forward any model advertised by the desktop gateway directly,
+            // preserving codex/gpt, workbuddy/model and other existing prefixes.
+            for(int i=0;i<bs.length();i++){
+                JSONObject item=bs.getJSONObject(i);
+                if(item.optBoolean("enabled")&&"pc".equals(item.optString("id"))){b=item;break;}
+            }
+            if(b==null){fail(out,404,"Backend not enabled: "+id+"; enable the PC bridge or the backend locally");return;}
+            upstreamModel=model;
+        }
         input.put("model",upstreamModel);byte[] packet=input.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c=null;boolean started=false;
         try{

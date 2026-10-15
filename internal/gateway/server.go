@@ -73,6 +73,20 @@ func jsonResult(w http.ResponseWriter, status int, val any) {
 func jsonError(w http.ResponseWriter, status int, msg string) {
 	jsonResult(w, status, map[string]any{"error": map[string]any{"message": msg, "type": "mixed_api_error"}})
 }
+
+// APIOnly exposes inference endpoints on an explicitly enabled private-LAN listener.
+// Crucially, administrative endpoints /api/* and the web configuration panel
+// are never reachable through the LAN port, even with the API key.
+func APIOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" && !strings.HasPrefix(r.URL.Path, "/v1/") {
+			jsonError(w, http.StatusNotFound, "Not found on LAN API listener")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" && r.Method == "GET" {
 		data, _ := static.ReadFile("index.html")

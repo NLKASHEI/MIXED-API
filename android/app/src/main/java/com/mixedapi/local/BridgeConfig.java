@@ -27,16 +27,31 @@ public final class BridgeConfig {
     public static synchronized JSONObject load(Context ctx) throws Exception {
         SharedPreferences p=ctx.getSharedPreferences(PREF,Context.MODE_PRIVATE);
         String raw=p.getString(ENTRY,null);
-        if(raw!=null)return new JSONObject(raw);
+        if(raw!=null){
+            JSONObject existing=new JSONObject(raw);
+            JSONArray backends=existing.optJSONArray("backends");
+            if(backends!=null){
+                boolean foundPC=false;
+                for(int i=0;i<backends.length();i++){
+                    JSONObject b=backends.optJSONObject(i);
+                    if(b==null)continue;
+                    if("pc".equals(b.optString("id")))foundPC=true;
+                    if("codex".equals(b.optString("id"))) b.put("name","Codex (通过电脑共享)");
+                }
+                if(!foundPC){backends.put(backend("pc","电脑 MIXED-API（优先推荐）","http://192.168.1.100:8766/v1","bearer"));save(ctx,existing);}
+            }
+            return existing;
+        }
         JSONObject obj=new JSONObject();obj.put("listen","127.0.0.1:8765");
         obj.put("api_key",key("sk-mix-"));obj.put("admin_key",key("admin-"));
         JSONArray a=new JSONArray();
         a.put(backend("vertex","Vertex Express / Cookie","http://127.0.0.1:8050/v1","bearer"));
-        a.put(backend("codex","Codex (SillyTavern Subscriptions)","http://127.0.0.1:8901/codex/v1","none"));
+        a.put(backend("codex","Codex (通过电脑共享)","http://127.0.0.1:8901/codex/v1","none"));
         a.put(backend("opencode","OpenCode 2API","http://127.0.0.1:8080/v1","bearer"));
         a.put(backend("workbuddy","WorkBuddy Proxy","http://127.0.0.1:8790/v1","bearer"));
         a.put(backend("aps","APS2api","http://127.0.0.1:2156/v1","bearer"));
         a.put(backend("aistudio","AI Studio Build","http://127.0.0.1:7860/v1","bearer"));
+        a.put(backend("pc","电脑 MIXED-API（优先推荐）","http://192.168.1.100:8766/v1","bearer"));
         obj.put("backends",a);save(ctx,obj);return obj;
     }
     public static synchronized void save(Context ctx, JSONObject obj) throws Exception {

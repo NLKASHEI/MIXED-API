@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           mkdir -p windows
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o windows/MIXED-API.exe ./cmd/mixed-api
-          cp Start-MIXED-API.cmd README.md windows/
+          cp Start-MIXED-API.cmd Start-MIXED-API-LAN.cmd README.md windows/
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
@@ -114,9 +114,9 @@ jobs:
           test -s dist/MIXED-API-Android.apk
           tag="v0.1.0-preview.${GITHUB_RUN_NUMBER}"
           cat > notes.md <<'NOTES'
-          MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI 和 Windows 一键配置助手。
+          MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI、Windows 一键配置助手及 Android→PC 局域网桥接。
 
-          - Windows：下载 `MIXED-API-Windows-x64.zip`，解压，双击 `Start-MIXED-API.cmd`。
+          - Windows：下载 `MIXED-API-Windows-x64.zip`，解压，双击 `Start-MIXED-API.cmd`；要给手机分享模型时请显式使用 `Start-MIXED-API-LAN.cmd`。
           - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
           - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
           - 六个上游默认禁用；后台附带详尽的中文小白向导。
@@ -124,7 +124,7 @@ jobs:
           - Windows WorkBuddy：一键拉取并启动固定源码版本，自动识别已登录的 WorkBuddy 客户端。
           - Windows AIStudioToAPI：一键拉取/安装依赖，弹出 Google 首次登录流程，自动设置 localhost 与随机 API Key。
           - 网页账号授权必须由用户本人完成；绝不静默抓取 Cookie/密码/Token。
-          - APK 是独立网关，不内置桌面 Codex / WorkBuddy / Camoufox；六家后端的能力仍取决于所在平台的原始上游。
+          - APK 是独立网关，不内置桌面 Codex / WorkBuddy / Camoufox；新版「电脑 MIXED-API」可以连接 PC 的 LAN 8766，只共享 API 而不共享管理界面，完整模型 ID 保持 codex/gpt-* 等不变。
           - 保姆级配置指南：https://github.com/NLKASHEI/MIXED-API/blob/main/docs/quickstart-zh.md
           - 请遵守上游许可证和服务条款。
 

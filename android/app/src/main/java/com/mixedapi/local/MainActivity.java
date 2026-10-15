@@ -23,7 +23,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);
         ScrollView scroll=new ScrollView(this);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(32,32,32,40);scroll.addView(root);setContentView(scroll);
         TextView title=new TextView(this);title.setText("MIXED-API\n统一本地中转站");title.setTextSize(26f);root.addView(title);
-        TextView desc=new TextView(this);desc.setText("六个上游 → 一个 URL、一个 Key。首次启动自动生成两套不同的密钥。\n\n统一 API: http://127.0.0.1:8765/v1\n模型名示例：codex/gpt-6-luna\n\n注意：本 APK 是网关，不会自动安装桌面版的 Codex、WorkBuddy 或 Camoufox。需先运行上游，或把上游 URL 改成可访问的地址。\n");root.addView(desc);
+        TextView desc=new TextView(this);desc.setText("六个上游 → 一个 URL、一个 Key。首次启动自动生成两套不同的密钥。\n\n统一 API: http://127.0.0.1:8765/v1\n模型名示例：codex/gpt-6-luna\n\n手机单机不能运行 Windows 的 Codex CLI / WorkBuddy。推荐：电脑双击 Start-MIXED-API-LAN.cmd，手机打开管理后台，启用「电脑 MIXED-API」，填写 http://电脑局域网IP:8766/v1 和电脑的客户端 API Key。\n电脑与手机连接同一可信局域网。电脑管理后台始终只在电脑本机打开。\n");root.addView(desc);
         info=new TextView(this);info.setText("请点击启动服务");root.addView(info);
         button("▶ 启动本地代理",v->{try{Intent x=new Intent(this,BridgeService.class);startForegroundService(x);info.setText("正在启动。稍等片刻打开管理面板。");}catch(Exception e){info.setText(e.toString());}});
         button("⚙ 打开管理后台",v->{Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse("http://127.0.0.1:8765/"));startActivity(i);});
