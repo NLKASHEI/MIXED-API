@@ -55,7 +55,7 @@ func safeZipExtract(archive, dest string) error {
 	var total int64
 	for _, f := range reader.File {
 		clean := filepath.Clean(filepath.FromSlash(f.Name))
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || strings.Contains(clean, ":") {
+		if strings.HasPrefix(f.Name, "/") || strings.HasPrefix(f.Name, "\\") || strings.Contains(f.Name, "\\") || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || strings.Contains(clean, ":") {
 			return fmt.Errorf("archive has unsafe filename %q", f.Name)
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
