@@ -1,0 +1,115 @@
+name: Build Windows and Android Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Test + Windows x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Tests, race detector and go vet
+        run: |
+          go test -race ./...
+          go vet ./...
+      - name: Build self-contained EXE
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p windows
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o windows/MIXED-API.exe ./cmd/mixed-api
+          cp Start-MIXED-API.cmd README.md windows/
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('MIXED-API-Windows-x64.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for file in Path('windows').iterdir():
+                  z.write(file,file.name)
+          PY
+          sha256sum MIXED-API-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: MIXED-API-Windows-x64.zip
+          if-no-files-found: error
+
+  android:
+    name: Android APK (debug signed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build APK
+        run: |
+          gradle -p android --no-daemon :app:assembleDebug --stacktrace
+          cp android/app/build/outputs/apk/debug/app-debug.apk MIXED-API-Android.apk
+          sha256sum MIXED-API-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: MIXED-API-Android.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub prerelease
+    needs: [windows, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          merge-multiple: true
+          path: dist
+      - name: Publish binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/MIXED-API-Windows-x64.zip
+          test -s dist/MIXED-API-Android.apk
+          tag="v0.1.0-preview.${GITHUB_RUN_NUMBER}"
+          cat > notes.md <<'NOTES'
+          MIXED-API 本地六上游 OpenAI 兼容网关预览版。
+
+          - Windows：下载 `MIXED-API-Windows-x64.zip`，解压，双击 `Start-MIXED-API.cmd`。
+          - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
+          - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
+          - 六个上游默认禁用，先安装/启动各自后端并配置凭证后再启用。APK 不内置 Codex/WorkBuddy/Camoufox 等桌面环境。
+          - 请遵守上游许可证和服务条款。
+
+          **注意：Android 为 Debug 签名的预览 APK，云端编译成功不等于手机运行实测通过。**
+          NOTES
+          gh release create "$tag" dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Android.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "MIXED-API $tag · Windows + Android" --notes-file notes.md --prerelease
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'

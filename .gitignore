@@ -1,0 +1,16 @@
+# Local credentials must never enter commits or release assets
+mixed-api.json
+**/mixed-api.json
+**/auth.json
+**/configs/auth/
+.env
+.env.*
+!*.example
+*.keystore
+*.jks
+.gradle/
+**/build/
+android/local.properties
+.idea/
+*.log
+.DS_Store
