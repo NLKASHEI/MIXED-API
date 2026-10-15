@@ -293,7 +293,7 @@ func (s *Server) sourceCommand(id string) (*exec.Cmd, error) {
 	default:
 		return nil, errors.New("not managed")
 	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	s.bindBackendOutput(cmd, id)
 	return cmd, nil
 }
 func (s *Server) getBackendKey(id string) string {

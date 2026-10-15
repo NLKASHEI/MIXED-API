@@ -464,8 +464,7 @@ func (s *Server) startProcess(b Backend) error {
 	if b.Workdir != "" {
 		cmd.Dir = b.Workdir
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	s.bindBackendOutput(cmd, b.ID)
 	if e := cmd.Start(); e != nil {
 		s.mu.Unlock()
 		return e

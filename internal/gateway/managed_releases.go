@@ -345,7 +345,7 @@ func (s *Server) binaryCommand(id string) (*exec.Cmd, error) {
 		cmd = exec.Command(path)
 	}
 	cmd.Dir = filepath.Dir(path)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	s.bindBackendOutput(cmd, id)
 	return cmd, nil
 }
 
