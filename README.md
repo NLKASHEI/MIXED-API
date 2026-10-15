@@ -4,6 +4,10 @@
 
 **六个可配置上游 → 一个 API Base URL + 一个客户端 Key → 自动按模型 ID 分流。**
 
+![MIXED-API Windows 桌面控制台实际页面预览](docs/images/desktop-preview.webp)
+
+Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览器）；Android 使用简洁的浅色管理页。插图为本项目生成设计素材，服务提供方图标以文字符号表示。
+
 本项目只实现一个本地网关，**不复制、捆绑、不尝试绕过上游认证**。上游授权、额度、收费和软件许可证继续生效。
 
 ## 一键使用与保姆级反代指引（最新）
@@ -15,6 +19,8 @@
 - **AI Studio Build：** Windows 点击「一键准备环境」→「打开账号授权窗口」→「启动后端」。自动安装 Node 依赖并设置本地随机上游密钥/回环监听；原项目 Camoufox 登录需要本人完成一次。无需浏览器认证时请考虑官方 Express Key 模式而不是 Build App 浏览器代理。
 - **其余三项：** 在控制台按每个来源的「从零开始配置向导」安装对应项目，填写它们各自的服务器 Key 和 API 地址。
 
+> **实际打包区别：** `MIXED-API-Windows-x64.exe` 是可独立双击的 Go 可执行文件，**无须安装 Go、Node 或 Python 就能运行聚合网关**。Node/Git/Codex 只在使用对应的桌面上游时需要；ZIP 版多了启动脚本和 LAN 模式入口。
+
 > **平台差异：** Windows 版拥有本机 Codex 适配器和部分自动安装功能；Android APK 提供统一 HTTP 网关与教程，但不能在 APK 内运行桌面版 Codex、WorkBuddy、Camoufox。所有来源依赖各自权限/额度，未经真实账号登录不保证端到端成功。
 
 
@@ -24,9 +30,9 @@
 
 1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases) **直接下载 `MIXED-API-Windows-x64.exe`**（无需解压或安装 Go/Node），放进一个单独文件夹，双击启动。可选：下载 ZIP 便携包，内含 EXE 和局域网启动脚本。
 2. 直接双击 `MIXED-API-Windows-x64.exe`（ZIP 用户也可以双击 `Start-MIXED-API.cmd`）。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到 **EXE 所在文件夹**的 `mixed-api.json`。程序会打开浏览器管理后台，命令行窗口请勿关闭。
-3. 打开浏览器 `http://127.0.0.1:8765`，输入控制台显示的 **Admin Key**。
-4. 先根据管理面板指引安装/启动相应上游，再填入上游 `Base URL`、该上游自己的 Key，开启并保存。
-5. 客户端只需填 `http://127.0.0.1:8765/v1` 和 **MIXED-API API Key**，然后选择 `上游ID/原模型名`。
+3. EXE 默认自动打开 `http://127.0.0.1:8765`；若没有自动打开，则自己在浏览器访问此地址。输入窗口中显示的 **Admin Key**。Windows SmartScreen 对未签名预览 EXE 可能提出警告，请仅从本仓库 Releases 下载，核实文件后再决定是否运行。
+4. 在左边导航点击**「上游服务」**，先选择一个来源，打开**「从零开始」**向导，按步骤下载/登录/启动，再填写该来源的 `Base URL` 和上游 Key（Windows 原生 Codex 不需要这些字段），最后勾选启用并点击**「保存所有配置」**。
+5. 点击左侧**「聚合模型」**→「刷新列表」。看到模型后点击「复制模型名」，在任意兼容客户端使用 `http://127.0.0.1:8765/v1` 和 **MIXED-API 客户端 API Key**。
 
 提示：直接下载的 EXE 无需安装 Go/Node；完整 ZIP 内部的可执行文件名是 `MIXED-API.exe`，另附可选启动脚本。**一键启动的是聚合网关本身**。需要客户端登录的上游仍需预先配置；可以在管理界面填写 Windows 本机启动命令，由网关启动已安装的后端。
 
