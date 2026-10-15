@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,6 +52,7 @@ var (
 	pGlobalLock     = kernel32.NewProc("GlobalLock")
 	pGlobalUnlock   = kernel32.NewProc("GlobalUnlock")
 	pMessageBox     = user32.NewProc("MessageBoxW")
+	pShow           = user32.NewProc("ShowWindow")
 )
 
 const (
@@ -68,6 +70,8 @@ const (
 	wmSize        = 0x0005
 	wmSetFont     = 0x0030
 	wmUserUpdate  = 0x8001
+	swHide        = 0
+	swShow        = 5
 	cfUnicodeText = 13
 )
 
@@ -96,17 +100,28 @@ type nativeMsg struct {
 	Private        uint32
 }
 type nativeView struct {
-	hwnd                                                    uintptr
-	key, admin, base                                        string
-	buttons                                                 [6]uintptr
-	labels                                                  [6]uintptr
-	apiLabel, logBox, footer                                uintptr
-	providerChoice, officialKey, officialHelp, officialSave uintptr
-	font, heading                                           uintptr
-	mu                                                      sync.Mutex
-	logText, providerSummary, footerText                    string
-	client                                                  *http.Client
-	stop                                                    chan struct{}
+	hwnd                                                                      uintptr
+	key, admin, base                                                          string
+	buttons                                                                   [6]uintptr
+	labels                                                                    [6]uintptr
+	apiLabel, logBox, footer                                                  uintptr
+	providerChoice, officialKey, officialHelp, officialSave                   uintptr
+	guideTitle, guideStage, guideText, modelLabel, modelButton, refreshModels uintptr
+	navTitle, logTitle, retryButton, authButton, header, modelChoice          uintptr
+	font, heading                                                             uintptr
+	mu                                                                        sync.Mutex
+	logText, footerText, guideBody, guideHeader, guideState, modelText        string
+	selected                                                                  string
+	states                                                                    map[string]string
+	rowStatus                                                                 [6]string
+	modelIDs                                                                  []string
+	shownModels                                                               []string
+	rendered                                                                  map[uintptr]string
+	modelError                                                                string
+	modelFor                                                                  string
+	modelPull                                                                 time.Time
+	client                                                                    *http.Client
+	stop                                                                      chan struct{}
 }
 
 var desktop *nativeView
@@ -132,31 +147,57 @@ func (v *nativeView) position() {
 	pGetRect.Call(v.hwnd, uintptr(unsafe.Pointer(&r)))
 	w := int(r.Right - r.Left)
 	h := int(r.Bottom - r.Top)
-	if w < 700 {
-		w = 700
+	// Minimum resize is visually bounded; all content stays in scrollable multiline fields.
+	if w < 850 {
+		w = 850
 	}
-	if h < 550 {
-		h = 550
+	if h < 650 {
+		h = 650
 	}
 	margin := 24
-	available := w - margin*2
-	half := (available - 16) / 2
-	pMove.Call(v.apiLabel, uintptr(margin), 86, uintptr(available), 50, 1)
-	for i := range v.buttons {
-		col := i % 2
-		row := i / 2
-		x := margin + col*(half+16)
-		y := 176 + row*58
-		pMove.Call(v.labels[i], uintptr(x), uintptr(y), uintptr(half-132), 36, 1)
-		pMove.Call(v.buttons[i], uintptr(x+half-126), uintptr(y), 124, 36, 1)
+	width := w - 2*margin
+	pMove.Call(v.header, uintptr(margin), 10, uintptr(width), 46, 1)
+	pMove.Call(v.apiLabel, uintptr(margin), 61, uintptr(width), 46, 1)
+	// Buttons copied from the first-start screen; no admin login is required.
+	topButtons := []struct{ id, x, width int }{{100, 0, 140}, {101, 152, 170}, {102, 334, 135}, {103, 481, 150}, {104, 643, 120}}
+	for _, b := range topButtons {
+		hnd := v.byButtonID(b.id)
+		if hnd != 0 {
+			pMove.Call(hnd, uintptr(margin+b.x), 114, uintptr(b.width), 38, 1)
+		}
 	}
-	pMove.Call(v.officialHelp, uintptr(margin), 344, 330, 30, 1)
-	pMove.Call(v.providerChoice, uintptr(margin+330), 344, 150, 160, 1)
-	pMove.Call(v.officialKey, uintptr(margin+492), 344, uintptr(max(100, available-636)), 33, 1)
-	pMove.Call(v.officialSave, uintptr(margin+available-133), 344, 133, 33, 1)
-	pMove.Call(v.logBox, uintptr(margin), 432, uintptr(available), uintptr(max(90, h-521)), 1)
-	pMove.Call(v.footer, uintptr(margin), uintptr(h-71), uintptr(available), 36, 1)
+	left := margin
+	navW := 300
+	detailX := left + navW + 24
+	detailW := width - navW - 24
+	pMove.Call(v.navTitle, uintptr(left), 161, uintptr(navW), 31, 1)
+	for i := range v.buttons {
+		y := 200 + i*59
+		pMove.Call(v.buttons[i], uintptr(left), uintptr(y), 190, 40, 1)
+		pMove.Call(v.labels[i], uintptr(left+198), uintptr(y+1), uintptr(navW-198), 40, 1)
+	}
+	pMove.Call(v.guideTitle, uintptr(detailX), 160, uintptr(detailW), 36, 1)
+	pMove.Call(v.guideStage, uintptr(detailX), 200, uintptr(detailW), 72, 1)
+	pMove.Call(v.guideText, uintptr(detailX), 277, uintptr(detailW), 199, 1)
+	// Only providers needing a vendor credential display this area.
+	pMove.Call(v.officialHelp, uintptr(detailX), 485, uintptr(detailW), 27, 1)
+	pMove.Call(v.officialKey, uintptr(detailX), 516, uintptr(max(120, detailW-145)), 39, 1)
+	pMove.Call(v.officialSave, uintptr(detailX+detailW-138), 516, 138, 39, 1)
+	pMove.Call(v.modelLabel, uintptr(detailX), 485, uintptr(detailW), 27, 1)
+	pMove.Call(v.modelChoice, uintptr(detailX), 515, uintptr(detailW), 200, 1)
+	pMove.Call(v.retryButton, uintptr(detailX), 558, 150, 38, 1)
+	pMove.Call(v.refreshModels, uintptr(detailX+162), 558, 145, 38, 1)
+	pMove.Call(v.modelButton, uintptr(detailX+319), 558, 160, 38, 1)
+	pMove.Call(v.authButton, uintptr(detailX+491), 558, uintptr(max(125, detailW-491)), 38, 1)
+	bottomStart := 620
+	pMove.Call(v.logTitle, uintptr(left), uintptr(bottomStart), uintptr(width), 30, 1)
+	pMove.Call(v.logBox, uintptr(left), uintptr(bottomStart+34), uintptr(width), uintptr(max(95, h-bottomStart-102)), 1)
+	pMove.Call(v.footer, uintptr(left), uintptr(h-46), uintptr(width), 31, 1)
 }
+func (v *nativeView) byButtonID(id int) uintptr { return nativeButtons[id] }
+
+var nativeButtons = map[int]uintptr{}
+
 func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	v := desktop
 	switch msg {
@@ -173,26 +214,66 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		switch {
 		case id == 100:
 			copyNative(v.base)
-			putText(v.footer, "已复制统一 API 地址")
+			v.notify("已复制统一 API 地址，请粘贴到客户端 Base URL。")
 		case id == 101:
 			copyNative(v.key)
-			putText(v.footer, "已复制客户端 API Key · 只发给自己的应用")
+			v.notify("已复制客户端 Key，请仅填给自己的应用。")
 		case id == 102:
 			go v.executeUpdate()
 		case id == 103:
 			_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", v.base[:len(v.base)-3]).Start()
-		case id >= 200 && id < 206:
-			go v.connectProvider(providers[id-200].ID)
 		case id == 104:
 			go v.refresh()
+		case id >= 200 && id < 206:
+			v.selectProvider(providers[id-200].ID)
+			go v.connectProvider(providers[id-200].ID)
 		case id == 107:
-			selection, _, _ := pSend.Call(v.providerChoice, 0x0147, 0, 0)
-			provider := "vertex"
-			if selection == 1 {
-				provider = "opencode"
+			v.mu.Lock()
+			provider := v.selected
+			v.mu.Unlock()
+			if provider != "vertex" && provider != "opencode" {
+				v.notify("当前来源不需要粘贴官方 Key")
+				break
 			}
 			key := strings.TrimSpace(getNativeText(v.officialKey))
 			go v.saveOfficialKey(provider, key)
+		case id == 109:
+			v.mu.Lock()
+			id := v.selected
+			v.mu.Unlock()
+			if id != "" {
+				go v.connectProvider(id)
+			}
+		case id == 110:
+			go v.forceCheckModels()
+		case id == 111:
+			v.mu.Lock()
+			model := ""
+			idx, _, _ := pSend.Call(v.modelChoice, 0x0147, 0, 0) // CB_GETCURSEL
+			if int(idx) < len(v.modelIDs) {
+				model = v.modelIDs[int(idx)]
+			}
+			if model == "" && len(v.modelIDs) > 0 {
+				model = v.modelIDs[0]
+			}
+			v.mu.Unlock()
+			if model != "" {
+				copyNative(model)
+				v.notify("已复制模型 ID：" + model)
+			} else {
+				v.notify("尚未发现该来源模型，先完成授权，再点击『检查模型』")
+			}
+		case id == 112:
+			v.mu.Lock()
+			id := v.selected
+			v.mu.Unlock()
+			if id == "codex" || id == "aistudio" {
+				go v.openLogin(id)
+			} else if id == "vertex" {
+				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://console.cloud.google.com/expressmode").Start()
+			} else {
+				v.notify("该来源无软件代办的网页登录：请按照右侧第二步处理。")
+			}
 		}
 		return 0
 	case 0x8002:
@@ -202,23 +283,7 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		return 0
 	case wmUserUpdate:
 		if v != nil {
-			v.mu.Lock()
-			logs, summary, footer := v.logText, v.providerSummary, v.footerText
-			v.mu.Unlock()
-			if len(logs) > 0 {
-				putText(v.logBox, logs)
-			}
-			if footer != "" {
-				putText(v.footer, footer)
-			}
-			if summary != "" {
-				statuses := strings.Split(summary, "\n")
-				for i := range v.labels {
-					if i < len(statuses) {
-						putText(v.labels[i], statuses[i])
-					}
-				}
-			}
+			v.paint()
 		}
 		return 0
 	case wmClose:
@@ -231,9 +296,10 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		pPostQuit.Call(0)
 		return 0
 	}
-	value, _, _ := pDefProc.Call(hwnd, uintptr(msg), wp, lp)
-	return value
+	ret, _, _ := pDefProc.Call(hwnd, uintptr(msg), wp, lp)
+	return ret
 }
+
 func copyNative(s string) {
 	if r, _, _ := pOpenClipboard.Call(0); r == 0 {
 		return
@@ -286,6 +352,188 @@ func (v *nativeView) notify(msg string) {
 	v.mu.Unlock()
 	pPost.Call(v.hwnd, wmUserUpdate, 0, 0)
 }
+func (v *nativeView) selectProvider(id string) {
+	v.mu.Lock()
+	v.selected = id
+	putText(v.officialKey, "") // Never carry an unsaved vendor credential to another source.
+	v.modelFor = ""
+	v.modelIDs = nil
+	v.modelError = ""
+	v.modelPull = time.Time{}
+	v.mu.Unlock()
+	pPost.Call(v.hwnd, wmUserUpdate, 0, 0)
+}
+func (v *nativeView) openLogin(id string) {
+	v.notify("正在打开 " + id + " 官方授权窗口……你只需要本人确认登录。")
+	_, err := v.request("POST", "/api/assist/"+id+"/login")
+	if err != nil {
+		v.notify("无法打开授权窗口：" + err.Error())
+	} else {
+		v.notify("授权窗口已请求打开；登录结束请点『检查模型』。")
+	}
+	go v.refresh()
+}
+func (v *nativeView) forceCheckModels() {
+	v.mu.Lock()
+	v.modelPull = time.Time{}
+	v.mu.Unlock()
+	v.notify("正在读取统一模型列表……")
+	v.refresh()
+}
+func (v *nativeView) requestModels() ([]string, string) {
+	req, err := http.NewRequest(http.MethodGet, v.base+"/models", nil)
+	if err != nil {
+		return nil, err.Error()
+	}
+	req.Header.Set("Authorization", "Bearer "+v.key)
+	rsp, err := v.client.Do(req)
+	if err != nil {
+		return nil, err.Error()
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Sprintf("模型接口 HTTP %d", rsp.StatusCode)
+	}
+	var doc struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Errors map[string]string `json:"backend_errors"`
+	}
+	err = json.NewDecoder(io.LimitReader(rsp.Body, 2<<20)).Decode(&doc)
+	if err != nil {
+		return nil, "模型列表格式异常：" + err.Error()
+	}
+	v.mu.Lock()
+	selected := v.selected
+	v.mu.Unlock()
+	result := make([]string, 0, 12)
+	for _, m := range doc.Data {
+		if strings.HasPrefix(m.ID, selected+"/") && len(result) < 12 {
+			result = append(result, m.ID)
+		}
+	}
+	errorText := ""
+	if len(result) == 0 && doc.Errors != nil {
+		errorText = doc.Errors[selected]
+	}
+	return result, errorText
+}
+func (v *nativeView) setIfChanged(hwnd uintptr, text string) {
+	if v.rendered == nil {
+		v.rendered = make(map[uintptr]string)
+	}
+	if v.rendered[hwnd] == text {
+		return
+	}
+	v.rendered[hwnd] = text
+	putText(hwnd, text)
+}
+func (v *nativeView) updateModelList(models []string) {
+	if slices.Equal(v.shownModels, models) {
+		return
+	}
+	oldIndex, _, _ := pSend.Call(v.modelChoice, 0x0147, 0, 0)
+	oldModel := ""
+	if int(oldIndex) >= 0 && int(oldIndex) < len(v.shownModels) {
+		oldModel = v.shownModels[int(oldIndex)]
+	}
+	pSend.Call(v.modelChoice, 0x014B, 0, 0) // CB_RESETCONTENT
+	selected := 0
+	for i, name := range models {
+		pSend.Call(v.modelChoice, 0x0143, 0, uintptr(unsafe.Pointer(wz(name)))) // CB_ADDSTRING
+		if name == oldModel {
+			selected = i
+		}
+	}
+	if len(models) > 0 {
+		pSend.Call(v.modelChoice, 0x014E, uintptr(selected), 0)
+	}
+	v.shownModels = append([]string(nil), models...)
+}
+func (v *nativeView) paint() {
+	v.mu.Lock()
+	selected := v.selected
+	state := v.states[selected]
+	ids := append([]string(nil), v.modelIDs...)
+	modelProblem := v.modelError
+	logText := v.logText
+	foot := v.footerText
+	states := v.states
+	v.mu.Unlock()
+	for i, p := range providers {
+		short := "未接入"
+		if states != nil {
+			g := guideFor(p.ID, states[p.ID], nil)
+			short = g.StageLabel
+		}
+		if p.ID == selected && len(ids) > 0 && strings.HasPrefix(state, "ready:") {
+			short = "可用"
+		}
+		putText(v.labels[i], short)
+		shortNames := map[string]string{"codex": "Codex", "vertex": "Vertex", "opencode": "OpenCode", "workbuddy": "WorkBuddy", "aps": "APS2api", "aistudio": "AI Studio"}
+		caption := shortNames[p.ID] + " · 接入"
+		if p.ID == selected {
+			caption = "▶ " + caption
+		}
+		putText(v.buttons[i], caption)
+	}
+	if selected == "" {
+		selected = "codex"
+	}
+	guide := guideFor(selected, state, ids)
+	putText(v.guideTitle, "当前来源："+guide.Name)
+	stageText := "【" + guide.StageLabel + "】" + guide.Detail
+	putText(v.guideStage, stageText)
+	v.setIfChanged(v.guideText, guideSteps(guide)+"\r\n\r\n"+"下一步："+guide.Next+"\r\n\r\n"+"常见问题："+guide.Recovery)
+	if guide.NeedsKey && guide.Stage != "ready" {
+		putText(v.officialHelp, "可选／必要时填写官方 Key（不是 MIXED-API 客户端 Key）")
+		pShow.Call(v.officialHelp, swShow)
+		pShow.Call(v.officialKey, swShow)
+		pShow.Call(v.officialSave, swShow)
+		pShow.Call(v.modelLabel, swHide)
+		pShow.Call(v.modelChoice, swHide)
+	} else {
+		pShow.Call(v.officialHelp, swHide)
+		pShow.Call(v.officialKey, swHide)
+		pShow.Call(v.officialSave, swHide)
+		pShow.Call(v.modelLabel, swShow)
+		if len(ids) > 0 {
+			pShow.Call(v.modelChoice, swShow)
+		} else {
+			pShow.Call(v.modelChoice, swHide)
+		}
+	}
+	modelLine := "尚无可复制的模型：完成授权后点『检查模型』。"
+	if len(ids) > 0 {
+		modelLine = "已发现 " + fmt.Sprint(len(ids)) + " 个模型；首个：" + ids[0]
+	}
+	if modelProblem != "" {
+		modelLine += "\r\n模型检查：" + modelProblem
+	}
+	putText(v.modelLabel, modelLine)
+	v.updateModelList(ids)
+	switch selected {
+	case "codex", "aistudio":
+		putText(v.authButton, "打开登录窗口")
+		pShow.Call(v.authButton, swShow)
+	case "vertex":
+		putText(v.authButton, "申请 Express Key")
+		pShow.Call(v.authButton, swShow)
+	case "opencode":
+		putText(v.authButton, "Zen 服务官网")
+		pShow.Call(v.authButton, swShow)
+	default:
+		pShow.Call(v.authButton, swHide)
+	}
+	if len(logText) > 0 {
+		v.setIfChanged(v.logBox, logText)
+	}
+	if foot != "" {
+		putText(v.footer, foot)
+	}
+}
+
 func (v *nativeView) connectProvider(id string) {
 	v.notify("正在接入 " + id + "…… 软件会自动配置；需要授权时会提示你。")
 	_, e := v.request("POST", "/api/assist/"+id+"/quickstart")
@@ -374,60 +622,69 @@ func (v *nativeView) refresh() {
 			Error   string `json:"error"`
 		} `json:"entries"`
 	}
-	raw, e := v.request("GET", "/api/logs")
-	if e == nil {
+	if raw, err := v.request("GET", "/api/logs"); err == nil {
 		_ = json.Unmarshal(raw, &logs)
 	}
-	var lines []string
-	for i := len(logs.Entries) - 1; i >= 0 && len(lines) < 45; i-- {
+	lines := []string{}
+	for i := len(logs.Entries) - 1; i >= 0 && len(lines) < 10; i-- {
 		z := logs.Entries[i]
 		stamp := z.Time
 		if len(stamp) > 19 {
 			stamp = stamp[11:19]
 		}
-		err := z.Error
-		if len([]rune(err)) > 140 {
-			err = string([]rune(err)[:140])
-		}
-		line := fmt.Sprintf("%s  %d  %-7s  %s  [%s]  %dms", stamp, z.Status, z.Method, z.Path, z.Backend, z.Ms)
-		if err != "" {
-			line += "  错误: " + err
+		line := fmt.Sprintf("%s   HTTP %-3d   %-10s   %s", stamp, z.Status, z.Backend, z.Path)
+		if z.Error != "" {
+			errText := []rune(z.Error)
+			if len(errText) > 130 {
+				errText = errText[:130]
+			}
+			line += "\r\n    原因：" + string(errText)
 		}
 		lines = append(lines, line)
 	}
-	statusRaw, statusErr := v.request("GET", "/api/status")
-	providerStates := map[string]string{}
-	if statusErr == nil {
-		var parsed struct {
+	states := map[string]string{}
+	if raw, err := v.request("GET", "/api/status"); err == nil {
+		var result struct {
 			Processes map[string]string `json:"processes"`
 		}
-		_ = json.Unmarshal(statusRaw, &parsed)
-		providerStates = parsed.Processes
-	}
-	var ss []string
-	for _, p := range providers {
-		state := providerStates["setup:"+p.ID]
-		if state == "" {
-			state = providerStates[p.ID]
+		if json.Unmarshal(raw, &result) == nil {
+			for _, p := range providers {
+				value := result.Processes["setup:"+p.ID]
+				if value == "" {
+					value = result.Processes[p.ID]
+				}
+				states[p.ID] = value
+			}
 		}
-		if state == "" {
-			state = "未接入"
-		}
-		if len([]rune(state)) > 24 {
-			state = string([]rune(state)[:24]) + "…"
-		}
-		ss = append(ss, p.Label+"  ·  "+state)
 	}
 	v.mu.Lock()
+	selected := v.selected
+	pull := selected != "" && (v.modelFor != selected || time.Since(v.modelPull) > 20*time.Second)
+	if pull {
+		v.modelFor = selected
+		v.modelPull = time.Now()
+	}
+	v.mu.Unlock()
+	var ids []string
+	var modelErr string
+	if pull {
+		ids, modelErr = v.requestModels()
+	}
+	v.mu.Lock()
+	v.states = states
 	if len(lines) == 0 {
-		v.logText = "暂无请求。连接任意客户端后，这里会显示状态码及错误原因。"
+		v.logText = "暂无请求。配置来源并在你的 AI 客户端发送消息后，这里会显示请求及错误。"
 	} else {
 		v.logText = strings.Join(lines, "\r\n")
 	}
-	v.providerSummary = strings.Join(ss, "\n")
+	if pull && v.selected == selected {
+		v.modelIDs = ids
+		v.modelError = modelErr
+	}
 	v.mu.Unlock()
 	pPost.Call(v.hwnd, wmUserUpdate, 0, 0)
 }
+
 func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -448,67 +705,68 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 		defer share.Close()
 		go share.Serve(ln)
 	}
-	c := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", stop: make(chan struct{}), client: &http.Client{Timeout: 12 * time.Second}}
-	desktop = c
+	view := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", selected: "codex", states: map[string]string{}, stop: make(chan struct{}), client: &http.Client{Timeout: 10 * time.Second}}
+	desktop = view
 	hinst, _, _ := pGetModule.Call(0)
-	cl := wz("MIXEDAPINativeWin")
+	cl := wz("MIXEDAPINativeWinGuide")
 	wc := nativeClass{Size: uint32(unsafe.Sizeof(nativeClass{})), WndProc: syscall.NewCallback(nativeCallback), Instance: hinst, Background: 6, ClassName: cl}
 	if result, _, er := pRegister.Call(uintptr(unsafe.Pointer(&wc))); result == 0 {
 		return fmt.Errorf("窗口初始化失败：%w", er)
 	}
-	hwnd, _, e := pCreate.Call(0, uintptr(unsafe.Pointer(cl)), uintptr(unsafe.Pointer(wz("MIXED-API · 本地 AI 聚合器"))), wsOverlapped|wsVisible, 160, 100, 1050, 790, 0, 0, hinst, 0)
+	hwnd, _, er := pCreate.Call(0, uintptr(unsafe.Pointer(cl)), uintptr(unsafe.Pointer(wz("MIXED-API · 一键接入 AI"))), wsOverlapped|wsVisible, 90, 60, 1170, 900, 0, 0, hinst, 0)
 	if hwnd == 0 {
-		return fmt.Errorf("创建窗口失败：%w", e)
+		return fmt.Errorf("创建窗口失败：%w", er)
 	}
-	c.hwnd = hwnd
+	view.hwnd = hwnd
 	fontName := wz("Microsoft YaHei UI")
-	normalSize := int32(-19)
-	titleSize := int32(-28)
-	c.font, _, _ = pCreateFont.Call(uintptr(normalSize), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(fontName)))
-	c.heading, _, _ = pCreateFont.Call(uintptr(titleSize), 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(fontName)))
-	head := createChild("STATIC", "MIXED-API     本地聚合中转站", 1, hwnd, 0)
-	pMove.Call(head, 24, 18, 580, 46, 1)
-	pSend.Call(head, wmSetFont, c.heading, 1)
-	c.apiLabel = createChild("STATIC", "● 服务运行中     地址：http://127.0.0.1:8765/v1\r\n只需一个地址、一个 Key；选择来源即可接入。", 2, hwnd, 0)
-	buttons := []struct {
-		label string
-		id    int
-		x     int
-	}{{"复制地址", 100, 24}, {"复制 Key", 101, 155}, {"检查更新", 102, 286}, {"高级设置（可选）", 103, 418}, {"刷新日志", 104, 629}}
-	for _, b := range buttons {
-		h := createChild("BUTTON", b.label, b.id, hwnd, bsPushButton)
-		pMove.Call(h, uintptr(b.x), 139, uintptr(map[bool]int{true: 176, false: 120}[b.id == 103]), 34, 1)
+	normalSize, titleSize := int32(-19), int32(-29)
+	view.font, _, _ = pCreateFont.Call(uintptr(normalSize), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(fontName)))
+	view.heading, _, _ = pCreateFont.Call(uintptr(titleSize), 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(fontName)))
+	view.header = createChild("STATIC", "MIXED-API      一键接入 · 分步引导", 1, hwnd, 0)
+	pSend.Call(view.header, wmSetFont, view.heading, 1)
+	view.apiLabel = createChild("STATIC", "● 服务已启动     http://127.0.0.1:8765/v1\r\n先选来源 → 按提示完成授权 → 复制 Key 和模型就能用", 2, hwnd, 0)
+	for _, b := range []struct {
+		id   int
+		name string
+	}{{100, "复制 API 地址"}, {101, "复制客户端 Key"}, {102, "检查更新"}, {103, "高级设置"}, {104, "刷新状态"}} {
+		nativeButtons[b.id] = createChild("BUTTON", b.name, b.id, hwnd, bsPushButton)
 	}
+	view.navTitle = createChild("STATIC", "第 1 步   选择要接入的来源", 3, hwnd, 0)
 	for i, p := range providers {
-		c.labels[i] = createChild("STATIC", p.Label+" · 未接入", 300+i, hwnd, 0)
-		c.buttons[i] = createChild("BUTTON", "一键接入", 200+i, hwnd, 0)
+		view.buttons[i] = createChild("BUTTON", p.Label+" · 一键接入", 200+i, hwnd, bsPushButton)
+		view.labels[i] = createChild("STATIC", "未接入", 300+i, hwnd, 0)
 	}
-	c.officialHelp = createChild("STATIC", "仅需官方 Key 时填写 →", 20, hwnd, 0)
-	c.providerChoice = createChild("COMBOBOX", "", 106, hwnd, 0x0003|wsVScroll) // CBS_DROPDOWNLIST
-	for _, label := range []string{"Vertex Express", "OpenCode Zen"} {
-		pSend.Call(c.providerChoice, 0x0143, 0, uintptr(unsafe.Pointer(wz(label))))
-	}
-	pSend.Call(c.providerChoice, 0x014E, 0, 0)
-	c.officialKey = createChild("EDIT", "", 108, hwnd, 0x00000020|0x00800000) // ES_PASSWORD, WS_BORDER
-	c.officialSave = createChild("BUTTON", "保存并接入", 107, hwnd, bsPushButton)
-	title := createChild("STATIC", "请求日志 · 显示接口、状态码及错误原因", 10, hwnd, 0)
-	pMove.Call(title, 24, 403, 800, 24, 1)
-	c.logBox = createChild("EDIT", "暂无请求", 11, hwnd, wsVScroll|esMultiline|esAutoVScroll|esReadOnly|0x00800000) // WS_BORDER
-	c.footer = createChild("STATIC", "● 已启动 · 从上方选择需要的来源；登录授权由你本人完成。", 12, hwnd, 0)
-	c.position()
+	view.guideTitle = createChild("STATIC", "第 2 步   当前来源：Codex", 4, hwnd, 0)
+	pSend.Call(view.guideTitle, wmSetFont, view.heading, 1)
+	view.guideStage = createChild("STATIC", "【尚未接入】点击左侧一键接入，软件负责准备。", 5, hwnd, 0)
+	view.guideText = createChild("EDIT", "", 6, hwnd, wsVScroll|esMultiline|esAutoVScroll|esReadOnly|0x00800000)
+	view.officialHelp = createChild("STATIC", "", 20, hwnd, 0)
+	view.officialKey = createChild("EDIT", "", 108, hwnd, 0x00000020|0x00800000)
+	view.officialSave = createChild("BUTTON", "保存并继续", 107, hwnd, bsPushButton)
+	view.modelLabel = createChild("STATIC", "等待检查模型", 21, hwnd, 0)
+	view.modelChoice = createChild("COMBOBOX", "", 115, hwnd, 0x0003|wsVScroll) // select discovered model
+	view.retryButton = createChild("BUTTON", "重新接入", 109, hwnd, bsPushButton)
+	view.refreshModels = createChild("BUTTON", "检查模型", 110, hwnd, bsPushButton)
+	view.modelButton = createChild("BUTTON", "复制模型 ID", 111, hwnd, bsPushButton)
+	view.authButton = createChild("BUTTON", "打开官方授权", 112, hwnd, bsPushButton)
+	view.logTitle = createChild("STATIC", "第 3 步   请求记录 / 排错（自动刷新；不保存聊天内容）", 10, hwnd, 0)
+	view.logBox = createChild("EDIT", "暂无请求。完成接入后可在下方查看错误。", 11, hwnd, wsVScroll|esMultiline|esAutoVScroll|esReadOnly|0x00800000)
+	view.footer = createChild("STATIC", "先点左侧的一键接入；中间会自动告诉你还需要做什么。", 12, hwnd, 0)
+	view.position()
 	go func() {
-		c.refresh()
-		t := time.NewTicker(2800 * time.Millisecond)
+		view.refresh()
+		t := time.NewTicker(3 * time.Second)
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
-				c.refresh()
-			case <-c.stop:
+				view.refresh()
+			case <-view.stop:
 				return
 			}
 		}
 	}()
+
 	var msg nativeMsg
 	for {
 		rv, _, _ := pGetMsg.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
