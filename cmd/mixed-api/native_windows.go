@@ -250,7 +250,7 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			v.mu.Lock()
 			model := ""
 			idx, _, _ := pSend.Call(v.modelChoice, 0x0147, 0, 0) // CB_GETCURSEL
-			if int(idx) < len(v.modelIDs) {
+			if idx != ^uintptr(0) && int(idx) >= 0 && int(idx) < len(v.modelIDs) {
 				model = v.modelIDs[int(idx)]
 			}
 			if model == "" && len(v.modelIDs) > 0 {
@@ -271,8 +271,10 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 				go v.openLogin(id)
 			} else if id == "vertex" {
 				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://console.cloud.google.com/expressmode").Start()
+			} else if id == "opencode" {
+				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://opencode.ai/zen").Start()
 			} else {
-				v.notify("该来源无软件代办的网页登录：请按照右侧第二步处理。")
+				v.notify("请按右侧第二步完成授权；其他来源无需输入本地服务 Key。")
 			}
 		}
 		return 0
