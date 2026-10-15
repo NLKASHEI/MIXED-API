@@ -13,13 +13,11 @@
 
 ## 首次使用
 
-1. Windows：从 [Releases](https://github.com/NLKASHEI/MIXED-API/releases) 下载 `MIXED-API-Windows-x64.zip`，解压后双击 `Start-MIXED-API.cmd`；**不要关闭命令行窗口**。Android：安装 APK 并点击启动服务。首次启动生成私有管理密码和客户端 Key。
+1. Windows：从 [Releases](https://github.com/NLKASHEI/MIXED-API/releases) 下载 **`MIXED-API-Windows-x64.exe`**，放进自己新建的文件夹中，直接双击，不需要先安装 Go。如果需要给手机分享模型，则下载 ZIP 便携包（内含 `Start-MIXED-API-LAN.cmd`）。Android：安装 APK 并点击启动服务。**运行中的 Windows 命令行窗口不要关闭**。
 2. 打开 `http://127.0.0.1:8765`，填写管理密码。
-3. 下滑到 **「上游管理与配置向导」**，展开你要的来源，按卡片步骤操作。Windows 版提供部分**一键准备环境 / 打开登录窗口 / 启动后端**按钮。安装脚本是用户按按钮后才执行；不会在后台擅自下载程序。
-4. 成功启动并登录上游后，**勾选启用 → 保存配置 → 刷新模型**。测试模型列表是否出现 `来源/模型`；若没出现，先看页面错误。
-5. 在任何支持 OpenAI Chat Completions 的客户端中填写：Base URL `http://127.0.0.1:8765/v1`、API Key 为 MIXED-API **客户端** Key、Model 填从模型列表复制的完整名称。
-
-## 六个来源逐一说明
+3. 点击左侧 **「上游服务」**，找到你要连接的来源，展开 **「从零开始 · 安装、登录、密钥填写指引」**。有些来源可以点击 **「一键安装 / 准备」→「打开登录窗口」→「启动上游」**。不会擅自安装或绕过账号授权。
+4. 成功启动并登录上游后，勾选 **「启用这个来源」** → 点击页面右上角 **「保存所有配置」** → 点左侧 **「聚合模型」** → 点击 **「刷新列表」**。如果出现 `来源/模型` 即成功，否则查看模型列表下的上游错误提示。
+5. 回到 **「总览首页」** 复制统一 URL 和客户端 Key，在任何支持 OpenAI Chat Completions 的客户端中填写：Base URL `http://127.0.0.1:8765/v1`、API Key 为 MIXED-API **客户端** Key、Model 填从模型列表复制的完整名称。
 
 ## 安卓使用 Windows 的全部六路后端（最重要）
 
@@ -34,6 +32,8 @@
 **严格区分三种地址/密钥：**电脑后台 `127.0.0.1:8765`（Admin Key）→ 电脑的 LAN API `电脑IPv4:8766/v1`（电脑客户端 Key）→ 手机本机 API `127.0.0.1:8765/v1`（手机客户端 Key）。
 
 **安全限制：** LAN 端口没有 `/api/config` 或管理后台，不会把 Google Cookie 或登录 Token 作为配置返回；但是 LAN HTTP 本身不加密，只能在可信的家用/私有网络内使用。换 Wi-Fi 或电脑休眠就会断开。公网请使用 VPN，绝不要转发 8766。
+
+## 六个来源逐一说明
 
 ### 1. Vertex2OpenAI（`vertex/`）
 
@@ -108,3 +108,16 @@
 ## 开发和安全
 
 此项目采用“一个公共接口、不同内部适配器”的结构，并按 [mattpocock/skills](https://github.com/mattpocock/skills) 的小步开发、受控接口和测试审查思想组织。参考 `AGENTS.md`、`GLOSSARY.md`、`docs/adr/`、`go test -race ./...`。所有自动执行的源码安装均由用户在本机后台**明确点击触发**，并固定 Git commit；不会自动分享令牌或默认开启公网端口。
+
+## Windows EXE 与 Android APK 的区别（请先看）
+
+| | Windows EXE | Android APK |
+| --- | --- | --- |
+| MIXED-API 网关本身 | 单 EXE 直接运行，自动打开浏览器 | APP 内一键开启，轻量配置页面 |
+| Codex CLI | 可独立调用已登录的 Codex CLI，不依赖酒馆 | 不含 Codex CLI，通常从电脑桥接 |
+| WorkBuddy | 可自动下载安装并启动代理；需已登录官方客户端 | 不含桌面 WorkBuddy，通常从电脑桥接 |
+| AIStudioToAPI | 可准备 Node/Camoufox 环境和辅助启动；首次登录需本人完成 | 不含桌面浏览器环境，通常从电脑桥接 |
+| 其他三个 HTTP 反代 | 连接本机或网络中已启动的 HTTP API | 连接手机能访问的 HTTP API / 电脑桥接 |
+| 后台界面 | 五栏：总览、上游、模型、指引、网络设置 | 精简：本机地址、密钥、上游、模型 |
+
+**一键运行的确切含义：** 双击 `MIXED-API-Windows-x64.exe` 可以直接启动 *MIXED-API 网关*。上游平台是否可用仍取决于对应服务安装、账号授权及可用额度。Windows EXE 不是将六套第三方软件全部静态打包进去。

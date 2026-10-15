@@ -30,6 +30,7 @@ jobs:
           mkdir -p windows
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o windows/MIXED-API.exe ./cmd/mixed-api
           cp Start-MIXED-API.cmd Start-MIXED-API-LAN.cmd README.md windows/
+          cp windows/MIXED-API.exe MIXED-API-Windows-x64.exe
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
@@ -37,11 +38,13 @@ jobs:
               for file in Path('windows').iterdir():
                   z.write(file,file.name)
           PY
-          sha256sum MIXED-API-Windows-x64.zip
+          sha256sum MIXED-API-Windows-x64.exe MIXED-API-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
-          path: MIXED-API-Windows-x64.zip
+          path: |
+            MIXED-API-Windows-x64.zip
+            MIXED-API-Windows-x64.exe
           if-no-files-found: error
 
   windows-native-tests:
@@ -111,15 +114,16 @@ jobs:
         run: |
           set -euo pipefail
           test -s dist/MIXED-API-Windows-x64.zip
+          test -s dist/MIXED-API-Windows-x64.exe
           test -s dist/MIXED-API-Android.apk
           tag="v0.1.0-preview.${GITHUB_RUN_NUMBER}"
           cat > notes.md <<'NOTES'
           MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI、Windows 一键配置助手及 Android→PC 局域网桥接。
 
-          - Windows：下载 `MIXED-API-Windows-x64.zip`，解压，双击 `Start-MIXED-API.cmd`；要给手机分享模型时请显式使用 `Start-MIXED-API-LAN.cmd`。
+          - Windows：直接下载 `MIXED-API-Windows-x64.exe`，双击运行（或者下载 ZIP 便携包）；要给手机分享模型时请显式使用 `Start-MIXED-API-LAN.cmd`。
           - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
           - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
-          - 六个上游默认禁用；后台附带详尽的中文小白向导。
+          - 六个上游默认禁用；全新深蓝桌面 UI，分为概览、上游、模型、指引、设置；Android 使用轻量管理界面。
           - Windows 原生 Codex：无需安装 SillyTavern，可一键安装 Codex CLI、弹出账号授权，直接通过 app-server 对话。
           - Windows WorkBuddy：一键拉取并启动固定源码版本，自动识别已登录的 WorkBuddy 客户端。
           - Windows AIStudioToAPI：一键拉取/安装依赖，弹出 Google 首次登录流程，自动设置 localhost 与随机 API Key。
@@ -130,7 +134,7 @@ jobs:
 
           **注意：Android 为 Debug 签名的预览 APK，云端编译成功不等于手机运行实测通过。**
           NOTES
-          gh release create "$tag" dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Android.apk \
+          gh release create "$tag" dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Windows-x64.exe dist/MIXED-API-Android.apk \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "MIXED-API $tag · Windows + Android" --notes-file notes.md --prerelease
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'

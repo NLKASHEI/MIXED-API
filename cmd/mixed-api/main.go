@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -19,6 +20,13 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "don't open the browser automatically")
 	lan := flag.Bool("lan", false, "opt-in read-only LAN API listener at :8766; never exposes admin panel")
 	flag.Parse()
+	// Double-clicking the EXE should work regardless of the Explorer or shortcut
+	// working directory. Keep the local config next to the portable Windows EXE.
+	if runtime.GOOS == "windows" && *file == "mixed-api.json" {
+		if exe, e := os.Executable(); e == nil {
+			*file = filepath.Join(filepath.Dir(exe), "mixed-api.json")
+		}
+	}
 	cfg, err := gateway.LoadOrCreate(*file)
 	if err != nil {
 		log.Fatal(err)

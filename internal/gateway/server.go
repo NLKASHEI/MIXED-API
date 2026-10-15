@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-//go:embed index.html
+//go:embed index.html assets/hero.webp
 var static embed.FS
 
 const maxBody = 32 << 20
@@ -88,6 +88,18 @@ func APIOnly(next http.Handler) http.Handler {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/assets/hero.webp" && r.Method == http.MethodGet {
+		data, e := static.ReadFile("assets/hero.webp")
+		if e != nil {
+			jsonError(w, http.StatusInternalServerError, "Asset not available")
+			return
+		}
+		w.Header().Set("Content-Type", "image/webp")
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(data)
+		return
+	}
 	if r.URL.Path == "/" && r.Method == "GET" {
 		data, _ := static.ReadFile("index.html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -143,3 +143,25 @@ func TestCannotBindPublicly(t *testing.T) {
 		t.Fatal("allowed public listening by default")
 	}
 }
+
+func TestEmbeddedDesktopUIAndImage(t *testing.T) {
+	s, up := fixture(t, false)
+	defer up.Close()
+	for _, tc := range []struct {
+		path, contentType string
+		contains          string
+	}{
+		{"/", "text/html", "总览首页"},
+		{"/assets/hero.webp", "image/webp", ""},
+	} {
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), tc.contentType) || w.Body.Len() == 0 {
+			t.Fatalf("asset %s failed: status=%d content-type=%q size=%d", tc.path, w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+		}
+		if tc.contains != "" && !strings.Contains(w.Body.String(), tc.contains) {
+			t.Fatalf("asset %s missing expected UI", tc.path)
+		}
+	}
+}

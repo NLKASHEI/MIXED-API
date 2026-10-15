@@ -22,20 +22,20 @@
 
 ### Windows（x64）
 
-1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases) 下载 `MIXED-API-Windows-x64.zip` 并解压。
-2. 双击 `Start-MIXED-API.cmd`。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到当前目录的 `mixed-api.json`。
+1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases) **直接下载 `MIXED-API-Windows-x64.exe`**（无需解压或安装 Go/Node），放进一个单独文件夹，双击启动。可选：下载 ZIP 便携包，内含 EXE 和局域网启动脚本。
+2. 直接双击 `MIXED-API-Windows-x64.exe`（ZIP 用户也可以双击 `Start-MIXED-API.cmd`）。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到 **EXE 所在文件夹**的 `mixed-api.json`。程序会打开浏览器管理后台，命令行窗口请勿关闭。
 3. 打开浏览器 `http://127.0.0.1:8765`，输入控制台显示的 **Admin Key**。
 4. 先根据管理面板指引安装/启动相应上游，再填入上游 `Base URL`、该上游自己的 Key，开启并保存。
 5. 客户端只需填 `http://127.0.0.1:8765/v1` 和 **MIXED-API API Key**，然后选择 `上游ID/原模型名`。
 
-提示：Windows 版为不需要额外安装 Go/Node 的单文件 `MIXED-API.exe`，配一个启动脚本。**一键启动的是聚合网关本身**。需要客户端登录的上游仍需预先配置；可以在管理界面填写 Windows 本机启动命令，由网关启动已安装的后端。
+提示：直接下载的 EXE 无需安装 Go/Node；完整 ZIP 内部的可执行文件名是 `MIXED-API.exe`，另附可选启动脚本。**一键启动的是聚合网关本身**。需要客户端登录的上游仍需预先配置；可以在管理界面填写 Windows 本机启动命令，由网关启动已安装的后端。
 
 ### Android（独立 APK，推荐「电脑桥接」模式）
 
 **重要事实：** Windows Codex CLI / WorkBuddy / Camoufox 没有随 APK 移植到 Android；APK 自己不能运行这些桌面程序。为了让手机像 PC 一样得到**六上游统一模型列表**，本项目新增受限的 LAN API 共享：
 
 1. 电脑安装 Windows 包，在配置后台启用、调通你需要的后端，例如 `codex/gpt-*` 或 `workbuddy/*`。
-2. 电脑退出原来的 MIXED-API，改为双击 **`Start-MIXED-API-LAN.cmd`**。电脑本机后台仍为 `http://127.0.0.1:8765`；另外仅共享 `0.0.0.0:8766` 的 `/v1/*` API 和 `/health`，**拒绝管理页面、`/api/config`、安装或进程控制请求**。
+2. 电脑退出原来的 MIXED-API，**下载 ZIP 便携包**并解压（单独 EXE 附件不包含脚本），改为双击 **`Start-MIXED-API-LAN.cmd`**。电脑本机后台仍为 `http://127.0.0.1:8765`；另外仅共享 `0.0.0.0:8766` 的 `/v1/*` API 和 `/health`，**拒绝管理页面、`/api/config`、安装或进程控制请求**。
 3. 在电脑输入 `ipconfig` 查当前 Wi-Fi/以太网的真实 IPv4，例如 `192.168.1.20`。防火墙仅在**专用网络**放行 TCP 8766。电脑、手机连接同一可信 Wi-Fi，**不能使用 PC 的 `127.0.0.1`**。
 4. 在手机 APK 后台开启 **「电脑 MIXED-API（优先推荐）」**，把上游 URL 设为 `http://192.168.1.20:8766/v1`（换成真实 IP），上游 Key 填**电脑 MIXED-API 的客户端 API Key**，Auth=`bearer`。勾选启用，保存并刷新模型。
 5. 手机的任何第三方客户端仍只需填 `http://127.0.0.1:8765/v1` 和**手机自己生成的客户端 API Key**。手机模型 ID 保持 `codex/gpt-...`、`workbuddy/...` 等，**不会套一层 `pc/`**。电脑关闭、掉线或者离开同一个网络后，就无法使用电脑上的模型。
@@ -93,7 +93,7 @@ go vet ./...
 go run ./cmd/mixed-api -no-browser
 ```
 
-Android project under `android/` (Gradle + Android Java, without Python runtime). CI builds the Windows x64 `.exe` and the Android Debug-signed `.apk` and publishes each successful build as a GitHub **prerelease**; debug signature is for self-use and testing, not Play Store deployment. Device installation/network behavior remains to be tested.
+Android project under `android/` (Gradle + Android Java, without Python runtime). CI 直接把 Windows x64 `.exe`（另附便携 ZIP）和 Android Debug-signed `.apk` 上传到 GitHub **prerelease**; debug signature is for self-use and testing, not Play Store deployment. Device installation/network behavior remains to be tested.
 
 ## 安全和许可
 
