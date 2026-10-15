@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p windows
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o windows/MIXED-API.exe ./cmd/mixed-api
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.${GITHUB_RUN_NUMBER}' -o windows/MIXED-API.exe ./cmd/mixed-api
           cp Start-MIXED-API.cmd Start-MIXED-API-LAN.cmd README.md windows/
           cp windows/MIXED-API.exe MIXED-API-Windows-x64.exe
           python3 - <<'PY'
@@ -62,7 +62,7 @@ jobs:
           go test ./...
           if ($LASTEXITCODE -ne 0) { throw "Windows Go unit tests failed" }
           New-Item -ItemType Directory -Path windows -Force | Out-Null
-          go build -trimpath -ldflags="-s -w" -o "windows/MIXED-API.exe" ./cmd/mixed-api
+          go build -trimpath -ldflags="-s -w -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.$env:GITHUB_RUN_NUMBER" -o "windows/MIXED-API.exe" ./cmd/mixed-api
           if ($LASTEXITCODE -ne 0) { throw "Windows native Go build failed" }
       - name: Build NSIS one-click installer
         shell: pwsh
@@ -74,7 +74,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed" }
           }
           if (!(Test-Path $nsis)) { throw "makensis.exe unavailable" }
-          & $nsis /V3 "packaging/windows/installer.nsi"
+          & $nsis /V3 "/DPRODUCT_VERSION=0.2.$env:GITHUB_RUN_NUMBER" "packaging/windows/installer.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS installer compile failed" }
           if (!(Test-Path "MIXED-API-Windows-x64-Setup.exe")) { throw "Installer output missing" }
           if ((Get-Item "MIXED-API-Windows-x64-Setup.exe").Length -lt 1000000) { throw "Installer unexpectedly small" }
@@ -108,6 +108,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Restore optional persistent Android signing key
+        shell: bash
+        env:
+          APK_DEBUG_KEYSTORE_B64: ${{ secrets.MIXED_API_ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APK_DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$APK_DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+            echo "Persistent Android signing key loaded; compatible upgrades require the same signing key as the installed version."
+          else
+            echo "::warning::ANDROID SIGNING: no persistent keystore secret; APK debug signing may change between cloud builds, so upgrades can fail with signature mismatch. Configure the secret before promising in-place upgrades."
+          fi
       - name: Build APK
         run: |
           gradle -p android --no-daemon :app:assembleDebug --stacktrace
@@ -149,7 +164,8 @@ jobs:
           - Windows 单文件：`MIXED-API-Windows-x64.exe`，不需要安装，独立运行网关。
           - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
           - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
-          - 六个上游默认禁用；全新深蓝桌面 UI，分为概览、上游、模型、指引、设置；Android 使用轻量管理界面。
+          - 首次选择来源→「一键接入」：Windows 自动下载安装依赖、生成本地密钥、配置、启用及启动；仅用户本人完成必须的官方账号授权；安装运行时可能需要重启 MIXED-API。
+          - Windows 永久「检查更新」入口：从 GitHub 最新正式版检查版本；需要时校验 SHA-256 并启动 Setup.exe 安装向导；不会未经确认静默升级。Android 在 APP 首页和管理页均可打开永久 Latest 地址。
           - Windows 原生 Codex：无需安装 SillyTavern，可一键安装 Codex CLI、弹出账号授权，直接通过 app-server 对话。
           - Windows WorkBuddy：一键拉取并启动固定源码版本，自动识别已登录的 WorkBuddy 客户端。
           - Windows AIStudioToAPI：一键拉取/安装依赖，弹出 Google 首次登录流程，自动设置 localhost 与随机 API Key。
@@ -158,7 +174,7 @@ jobs:
           - 保姆级配置指南：https://github.com/NLKASHEI/MIXED-API/blob/main/docs/quickstart-zh.md
           - 请遵守上游许可证和服务条款。
 
-          **注意：这是功能预览版软件（作为 GitHub 普通 Release 发布以方便下载），未做所有上游的真实账号端到端实测。Android 为 Debug 签名 APK，Windows 安装器和 EXE 未代码签名。安装器只打包 MIXED-API 网关，不捆绑第三方上游客户端。**
+          **注意：六路真实账号端到端尚未全面验证。Android 默认 Debug 签名；不同云端构建的签名可能变化，除非配置持久签名密钥（GitHub Secrets: MIXED_API_ANDROID_DEBUG_KEYSTORE_B64），否则可能无法覆盖安装旧版。Windows 安装器和 EXE 尚未代码签名。安装器只打包 MIXED-API 网关；首次使用时由软件按需下载独立上游，不捆绑第三方客户端。**
           NOTES
           gh release create "$tag" dist/MIXED-API-Windows-x64-Setup.exe dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Windows-x64.exe dist/MIXED-API-Android.apk \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \

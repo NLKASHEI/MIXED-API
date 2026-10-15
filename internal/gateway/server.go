@@ -352,6 +352,19 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		s.cfg = next
 		s.mu.Unlock()
 		jsonResult(w, 200, map[string]bool{"saved": true})
+	case r.URL.Path == "/api/update" && r.Method == "GET":
+		info, err := s.updateInfo(r.Context())
+		if err != nil {
+			jsonError(w, http.StatusBadGateway, "无法检查更新："+err.Error())
+			return
+		}
+		jsonResult(w, 200, info)
+	case r.URL.Path == "/api/update/install" && r.Method == "POST":
+		if err := s.downloadAndOpenUpdate(); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		jsonResult(w, 202, map[string]any{"ok": true, "message": "正在下载并校验安装包，请在更新页面查看进度"})
 	case r.URL.Path == "/api/assist/status" && r.Method == "GET":
 		jsonResult(w, 200, s.assistStatus())
 	case strings.HasPrefix(r.URL.Path, "/api/assist/") && r.Method == "POST":
@@ -363,6 +376,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		}
 		var err error
 		switch action {
+		case "quickstart":
+			err = s.quickstartBackend(id)
 		case "install":
 			err = s.setupBackend(id)
 		case "launch":

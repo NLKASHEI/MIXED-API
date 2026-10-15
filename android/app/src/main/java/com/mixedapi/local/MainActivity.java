@@ -30,6 +30,7 @@ public final class MainActivity extends Activity {
         button("📋 复制统一 API 地址",v->copy("API Base URL","http://127.0.0.1:8765/v1"));
         button("🔑 复制客户端 API Key",v->{try{JSONObject c=BridgeConfig.load(this);copy("MIXED-API Key",c.getString("api_key"));}catch(Exception e){info.setText(e.toString());}});
         button("🛡 复制管理后台 Admin Key",v->{try{JSONObject c=BridgeConfig.load(this);copy("Admin Key",c.getString("admin_key"));}catch(Exception e){info.setText(e.toString());}});
+        button("↻ 检查更新 / 下载最新版 APK",v->{Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/NLKASHEI/MIXED-API/releases/latest"));startActivity(i);});
         button("■ 停止本地代理",v->{stopService(new Intent(this,BridgeService.class));info.setText("已停止本地代理");});
         try{BridgeConfig.load(this);}catch(Exception e){info.setText("配置初始化失败："+e);}
     }

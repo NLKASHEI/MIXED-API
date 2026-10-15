@@ -3,7 +3,9 @@
 Unicode true
 !include "MUI2.nsh"
 !define PRODUCT_NAME "MIXED-API"
-!define PRODUCT_VERSION "0.2.0"
+!ifndef PRODUCT_VERSION
+  !define PRODUCT_VERSION "0.2.0"
+!endif
 
 Name "${PRODUCT_NAME}"
 OutFile "..\..\MIXED-API-Windows-x64-Setup.exe"
@@ -13,10 +15,10 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
-VIProductVersion "0.2.0.0"
+VIProductVersion "${PRODUCT_VERSION}.0"
 VIAddVersionKey "ProductName" "MIXED-API"
 VIAddVersionKey "FileDescription" "MIXED-API one-click installer"
-VIAddVersionKey "FileVersion" "0.2.0"
+VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
 
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\MIXED-API.exe"

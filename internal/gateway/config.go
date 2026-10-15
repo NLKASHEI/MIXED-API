@@ -14,15 +14,16 @@ import (
 )
 
 type Backend struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind,omitempty"`
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Key     string `json:"key,omitempty"`
-	Auth    string `json:"auth"`
-	Enabled bool   `json:"enabled"`
-	Command string `json:"command,omitempty"`
-	Workdir string `json:"workdir,omitempty"`
+	ID          string `json:"id"`
+	Kind        string `json:"kind,omitempty"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Key         string `json:"key,omitempty"`
+	ProviderKey string `json:"provider_key,omitempty"`
+	Auth        string `json:"auth"`
+	Enabled     bool   `json:"enabled"`
+	Command     string `json:"command,omitempty"`
+	Workdir     string `json:"workdir,omitempty"`
 }
 type Config struct {
 	Listen   string    `json:"listen"`

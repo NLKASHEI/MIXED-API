@@ -1,131 +1,43 @@
-# MIXED-API 零基础使用指南：六个来源，一个 URL + 一个 Key
+# MIXED-API · 零基础一步到位指南
 
-> 本文同时内置在控制台中，随软件版本一起维护。MIXED-API 是个人本机的 **API 聚合器**，不是六家服务的免授权替代品。你只需配置自己想用的来源，不需要六个全部安装。
+你不需要自己去六个项目里下载程序、解压 ZIP、改 JSON、填写自己刚生成的本地 Key。**基础配置由 MIXED-API 执行，账号授权才需要你自己操作。**
 
-## 一分钟确认概念
+## 第一次启动
 
-- **MIXED-API**：本机统一服务。浏览器访问 `http://127.0.0.1:8765`；客户端 Base URL `http://127.0.0.1:8765/v1`。
-- **Admin Key**：只用来登录 MIXED-API 管理后台。第一次启动在 Windows 的黑色命令行里显示，也保存于软件目录的 `mixed-api.json`。不需要把它给聊天软件。
-- **Client API Key**：打开后台后可复制，**这才是**你填给任何 OpenAI 兼容客户端的密钥。
-- **上游 API Key**：某个单独代理发给 MIXED-API 的密钥，只填该来源卡片，不等于 ChatGPT 登录密码，也不等于 MIXED-API 的 Client Key。
-- **模型 ID**：形如 `codex/gpt-...`、`aistudio/gemini-...`。`/v1/models` 显示**实际上能读取到的模型**，没有启用的来源不会出现。
-- **`127.0.0.1`**：永远指运行当前软件的**那一台设备**。手机不能用 `127.0.0.1` 去连接电脑上的服务。MIXED-API 默认只允许本机访问，不自动开启局域网共享。
+1. 打开 [最新正式版（永久地址）](https://github.com/NLKASHEI/MIXED-API/releases/latest)，Windows 用户下载 `MIXED-API-Windows-x64-Setup.exe`；不想安装的下载免安装 ZIP。Android 下载 APK。
+2. Windows 双击打开软件，自动打开 `http://127.0.0.1:8765`。从首次窗口复制 Admin Key 登录后台。此 Key 和客户端 API Key 不同。
+3. 左侧点 **「上游服务」**，选一个来源，点击醒目的 **「▶ 一键接入（自动配置 + 启动）」**，剩下的下载、随机本地 Key、配置文件、启用及启动都会由 MIXED-API 完成。想用哪个开哪个，不必全部开启。
+4. 如果提示需要 ChatGPT、Google 或 WorkBuddy 官方登录，按照页面提示在官方授权窗口**本人确认一次**。已有效登录可直接复用；账号限制、模型权限与上游计费仍生效。
+5. 左侧点 **「聚合模型」** → 刷新，复制一个真实显示的模型 ID，例如 `codex/gpt-...`。你的任何 OpenAI 兼容客户端只需填写 **Base URL `http://127.0.0.1:8765/v1` + MIXED-API 客户端 Key + 这个完整模型 ID**。
 
-## 首次使用
+### 六个来源各自还需要什么
 
-1. Windows：从 [Releases 最新版本](https://github.com/NLKASHEI/MIXED-API/releases/latest) 下载 **`MIXED-API-Windows-x64-Setup.exe`**，双击按中文向导安装，安装后从桌面/开始菜单启动。若不想安装软件，则下载 **`MIXED-API-Windows-x64.zip`**，解压并双击 `Start-MIXED-API.cmd`；也可以只下载单个独立 EXE。安装版卸载保留 `mixed-api.json` 中的密钥和配置。想让手机访问电脑的上游时，请运行 ZIP 包里的 LAN 脚本，或者从安装版开始菜单选择「局域网模式」。Android：安装 APK 并点击启动服务。**运行中的 Windows 命令行窗口不要关闭**。
-2. 打开 `http://127.0.0.1:8765`，填写管理密码。
-3. 点击左侧 **「上游服务」**，找到你要连接的来源，展开 **「从零开始 · 安装、登录、密钥填写指引」**。有些来源可以点击 **「一键安装 / 准备」→「打开登录窗口」→「启动上游」**。不会擅自安装或绕过账号授权。
-4. 成功启动并登录上游后，勾选 **「启用这个来源」** → 点击页面右上角 **「保存所有配置」** → 点左侧 **「聚合模型」** → 点击 **「刷新列表」**。如果出现 `来源/模型` 即成功，否则查看模型列表下的上游错误提示。
-5. 回到 **「总览首页」** 复制统一 URL 和客户端 Key，在任何支持 OpenAI Chat Completions 的客户端中填写：Base URL `http://127.0.0.1:8765/v1`、API Key 为 MIXED-API **客户端** Key、Model 填从模型列表复制的完整名称。
-
-## 安卓使用 Windows 的全部六路后端（最重要）
-
-这里是之前漏掉的关键架构：**电脑为后端宿主机，手机为前端网关。** 安卓 APK 不会、也无法直接启动 Windows Codex/WorkBuddy/Camoufox；现在提供电脑的 **API-only LAN 端口** 做桥接。
-
-1. **电脑：**先让 Windows MIXED-API 后台中的 Codex、WorkBuddy 等上游可用，刷新出真实模型。然后关闭旧启动窗口：**安装版**从开始菜单打开「MIXED-API → 局域网模式」，**免安装 ZIP** 则双击 `Start-MIXED-API-LAN.cmd`。
-2. **电脑：**打开 `http://127.0.0.1:8765`，复制 **客户端 API Key**。千万别复制 Admin Key。
-3. **电脑：**运行 `ipconfig`，找到联网网卡 IPv4，比如 `192.168.1.20`；防火墙仅允许 **专用网络** TCP 8766 入站。不要给端口做公网映射。
-4. **手机：**安装新版 MIXED-API APK，启动并进入管理后台，打开 **「电脑 MIXED-API」** 卡片。填地址 `http://192.168.1.20:8766/v1`（改成电脑真实 IP），**上游 Key** 填第 2 步的电脑客户端 Key，方式选 `bearer`，勾选启用、保存。
-5. **手机：**刷新模型，应显示 `codex/gpt-...`、`workbuddy/...`、`aistudio/...` 等，不会多一个 `pc/`。在手机上的任何 OpenAI 兼容客户端填手机本地 `http://127.0.0.1:8765/v1`，Key 则复制**手机自己的客户端 Key**。
-
-**严格区分三种地址/密钥：**电脑后台 `127.0.0.1:8765`（Admin Key）→ 电脑的 LAN API `电脑IPv4:8766/v1`（电脑客户端 Key）→ 手机本机 API `127.0.0.1:8765/v1`（手机客户端 Key）。
-
-**安全限制：** LAN 端口没有 `/api/config` 或管理后台，不会把 Google Cookie 或登录 Token 作为配置返回；但是 LAN HTTP 本身不加密，只能在可信的家用/私有网络内使用。换 Wi-Fi 或电脑休眠就会断开。公网请使用 VPN，绝不要转发 8766。
-
-## 六个来源逐一说明
-
-### 1. Vertex2OpenAI（`vertex/`）
-
-**官网**：<https://github.com/bad-woman/vertex2openai>；Google Express 申请入口：<https://console.cloud.google.com/expressmode>。
-
-- 申请 Google Agent Platform/Vertex AI Express Mode Key，按官方页面启用项目权限和计费。**Express Key 是 Google 凭证**；不是中转站 Key。
-- 安装运行原仓库（例如按其官方 Docker Compose，通常 API `http://127.0.0.1:8050/v1`，后台 `http://127.0.0.1:8050`）。
-- 登录原项目后台，在「通道与凭证」填 Express Key；可选 Cookie + Project ID 模式需要自行提供 Google Cloud 有效会话，属于非公开接口，稳定性和账号风险不同。
-- 回到 MIXED-API：URL 设 `http://127.0.0.1:8050/v1`，上游 Key 填 **Vertex2OpenAI 的 API_KEY**，Auth 选 `bearer`。
-
-### 2. 独立 Codex CLI（`codex/`）—— 不用装 SillyTavern
-
-**官方项目**：<https://github.com/openai/codex>；Node.js：<https://nodejs.org/>。
-
-- 在 Windows 电脑安装 Node.js LTS，回到 MIXED-API 的 Codex 卡片，点「一键准备/安装」。等几分钟，点「检查安装状态」。等价于 `npm install -g @openai/codex@latest`。
-- 点「打开账号授权窗口」（等价于 `codex login`），按官方流程登录 ChatGPT 账户。**需要你手动授权一次**；不会获取、展示、导出或保存 OAuth Token 到 MIXED-API 配置文件。
-- 确认该卡片使用 `codex_cli` 内置模式。无需填写 URL 和上游 Key。启用并保存，刷新模型。MIXED-API 直接与官方 CLI 的本机 `app-server` 通信，不需任何酒馆服务器。
-- 此适配器只接受 ChatGPT 订阅登录，不会自动使用 `OPENAI_API_KEY` 付费；在代码层禁止执行工具/MCP，防止任意客户端误触工作站命令。注意第三方应用使用订阅额度的授权限制；不承诺任何场景都没有风控风险。
-- **Android APK** 不打包桌面 Codex CLI，暂时只能连接自行部署的 HTTP 兼容服务，不能把桌面 Codex 直接运行在 APK 内。
-
-### 3. OpenCode Zen / Go (`opencode/`)
-
-**上游项目**：<https://github.com/jasonxu114514/opencode2api>；OpenCode：<https://opencode.ai/>。
-
-- 下载原项目 Windows Release 或按官方文档自行编译，复制 `config.example.json` 为 `config.json`。
-- 在配置中设置真正的 `zen_keys` / `go_keys`，或者明确启用原项目支持的 `anonymous:true`（是否可用以原项目为准）。
-- 一定要修改 `server_keys` 和 WebUI 管理密码。`zen_keys` ≠ `server_keys`。
-- 用 `opencode2api.exe -config config.json` 启动。默认接口 `http://127.0.0.1:8080/v1`，管理页 `http://127.0.0.1:8081`。
-- MIXED-API 上游 Key 填 `server_keys` 的一项，Auth 选 `bearer`；启用并保存。
-
-### 4. WorkBuddy Proxy (`workbuddy/`)
-
-**中转项目**：<https://github.com/sitingge/workboddy-proxy>；WorkBuddy 官方入口 <https://copilot.tencent.com/> / <https://www.workbuddy.ai/>。
-
-- **先在 Windows 安装并登录 WorkBuddy/WorkBuddy AI 桌面客户端**。已经登录就不用重新登录。
-- 电脑上有 Node.js LTS 和 Git 后，点击 MIXED-API WorkBuddy 卡片「一键准备环境」：在用户配置目录下载作者的**固定源码版本**；然后点「启动上游后端」。不用自己找 CLI 所在目录，原项目会自动识别。
-- 原代理管理面板 `http://127.0.0.1:8790`，API URL `http://127.0.0.1:8790/v1`。看到账号和模型列表才算连接成功。
-- WorkBuddy 代理默认本机无上游 Key：MIXED-API 选择 Auth `none`，留空上游 Key。如果你已在原代理设置了 Key，再用 `bearer` 并填写。
-- 如果原桌面客户端没有登录，MIXED-API 不能替它绕过认证；请打开正版客户端登录。
-
-### 5. APS2api (`aps/`)
-
-**项目与下载**：<https://github.com/DeconstructedCube/APS2api>；[原作者的部署指南](https://github.com/DeconstructedCube/APS2api/blob/master/%E9%83%A8%E7%BD%B2%E6%8C%87%E5%8D%97.md)。
-
-- 下载与你平台匹配的 Release，解压按原项目脚本启动，首次运行须阅读并同意其规则。
-- 打开 `http://127.0.0.1:2156/admin/`，用其首次生成的管理员密码登录；到「密钥」页面创建 `sk-` 开头的**本地** API Key。
-- MIXED-API 的 URL `http://127.0.0.1:2156/v1`、上游 Key 用刚生成的 `sk-`、Auth `bearer`。
-- 该项目有**PolyForm Noncommercial** 许可，依赖的非公开/匿名 Google 端点也可能变化；MIXED-API 没有打包或修改它。
-
-### 6. AIStudioToAPI (`aistudio/`)
-
-**上游项目**：<https://github.com/iBUHub/AIStudioToAPI>；Google AI Studio：<https://aistudio.google.com/>。
-
-- Windows 上安装 Node.js LTS 与 Git。点「一键准备环境」：MIXED-API 自动下载**固定**源码版本并执行 npm install。
-- 点「打开账号授权窗口」：原项目执行 `npm run setup-auth`，准备 Camoufox 浏览器和 Google AI Studio 登录会话。**至少第一次需要自己完成 Google 登录**，或者已在上游相应目录内拥有有效 `configs/auth`。MIXED-API 不收集你的 Google 密码、Cookie、TOTP 码，也不尝试绕过 Google 身份认证。
-- 点「启动上游后端」，等价于 `npm start`。后台和接口默认 `http://127.0.0.1:7860`、`http://127.0.0.1:7860/v1`。
-- 一键准备环境时 MIXED-API 会强制写入 `HOST=127.0.0.1`，生成**随机** `API_KEYS` 并自动填到本地上游配置，以避免原项目对局域网公开已知默认密钥。**请安装完成后刷新管理后台**，确认 Key 字段保存成功，再启用。
-- 原项目代码按 **CC BY-NC 4.0 非商业许可**分发，本工具不会合并其源码。**不想登录网页**则不要选 Build App 浏览器代理，可使用前面的 Vertex Express Key 途径；那是另一种授权渠道，不能混为一谈。
-
-## 常见问题
-
-**“刷新模型显示 0 个模型”**：来源是否启用并保存？原服务后台本身能打开吗？原项目是否已成功登录？MIXED-API 的 URL 应填到 `/v1`，不要写成 `/v1/models`；上游 Key 和 MIXED-API 的 Client Key 不一样。
-
-**“127.0.0.1 连接不上另一台设备”**：这是预期行为。新版 Windows 的显式 LAN 启动脚本提供只带 API 的 8766 端口；从手机连接时使用电脑真实 IPv4，例如 `192.168.1.20:8766`，绝不能填 `127.0.0.1:8766`。
-
-**“Codex 没显示模型”**：先在 Windows PowerShell 运行 `codex --version`、`codex login status`。升级 `npm install -g @openai/codex@latest`。如果 Codex 配置带有 MCP 或第三方 Base URL，本项目会拒绝，以免泄露凭证或在角色对话中运行工具。
-
-**“我能一键免 Google/WorkBuddy 登录吗？”**：不能。MIXED-API 能做的是安装依赖、启动已有客户端/浏览器授权流程、复用由原上游安全保存的有效会话；真正账号认证无法也不应跳过。
-
-**“Windows 和 Android 都能独立运行六套服务吗？”**：目前不行。**两端都能运行 MIXED-API 网关**；Windows 可自行启动三种助手（Codex、WorkBuddy、AIStudio）；Android 只能通过 HTTP 访问其运行环境能到达的上游，不能原生运行 WorkBuddy 桌面客户端或 Camoufox。
-
-## 开发和安全
-
-此项目采用“一个公共接口、不同内部适配器”的结构，并按 [mattpocock/skills](https://github.com/mattpocock/skills) 的小步开发、受控接口和测试审查思想组织。参考 `AGENTS.md`、`GLOSSARY.md`、`docs/adr/`、`go test -race ./...`。所有自动执行的源码安装均由用户在本机后台**明确点击触发**，并固定 Git commit；不会自动分享令牌或默认开启公网端口。
-
-## Windows EXE 与 Android APK 的区别（请先看）
-
-| | Windows EXE | Android APK |
+| 来源 | 自动完成 | 需要本人提供 |
 | --- | --- | --- |
-| MIXED-API 网关本身 | 单 EXE 直接运行，自动打开浏览器 | APP 内一键开启，轻量配置页面 |
-| Codex CLI | 可独立调用已登录的 Codex CLI，不依赖酒馆 | 不含 Codex CLI，通常从电脑桥接 |
-| WorkBuddy | 可自动下载安装并启动代理；需已登录官方客户端 | 不含桌面 WorkBuddy，通常从电脑桥接 |
-| AIStudioToAPI | 可准备 Node/Camoufox 环境和辅助启动；首次登录需本人完成 | 不含桌面浏览器环境，通常从电脑桥接 |
-| 其他三个 HTTP 反代 | 连接本机或网络中已启动的 HTTP API | 连接手机能访问的 HTTP API / 电脑桥接 |
-| 后台界面 | 五栏：总览、上游、模型、指引、网络设置 | 精简：本机地址、密钥、上游、模型 |
+| Codex | 安装 CLI、直连 app-server，无须 SillyTavern | 官方 ChatGPT 首次登录 |
+| Vertex2OpenAI | Python 运行环境中的虚拟环境、启动、网关随机 Key | Google Express API Key 或上游合法认证 |
+| OpenCode | 安装官方已编译版、配置本地 Key、启动 | 可选 Zen API Key；匿名访问不能保证 |
+| WorkBuddy | 下载中转并自动发现桌面客户端 | 官方 WorkBuddy 桌面客户端及登录 |
+| APS2api | 下载已编译版、配置本地 Key、启动 | 首次阅读并同意相关规则（非商业授权） |
+| AIStudioToAPI | 安装 Node 依赖、配置随机 Key/本地端口、启动 | 在官方网页一次 Google 登录，已保存的有效会话可复用 |
 
-**一键运行的确切含义：** 双击 `MIXED-API-Windows-x64.exe` 可以直接启动 *MIXED-API 网关*。上游平台是否可用仍取决于对应服务安装、账号授权及可用额度。Windows EXE 不是将六套第三方软件全部静态打包进去。
+如果缺 Node.js/Python，按 **「一键接入」** 会尝试调用 Windows winget 安装官方运行时。Windows 已运行进程可能不能立即发现新 PATH，**安装完重启 MIXED-API，再点同一个按钮**，无需自己输入命令。
 
-## Windows 一键安装包与便携版的区别
+**上游项目页面仅用于查看开源许可证/高级配置，不是基本安装流程。** 不会收集或自动导出你的 Google Cookie、ChatGPT OAuth Token、账号密码。无法保证非公开接口和第三方反代长期可用。
 
-**Setup.exe 是真正的 NSIS 用户级安装程序**：默认目录 `%LOCALAPPDATA%\\MIXED-API`，安装后自动生成开始菜单及桌面入口，并在「已安装的应用」提供卸载功能。无需管理员权限。升级相同目录时保留 `mixed-api.json`（包含客户端 Key、管理员 Key、上游配置）；卸载也保留该文件，以免丢失凭证。若希望完全清除私人数据，请先关闭 MIXED-API，再手动删除 `%LOCALAPPDATA%\\MIXED-API\\mixed-api.json`。
+## 永久更新
 
-**ZIP 是绿色免安装包**：解压到你希望长期保存的文件夹。配置 `mixed-api.json` 保存在 exe 同一目录；删除整个文件夹就会一并删除配置。**单文件 EXE** 与 ZIP 内的 exe 运行的是同一个网关，仅缺少启动脚本。
+桌面左侧 **「检查更新」** 始终存在；还可以直接访问 **https://github.com/NLKASHEI/MIXED-API/releases/latest**，不会因新版本改 tag 而失效。Windows 点「检查更新」→「下载并打开安装向导」，软件会验证官方附件的 SHA-256；由你确认安装，必要时关闭正在运行的旧进程。已有 `mixed-api.json` 默认不会被删除。Android APP 首页及管理页面有 **「检查更新 / 下载最新版 APK」**，系统要求本人确认安装。
 
-三者都不会自动替你安装所有六家上游的软件或绕过登录流程。打开 Windows 本地网页后台 `http://127.0.0.1:8765` 按上游向导操作即可。
+**Android 当前使用调试签名：** 如果新版 APK 与旧版签名不同，系统将拒绝覆盖安装；此时不要直接卸载以免丢数据。维护者应配置 GitHub Secrets 中的 `MIXED_API_ANDROID_DEBUG_KEYSTORE_B64`，让以后的 Android 构建共用私有签名密钥。你看到按钮不代表我们已经解决了旧版跨签名升级问题。
+
+## Android 使用电脑的模型
+
+Windows 在开始菜单打开「MIXED-API → 局域网模式」（绿色版运行 `Start-MIXED-API-LAN.cmd`）。从电脑运行 `ipconfig` 读取真实局域网 IPv4，并只在可信专用网络开放 8766。手机和电脑连接同一 Wi-Fi；手机 MIXED-API 后台启用 **「电脑 MIXED-API」**，填 `http://电脑IPv4:8766/v1` 和**电脑的客户端 Key**，保存即可。手机上的其他 AI 客户端仍使用 **手机本地** `http://127.0.0.1:8765/v1` + **手机自己的客户端 Key**，模型名保持 `codex/...` 等不额外加前缀。
+
+手机 APK 不能原生运行桌面 Codex CLI、WorkBuddy 客户端和 Camoufox。电脑关机或断网，其模型就不可用。禁止把未加密的 8766 直接映射公网。
+
+## 如果一键接入仍然失败
+
+请在对应卡片点击「检查状态」，查看具体失败原因。配置及运行时都由 MIXED-API 保存到当前用户自己的配置目录；如网络阻断了 GitHub 下载或官方登录不可用，软件不能绕过这些限制。为保护凭证，上游许可证和各平台服务条款始终有效。
+

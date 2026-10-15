@@ -10,6 +10,25 @@ Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览�
 
 本项目只实现一个本地网关，**不复制、捆绑、不尝试绕过上游认证**。上游授权、额度、收费和软件许可证继续生效。
 
+## 软件的“一键接入”与永久更新入口
+
+**Windows：打开「上游服务」，找到来源，直接点击「▶ 一键接入（自动配置 + 启动）」即可。** MIXED-API 会在用户点击后执行固定版本下载、SHA-256 校验（对有官方编译包的来源）、安装所需依赖、自动生成仅用于本机的 Key / 配置、启用来源并启动。只有账号必须本人授权时才额外处理，不要求手工复制 JSON、寻找原项目下载链接或自己填写本机端口。
+
+**桌面左侧「检查更新」是永久入口**，也可以在未登录时打开 [GitHub 最新正式版](https://github.com/NLKASHEI/MIXED-API/releases/latest)。Windows 支持检查最新版本、下载并验证官方 Setup.exe 的 SHA-256、打开安装向导，仍需由用户确认安装（并在更新安装版时退出正在运行的旧进程）；系统不会偷偷升级或丢弃用户的 `mixed-api.json`。
+
+**Android** 的 APP 首页和管理页也有固定更新入口，但 Android 的 APK 安装需要系统用户确认。当前云端 APK 采用 Debug 签名，若两次构建的签名不同，不能覆盖安装旧版；必须在 GitHub Actions 配置持久签名密钥，才可保证之后同签名升级。当前安卓主要提供本地网关和电脑桥接，**不能原生运行 Windows Codex CLI、WorkBuddy、Camoufox**。
+
+| 来源 | 软件能自动做的事 | 用户唯一需要做的授权或输入 |
+| --- | --- | --- |
+| Codex | 安装 CLI、直连 app-server、汇总模型 | 第一次本人登录 ChatGPT 并确认官方授权；无须 SillyTavern |
+| Vertex2OpenAI | 下载固定源码、Python 虚拟环境、代理 Key、启动 | 自己的 Google Express Key 或上游要求的合法认证 |
+| OpenCode | 下载已编译版本、SHA-256 校验、生成服务端 Key / 配置、启动 | 可选 Zen Key；匿名模式是否可用取决于原项目 |
+| WorkBuddy | 下载代理后端并启动、自动寻找已登录的桌面客户端 | 需要已安装并登录官方 WorkBuddy 客户端 |
+| APS2api | 下载已编译版本、SHA-256 校验、本地密钥/管理密码、启动 | 确认许可和使用规则；原项目监听所有网卡，应只在可信网络使用 |
+| AIStudioToAPI | 下载源码、npm 依赖、随机本地 Key 和回环地址、启动 | 首次在 Camoufox 中本人完成 Google AI Studio 网页登录 |
+
+注意：**六路是 Windows 上受软件管理的可选能力，不是六套第三方授权凭证都已获得。** 安装 Node.js / Python 等系统运行时若 Windows 未刷新 PATH，需要重启 MIXED-API 后再次点击一键接入。上游启动不保证账号已经授权或存在模型，最终是否可用以「聚合模型」列表和真实请求为准。
+
 ## Release 下载：安装版 / 免安装版 / Android
 
 在仓库右侧点击 **Releases → Latest**，选择以下附件：
@@ -121,3 +140,7 @@ Android project under `android/` (Gradle + Android Java, without Python runtime)
 - 本仓库只发行**自行编写的网关**，使用上游的公开 HTTP 接口；**不会把原项目源码重新打包分发**。特别注意 OpenCode 的 GPL-3、原 SillyTavern-Subscriptions 的 AGPL-3（本版本不捆绑它的代码）、APS2api 的 PolyForm Noncommercial 和 AIStudioToAPI 的 CC BY-NC 4.0，均有各自分发或使用条件。
 
 开发约定见 [`AGENTS.md`](AGENTS.md)、[`GLOSSARY.md`](GLOSSARY.md)、[`docs/adr/0001-gateway-adapters.md`](docs/adr/0001-gateway-adapters.md)，以模块边界、TDD 和安全审查为中心，参考 [mattpocock/skills](https://github.com/mattpocock/skills) 的工程实践，**没有直接复制其 skills 内容**。
+
+### Android 同签名更新（维护者设置一次）
+
+Android 的 Debug APK 只有**使用与已安装包相同的签名密钥**才能覆盖升级。项目 CI 支持维护者在 GitHub Secrets 中设置 `MIXED_API_ANDROID_DEBUG_KEYSTORE_B64`，其内容是私有 debug.keystore 的 base64；文件必须含 `androiddebugkey` 别名及标准 debug keystore 密码 `android`。**切勿提交 keystore 文件或 base64 到公开仓库。** 首次采用持久签名时，如果以前装的是不同签名的测试包，仍可能需要备份配置后卸载旧版一次；此后保留同一签名才可正常升级。当前未设置 Secret 的构建仅作预览，不能承诺无损覆盖升级。

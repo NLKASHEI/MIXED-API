@@ -7,8 +7,8 @@ android {
         applicationId 'com.mixedapi.local'
         minSdk 26
         targetSdk 33
-        versionCode 1
-        versionName '0.1.0-preview'
+        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName ('0.2.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0') + '-android')
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

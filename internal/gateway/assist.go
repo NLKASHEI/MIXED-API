@@ -43,117 +43,21 @@ func (s *Server) backendState(id, value string) {
 	s.mu.Unlock()
 }
 func (s *Server) setupBackend(id string) error {
+	if _, ok := runtimePackages[id]; ok {
+		return s.installRuntime(id)
+	}
 	if id == "codex" {
 		return s.installCodex()
 	}
-	if runtime.GOOS != "windows" {
-		return errors.New("一键部署当前仅支持 Windows；Android 请连接外部运行的上游")
+	if _, ok := binaryUpstreams[id]; ok {
+		return s.installBinaryBackend(id)
 	}
-	pack, ok := upstreamPackages[id]
-	if !ok {
-		return errors.New("此上游暂未提供自动安装，请打开配置向导")
+	if _, ok := managedSources[id]; ok {
+		return s.installSource(id)
 	}
-	if _, err := exec.LookPath("git"); err != nil {
-		return errors.New("请先安装 Git for Windows，安装后重启 MIXED-API")
-	}
-	if _, err := exec.LookPath("node"); err != nil {
-		return errors.New("请先安装 Node.js LTS，安装后重启 MIXED-API")
-	}
-	if pack.npm {
-		if _, err := exec.LookPath("npm.cmd"); err != nil {
-			return errors.New("缺少 npm.cmd；请重新安装 Node.js LTS")
-		}
-	}
-	dst, err := s.upstreamDir(id)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(filepath.Join(dst, pack.entry)); err == nil {
-		return errors.New("已经安装过：如需重新安装请先备份/检查旧项目；不会覆盖你的登录数据")
-	}
-	s.mu.Lock()
-	if s.status["setup:"+id] == "installing" {
-		s.mu.Unlock()
-		return errors.New("已有安装正在进行")
-	}
-	s.status["setup:"+id] = "installing"
-	s.mu.Unlock()
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-		defer cancel()
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
-			s.backendState(id, "failed: "+err.Error())
-			return
-		}
-		// Fresh folder only; don't mutate existing user's source tree.
-		if _, err := os.Stat(dst); err == nil {
-			s.backendState(id, "failed: 目标目录已存在，请人工检查")
-			return
-		}
-		clone := exec.CommandContext(ctx, "git", "clone", "--no-checkout", "--filter=blob:none", pack.repository, dst)
-		if out, err := clone.CombinedOutput(); err != nil {
-			s.backendState(id, "failed: git clone: "+briefOutput(out, err))
-			return
-		}
-		checkout := exec.CommandContext(ctx, "git", "-C", dst, "checkout", "--detach", pack.revision)
-		if out, err := checkout.CombinedOutput(); err != nil {
-			s.backendState(id, "failed: git checkout: "+briefOutput(out, err))
-			return
-		}
-		if pack.npm {
-			s.backendState(id, "installing npm packages")
-			cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "npm install --no-audit --no-fund")
-			cmd.Dir = dst
-			if out, err := cmd.CombinedOutput(); err != nil {
-				s.backendState(id, "failed: npm install: "+briefOutput(out, err))
-				return
-			}
-		}
-		if id == "aistudio" {
-			// AIStudioToAPI otherwise defaults to a public 0.0.0.0 listener
-			// and a widely-known API key. Force loopback and a fresh secret.
-			key := newKey("sk-mixed-aistudio-")
-			data := []byte("HOST=127.0.0.1\nPORT=7860\nAPI_KEYS=" + key + "\n")
-			if err := os.WriteFile(filepath.Join(dst, ".env"), data, 0600); err != nil {
-				s.backendState(id, "failed: secure .env: "+err.Error())
-				return
-			}
-			s.mu.Lock()
-			next := s.cfg
-			next.Backends = append([]Backend(nil), next.Backends...)
-			for i := range next.Backends {
-				if next.Backends[i].ID == id {
-					next.Backends[i].Key = key
-					next.Backends[i].Auth = "bearer"
-				}
-			}
-			if err := Save(s.path, next); err == nil {
-				s.cfg = next
-			} else {
-				s.mu.Unlock()
-				s.backendState(id, "failed: cannot save API key: "+err.Error())
-				return
-			}
-			s.mu.Unlock()
-		}
-		if id == "workbuddy" {
-			s.mu.Lock()
-			next := s.cfg
-			next.Backends = append([]Backend(nil), next.Backends...)
-			for i := range next.Backends {
-				if next.Backends[i].ID == id && next.Backends[i].Key == "" {
-					next.Backends[i].Auth = "none"
-				}
-			}
-			if Save(s.path, next) == nil {
-				s.cfg = next
-			}
-			s.mu.Unlock()
-		}
-		s.backendState(id, "installed")
-	}()
-	return nil
+	return errors.New("不支持的上游")
 }
+
 func briefOutput(data []byte, err error) string {
 	str := strings.TrimSpace(string(data))
 	if len(str) > 450 {
@@ -165,34 +69,13 @@ func briefOutput(data []byte, err error) string {
 	return strings.ReplaceAll(str, "\n", " ")
 }
 func (s *Server) installedCommand(id string) (*exec.Cmd, error) {
-	p, ok := upstreamPackages[id]
-	if !ok {
-		return nil, errors.New("不支持一键启动")
+	if _, ok := binaryUpstreams[id]; ok {
+		return s.binaryCommand(id)
 	}
-	dst, err := s.upstreamDir(id)
-	if err != nil {
-		return nil, err
+	if _, ok := managedSources[id]; ok {
+		return s.sourceCommand(id)
 	}
-	if _, err := os.Stat(filepath.Join(dst, p.entry)); err != nil {
-		return nil, errors.New("尚未安装：请先点击准备环境")
-	}
-	var cmd *exec.Cmd
-	switch id {
-	case "workbuddy":
-		cmd = exec.Command("node", "wb-relay.js", "--host", "127.0.0.1")
-	case "aistudio":
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("cmd.exe", "/d", "/c", "npm start")
-		} else {
-			cmd = exec.Command("npm", "start")
-		}
-	default:
-		return nil, errors.New("未知后端")
-	}
-	cmd.Dir = dst
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd, nil
+	return nil, errors.New("不支持一键启动")
 }
 func (s *Server) launchInstalled(id string) error {
 	if runtime.GOOS != "windows" {
@@ -201,6 +84,19 @@ func (s *Server) launchInstalled(id string) error {
 	cmd, err := s.installedCommand(id)
 	if err != nil {
 		return err
+	}
+	if id == "opencode" {
+		dir, e := s.binaryDir(id)
+		if e != nil {
+			return e
+		}
+		p, e := findManagedExe(dir, binaryUpstreams[id].executable)
+		if e != nil {
+			return e
+		}
+		if e := syncOpenCodeCredentials(filepath.Dir(p), s.config()); e != nil {
+			return e
+		}
 	}
 	s.mu.Lock()
 	if _, exists := s.children[id]; exists {
@@ -264,10 +160,18 @@ func (s *Server) loginInstalled(id string) error {
 }
 func toolAvailable(tool string) bool { _, err := exec.LookPath(tool); return err == nil }
 func (s *Server) assistStatus() any {
-	info := map[string]any{"platform": runtime.GOOS, "native_codex_supported": runtime.GOOS == "windows", "tools": map[string]bool{"git": toolAvailable("git"), "node": toolAvailable("node"), "codex": toolAvailable("codex"), "npm": toolAvailable("npm")}}
-	for id := range upstreamPackages {
-		if dir, err := s.upstreamDir(id); err == nil {
-			_, err = os.Stat(filepath.Join(dir, upstreamPackages[id].entry))
+	info := map[string]any{"platform": runtime.GOOS, "native_codex_supported": runtime.GOOS == "windows", "tools": map[string]bool{"git": toolAvailable("git"), "node": toolAvailable("node"), "codex": toolAvailable("codex"), "npm": toolAvailable("npm"), "python": toolAvailable("python"), "winget": toolAvailable("winget")}}
+	for id, pack := range binaryUpstreams {
+		dir, err := s.binaryDir(id)
+		if err == nil {
+			_, err = findManagedExe(dir, pack.executable)
+			info[id+"_installed"] = err == nil
+		}
+	}
+	for id, pack := range managedSources {
+		dir, err := s.sourceDir(id)
+		if err == nil {
+			_, err = os.Stat(filepath.Join(dir, pack.readyFile))
 			info[id+"_installed"] = err == nil
 		}
 	}
