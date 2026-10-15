@@ -19,7 +19,7 @@ func TestEmbeddedDesktopConsoleAndAssets(t *testing.T) {
 		t.Fatalf("desktop console unavailable: %d %s", page.Code, page.Header().Get("Content-Type"))
 	}
 	body := page.Body.String()
-	for _, want := range []string{"page-home", "page-providers", "page-models", "page-guide", "page-settings", "从零开始", "AI Studio", "Codex", "WorkBuddy", "APS2api", "OpenCode", "Vertex"} {
+	for _, want := range []string{"page-home", "page-providers", "page-models", "page-guide", "page-settings", "page-update", "一键接入", "检查更新", "AI Studio", "Codex", "WorkBuddy", "APS2api", "OpenCode", "Vertex"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("desktop UI missing %q", want)
 		}
