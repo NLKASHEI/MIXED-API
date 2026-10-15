@@ -44,7 +44,7 @@
 | 上游 ID | 上游项目 | 默认 API URL | 需要先做什么 |
 |---|---|---|---|
 | `vertex` | [vertex2openai](https://github.com/bad-woman/vertex2openai) | `http://127.0.0.1:8050/v1` | Express Key 或 Cookie/Project ID；启动原版服务 |
-| `codex` | [Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern）](https://github.com/LukaTheHero/Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern）) | `http://127.0.0.1:8901/codex/v1` | 在运行 SillyTavern 的电脑安装服务端插件、Codex CLI，并执行 `codex login` |
+| `codex` | [OpenAI 官方 Codex CLI](https://github.com/openai/codex) | **Windows 内置适配器，不使用端口 URL** | 安装 Codex CLI 并执行 `codex login`，无需 SillyTavern 服务端；Android 版仅可连接独立的兼容 HTTP 上游 |
 | `opencode` | [opencode2api](https://github.com/jasonxu114514/opencode2api) | `http://127.0.0.1:8080/v1` | 设置 upstream/本地 server key，启动 Go 版服务 |
 | `workbuddy` | [workboddy-proxy](https://github.com/sitingge/workboddy-proxy) | `http://127.0.0.1:8790/v1` | 安装并登录桌面 WorkBuddy，运行 `node wb-relay.js` |
 | `aps` | [APS2api](https://github.com/DeconstructedCube/APS2api) | `http://127.0.0.1:2156/v1` | 启动程序并在 `/admin/` 建立本地 API Key |
@@ -52,7 +52,7 @@
 
 各上游默认 **禁用**。成功启用并连接后，`GET /v1/models` 汇总其返回的模型，并把模型 ID 加上前缀：`vertex/gemini-...`、`codex/gpt-...`、`aistudio/gemini-...` 等。只凭前缀选择上游，不会跨供应商自动切换，不会进行额度合并和负载均衡。
 
-支持：`GET /v1/models`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/embeddings`、`POST /v1/messages`、`POST /v1/messages/count_tokens`。最后几个接口只在**上游本来支持相应路径**时可用，不会自动转换协议。保留普通和 SSE 流式数据，普通请求会把模型前缀从请求体移除后交给上游。上游响应中模型字段仍可能是未加前缀的原始 ID。
+支持：`GET /v1/models`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/embeddings`、`POST /v1/messages`、`POST /v1/messages/count_tokens`。除 Codex CLI 目前只支持文本 Chat Completions 外，其他接口只在**上游本来支持相应路径**时可用，不会自动转换协议。保留普通和 SSE 流式数据，普通请求会把模型前缀从请求体移除后交给上游。上游响应中模型字段仍可能是未加前缀的原始 ID。
 
 ### 客户端示例
 
@@ -87,6 +87,6 @@ Android project under `android/` (Gradle + Android Java, without Python runtime)
 - 本地随机生成两套密钥：**Client API Key** 只能用 API，**Admin Key** 才可查看和更改包含上游密钥的配置。Desktop 密钥文件权限设为 `0600`；Android 通过私有 SharedPreferences 保存，**没有加密备份/硬件密钥库**。
 - 不要把 Google Cookie、OpenAI 授权 token、WorkBuddy 会话或本地配置文件提交到 GitHub，也不要将这些信息发给不受信任的人。
 - 订阅额度不等同于可供任意软件使用的通用 API。请遵守各自的许可证、服务条款、额度以及授权用途。本项目不保证使用第三方反向代理不触发服务商限制。
-- 本仓库只发行**自行编写的网关**，使用上游的公开 HTTP 接口；**不会把原项目源码重新打包分发**。特别注意 OpenCode 的 GPL-3、Codex CLI（MIXED-API 直连 app-server，不需要 SillyTavern） 的 AGPL-3、APS2api 的 PolyForm Noncommercial 和 AIStudioToAPI 的 CC BY-NC 4.0，均有各自分发或使用条件。
+- 本仓库只发行**自行编写的网关**，使用上游的公开 HTTP 接口；**不会把原项目源码重新打包分发**。特别注意 OpenCode 的 GPL-3、原 SillyTavern-Subscriptions 的 AGPL-3（本版本不捆绑它的代码）、APS2api 的 PolyForm Noncommercial 和 AIStudioToAPI 的 CC BY-NC 4.0，均有各自分发或使用条件。
 
 开发约定见 [`AGENTS.md`](AGENTS.md)、[`GLOSSARY.md`](GLOSSARY.md)、[`docs/adr/0001-gateway-adapters.md`](docs/adr/0001-gateway-adapters.md)，以模块边界、TDD 和安全审查为中心，参考 [mattpocock/skills](https://github.com/mattpocock/skills) 的工程实践，**没有直接复制其 skills 内容**。
