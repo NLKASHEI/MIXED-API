@@ -4,7 +4,7 @@
 
 **六个可配置上游 → 一个 API Base URL + 一个客户端 Key → 自动按模型 ID 分流。**
 
-![MIXED-API Windows 桌面控制台实际页面预览](docs/images/desktop-preview.webp)
+> 注：仓库内早期的深蓝色网页效果图属于旧 UI，新版 Windows 已改用原生系统窗口；不要把旧截图当作当前主界面。
 
 Windows 默认打开原生 Win32 管理窗口，无需浏览器；Android 使用原生应用控制页。旧版网页后台仍保留为高级兼容入口。
 
@@ -12,9 +12,9 @@ Windows 默认打开原生 Win32 管理窗口，无需浏览器；Android 使用
 
 ## 软件的“一键接入”与永久更新入口
 
-**Windows：打开「上游服务」，找到来源，直接点击「▶ 一键接入（自动配置 + 启动）」即可。** MIXED-API 会在用户点击后执行固定版本下载、SHA-256 校验（对有官方编译包的来源）、安装所需依赖、自动生成仅用于本机的 Key / 配置、启用来源并启动。只有账号必须本人授权时才额外处理，不要求手工复制 JSON、寻找原项目下载链接或自己填写本机端口。
+**Windows：打开 EXE 的原生主窗口，直接点击对应来源的「一键接入」即可。** MIXED-API 会在用户点击后执行固定版本下载、SHA-256 校验（对有官方编译包的来源）、安装所需依赖、自动生成仅用于本机的 Key / 配置、启用来源并启动。只有账号必须本人授权时才额外处理，不要求手工复制 JSON、寻找原项目下载链接或自己填写本机端口。
 
-**桌面左侧「检查更新」是永久入口**，也可以在未登录时打开 [GitHub 最新正式版](https://github.com/NLKASHEI/MIXED-API/releases/latest)。Windows 支持检查最新版本、下载并验证官方 Setup.exe 的 SHA-256、打开安装向导，仍需由用户确认安装（并在更新安装版时退出正在运行的旧进程）；系统不会偷偷升级或丢弃用户的 `mixed-api.json`。
+**Windows 原生窗口顶部「检查更新」是永久入口**，也可以在未登录时打开 [GitHub 最新正式版](https://github.com/NLKASHEI/MIXED-API/releases/latest)。Windows 支持检查最新版本、下载并验证官方 Setup.exe 的 SHA-256、打开安装向导，仍需由用户确认安装（并在更新安装版时退出正在运行的旧进程）；系统不会偷偷升级或丢弃用户的 `mixed-api.json`。
 
 **Android** 的 APP 首页和管理页也有固定更新入口，但 Android 的 APK 安装需要系统用户确认。当前云端 APK 采用 Debug 签名，若两次构建的签名不同，不能覆盖安装旧版；必须在 GitHub Actions 配置持久签名密钥，才可保证之后同签名升级。当前安卓主要提供本地网关和电脑桥接，**不能原生运行 Windows Codex CLI、WorkBuddy、Camoufox**。
 
@@ -31,7 +31,7 @@ Windows 默认打开原生 Win32 管理窗口，无需浏览器；Android 使用
 
 ## 全新原生管理窗口：不开浏览器也能直接管理
 
-- **Windows 双击 EXE / 安装版快捷方式**：直接打开原生窗口，顶部复制统一 URL 和客户端 Key，中部六个「一键接入」按钮，底部持续更新 **HTTP 请求状态码、响应时间、后端来源、错误原因**。界面使用较大字号，不用从五级网页导航里找设置。Windows EXE 默认隐藏控制台窗口；要无界面部署，可用命令行 `--no-browser`。
+- **Windows 双击 EXE / 安装版快捷方式**：直接打开原生窗口，顶部复制统一 URL 和客户端 Key，中部六个「一键接入」按钮，以及仅在需要时填写的 Vertex Express / OpenCode Zen 官方 Key 输入区；底部持续更新 **HTTP 请求状态码、响应时间、后端来源、错误原因**。界面使用较大字号，不用从五级网页导航里找设置。Windows EXE 默认隐藏控制台窗口；要无界面部署，可用命令行 `--no-browser`。
 - **Android 直接打开 APK**：原生「启动服务」「复制地址/Key」「连接上游」「检查模型」「实时日志」五个功能区。电脑桥接只需要电脑局域网 URL 和电脑客户端 Key；手机自动保管本地 Key，网页仅是可选的高级入口。
 - **日志安全**：仅在进程内保留有限条请求记录，成功请求不保存正文；失败只截取简短错误提示并做密钥脱敏。管理员接口 `GET /api/logs` 支持读取诊断、`DELETE /api/logs` 清除；同局域网开放的 8766 端口不能查看日志或管理页面。
 - **入口不改变 API**：客户端还是填 `http://127.0.0.1:8765/v1` 和 MIXED-API 客户端 Key。切换 UI 不影响模型名前缀和上游服务设置。首次第三方授权仍由用户本人完成。
@@ -66,10 +66,10 @@ Windows 默认打开原生 Win32 管理窗口，无需浏览器；Android 使用
 ### Windows（x64）
 
 1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases/latest) **优先下载 `MIXED-API-Windows-x64-Setup.exe`**，按向导完成一键安装后点击桌面或开始菜单快捷方式。无需安装 Go。也可下载 ZIP 便携版（含 EXE 和 LAN 启动脚本），或者仅下载单个 EXE。
-2. 安装版从快捷方式启动；ZIP 用户双击 `Start-MIXED-API.cmd`；单文件用户双击 `MIXED-API-Windows-x64.exe`。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到 **EXE 所在文件夹**的 `mixed-api.json`。程序会打开浏览器管理后台，命令行窗口请勿关闭。
-3. EXE 默认自动打开 `http://127.0.0.1:8765`；若没有自动打开，则自己在浏览器访问此地址。输入窗口中显示的 **Admin Key**。Windows SmartScreen 对未签名预览 EXE 可能提出警告，请仅从本仓库 Releases 下载，核实文件后再决定是否运行。
-4. 在左边导航点击**「上游服务」**，先选择一个来源，打开**「从零开始」**向导，按步骤下载/登录/启动，再填写该来源的 `Base URL` 和上游 Key（Windows 原生 Codex 不需要这些字段），最后勾选启用并点击**「保存所有配置」**。
-5. 点击左侧**「聚合模型」**→「刷新列表」。看到模型后点击「复制模型名」，在任意兼容客户端使用 `http://127.0.0.1:8765/v1` 和 **MIXED-API 客户端 API Key**。
+2. 安装版从快捷方式启动；ZIP 用户双击 `Start-MIXED-API.cmd`；单文件用户双击 `MIXED-API-Windows-x64.exe`。**现在直接弹出原生管理窗口，不需要打开浏览器或输入 Admin Key**。客户端 API Key 与 Admin Key 会自动生成并保存在用户配置文件。
+3. EXE 原生窗口里可直接复制统一 API 地址和客户端 Key，点击六个来源的「一键接入」，如有需要在下方粘贴官方 Vertex Express / OpenCode Zen Key。Windows SmartScreen 对未签名预览 EXE 可能提出警告，请仅从本仓库 Releases 下载，核实文件后再决定是否运行。
+4. 原生窗口会自动下载、安装、生成本地 Key 并启动受管来源。ChatGPT / Google AI Studio / WorkBuddy 的首次账号授权需要本人完成。
+5. 配置完成后用任意 OpenAI 兼容客户端读取 `/v1/models`；窗口底部实时显示 API 请求、错误码及原因。在客户端使用 `http://127.0.0.1:8765/v1` 和 **MIXED-API 客户端 API Key**。
 
 提示：直接下载的 EXE 无需安装 Go/Node；完整 ZIP 内部的可执行文件名是 `MIXED-API.exe`，另附可选启动脚本。**一键启动的是聚合网关本身**。需要客户端登录的上游仍需预先配置；可以在管理界面填写 Windows 本机启动命令，由网关启动已安装的后端。
 

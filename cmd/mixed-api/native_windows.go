@@ -36,6 +36,8 @@ var (
 	pDispatch       = user32.NewProc("DispatchMessageW")
 	pSend           = user32.NewProc("SendMessageW")
 	pSetText        = user32.NewProc("SetWindowTextW")
+	pGetText        = user32.NewProc("GetWindowTextW")
+	pGetTextLength  = user32.NewProc("GetWindowTextLengthW")
 	pMove           = user32.NewProc("MoveWindow")
 	pGetRect        = user32.NewProc("GetClientRect")
 	pPost           = user32.NewProc("PostMessageW")
@@ -94,16 +96,17 @@ type nativeMsg struct {
 	Private        uint32
 }
 type nativeView struct {
-	hwnd                                 uintptr
-	key, admin, base                     string
-	buttons                              [6]uintptr
-	labels                               [6]uintptr
-	apiLabel, logBox, footer             uintptr
-	font, heading                        uintptr
-	mu                                   sync.Mutex
-	logText, providerSummary, footerText string
-	client                               *http.Client
-	stop                                 chan struct{}
+	hwnd                                                    uintptr
+	key, admin, base                                        string
+	buttons                                                 [6]uintptr
+	labels                                                  [6]uintptr
+	apiLabel, logBox, footer                                uintptr
+	providerChoice, officialKey, officialHelp, officialSave uintptr
+	font, heading                                           uintptr
+	mu                                                      sync.Mutex
+	logText, providerSummary, footerText                    string
+	client                                                  *http.Client
+	stop                                                    chan struct{}
 }
 
 var desktop *nativeView
@@ -147,7 +150,11 @@ func (v *nativeView) position() {
 		pMove.Call(v.labels[i], uintptr(x), uintptr(y), uintptr(half-132), 36, 1)
 		pMove.Call(v.buttons[i], uintptr(x+half-126), uintptr(y), 124, 36, 1)
 	}
-	pMove.Call(v.logBox, uintptr(margin), 396, uintptr(available), uintptr(max(100, h-485)), 1)
+	pMove.Call(v.officialHelp, uintptr(margin), 344, 330, 30, 1)
+	pMove.Call(v.providerChoice, uintptr(margin+330), 344, 150, 160, 1)
+	pMove.Call(v.officialKey, uintptr(margin+492), 344, uintptr(max(100, available-636)), 33, 1)
+	pMove.Call(v.officialSave, uintptr(margin+available-133), 344, 133, 33, 1)
+	pMove.Call(v.logBox, uintptr(margin), 432, uintptr(available), uintptr(max(90, h-521)), 1)
 	pMove.Call(v.footer, uintptr(margin), uintptr(h-71), uintptr(available), 36, 1)
 }
 func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
@@ -178,6 +185,19 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			go v.connectProvider(providers[id-200].ID)
 		case id == 104:
 			go v.refresh()
+		case id == 107:
+			selection, _, _ := pSend.Call(v.providerChoice, 0x0147, 0, 0)
+			provider := "vertex"
+			if selection == 1 {
+				provider = "opencode"
+			}
+			key := strings.TrimSpace(getNativeText(v.officialKey))
+			go v.saveOfficialKey(provider, key)
+		}
+		return 0
+	case 0x8002:
+		if v != nil {
+			putText(v.officialKey, "")
 		}
 		return 0
 	case wmUserUpdate:
@@ -235,11 +255,17 @@ func copyNative(s string) {
 	pSetClipboard.Call(cfUnicodeText, h)
 }
 func (v *nativeView) request(method, path string) ([]byte, error) {
-	req, e := http.NewRequest(method, "http://127.0.0.1:8765"+path, nil)
+	return v.requestBody(method, path, nil)
+}
+func (v *nativeView) requestBody(method, path string, input []byte) ([]byte, error) {
+	req, e := http.NewRequest(method, "http://127.0.0.1:8765"+path, bytes.NewReader(input))
 	if e != nil {
 		return nil, e
 	}
 	req.Header.Set("Authorization", "Bearer "+v.admin)
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, e := v.client.Do(req)
 	if e != nil {
 		return nil, e
@@ -270,6 +296,58 @@ func (v *nativeView) connectProvider(id string) {
 	v.notify(id + " 正在处理。下方日志会显示真正的请求结果。")
 	time.Sleep(700 * time.Millisecond)
 	v.refresh()
+}
+func getNativeText(h uintptr) string {
+	n, _, _ := pGetTextLength.Call(h)
+	if n == 0 || n > 8192 {
+		return ""
+	}
+	buf := make([]uint16, n+1)
+	pGetText.Call(h, uintptr(unsafe.Pointer(&buf[0])), n+1)
+	return syscall.UTF16ToString(buf)
+}
+func (v *nativeView) saveOfficialKey(id, key string) {
+	if key == "" {
+		v.notify("请先粘贴官方 Express Key / Zen Key。其他来源无需在此填写。")
+		return
+	}
+	body, err := v.request("GET", "/api/config")
+	if err != nil {
+		v.notify("读取配置失败：" + err.Error())
+		return
+	}
+	var cfg gateway.Config
+	if err = json.Unmarshal(body, &cfg); err != nil {
+		v.notify("配置文件解析失败")
+		return
+	}
+	found := false
+	for i := range cfg.Backends {
+		if cfg.Backends[i].ID == id {
+			cfg.Backends[i].ProviderKey = key
+			found = true
+		}
+	}
+	if !found {
+		v.notify("未找到来源 " + id)
+		return
+	}
+	next, err := json.Marshal(cfg)
+	if err != nil {
+		v.notify("配置保存失败")
+		return
+	}
+	_, err = v.requestBody("PUT", "/api/config", next)
+	if err != nil {
+		v.notify("配置保存失败：" + err.Error())
+		return
+	}
+	// Clear the credential entry immediately after saving.
+	pPost.Call(v.hwnd, 0x8002, 0, 0)
+	v.notify("官方凭证已保存。正在重新接入 " + id + "……")
+	_, _ = v.request("POST", "/api/process/"+id+"/stop")
+	time.Sleep(1300 * time.Millisecond)
+	v.connectProvider(id)
 }
 func (v *nativeView) executeUpdate() {
 	v.notify("正在检查 GitHub 正式版更新……")
@@ -405,8 +483,16 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 		c.labels[i] = createChild("STATIC", p.Label+" · 未接入", 300+i, hwnd, 0)
 		c.buttons[i] = createChild("BUTTON", "一键接入", 200+i, hwnd, 0)
 	}
-	title := createChild("STATIC", "实时请求日志（失败请求显示状态码和原因，无需打开网页）", 10, hwnd, 0)
-	pMove.Call(title, 24, 371, 800, 24, 1)
+	c.officialHelp = createChild("STATIC", "仅需官方 Key 时填写 →", 20, hwnd, 0)
+	c.providerChoice = createChild("COMBOBOX", "", 106, hwnd, 0x0003|wsVScroll) // CBS_DROPDOWNLIST
+	for _, label := range []string{"Vertex Express", "OpenCode Zen"} {
+		pSend.Call(c.providerChoice, 0x0143, 0, uintptr(unsafe.Pointer(wz(label))))
+	}
+	pSend.Call(c.providerChoice, 0x014E, 0, 0)
+	c.officialKey = createChild("EDIT", "", 108, hwnd, 0x00000020|0x00800000) // ES_PASSWORD, WS_BORDER
+	c.officialSave = createChild("BUTTON", "保存并接入", 107, hwnd, bsPushButton)
+	title := createChild("STATIC", "请求日志 · 显示接口、状态码及错误原因", 10, hwnd, 0)
+	pMove.Call(title, 24, 403, 800, 24, 1)
 	c.logBox = createChild("EDIT", "暂无请求", 11, hwnd, wsVScroll|esMultiline|esAutoVScroll|esReadOnly|0x00800000) // WS_BORDER
 	c.footer = createChild("STATIC", "● 已启动 · 从上方选择需要的来源；登录授权由你本人完成。", 12, hwnd, 0)
 	c.position()
