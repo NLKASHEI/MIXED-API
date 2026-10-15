@@ -6,8 +6,11 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,14 +90,16 @@ func (s *Server) quickstartBackend(id string) error {
 			return err
 		}
 		if id == "codex" {
-			s.finishCodexQuickstart()
+			s.backendState(id, "checking: 正在检查 Codex CLI 的 ChatGPT 订阅授权")
+			go s.finishCodexQuickstart()
 			return nil
 		}
 		if err := s.launchInstalled(id); err != nil {
 			s.backendState(id, "failed: "+err.Error())
 			return err
 		}
-		s.backendState(id, "ready: 已启动；可以刷新聚合模型")
+		s.backendState(id, "checking: 进程已启动；正在确认模型 API 可用")
+		go s.verifyManagedBackend(id, 90*time.Second)
 		return nil
 	}
 	// Dependency setup cannot update the PATH of an already running Windows
@@ -147,14 +152,16 @@ func (s *Server) quickstartBackend(id string) error {
 					return
 				}
 				if id == "codex" {
-					s.finishCodexQuickstart()
+					s.backendState(id, "checking: Codex CLI 已安装；正在启动官方账号授权或检查已登录状态")
+					go s.finishCodexQuickstart()
 					return
 				}
 				if err := s.launchInstalled(id); err != nil {
 					s.backendState(id, "failed: 已完成安装，但启动失败: "+err.Error())
 					return
 				}
-				s.backendState(id, "ready: 自动安装、配置、启动完成。需要官方登录的来源请完成授权")
+				s.backendState(id, "checking: 已自动部署并启动；正在验证模型接口")
+				go s.verifyManagedBackend(id, 90*time.Second)
 				return
 			}
 		}
@@ -162,54 +169,142 @@ func (s *Server) quickstartBackend(id string) error {
 	return nil
 }
 
-// The official CLI owns its tokens. We only read a non-secret login summary.
-// Reject API-key logins; only ChatGPT subscription sign-in is eligible.
+// probeManagedModels tests the actual authenticated upstream model endpoint.
+// Starting a child process is not evidence that the user can chat with it.
+// Keys stay inside request headers; errors/status never print credentials.
+func (s *Server) probeManagedModels(ctx context.Context, id string) (int, int, error) {
+	cfg := s.config()
+	for _, b := range cfg.Backends {
+		if b.ID != id || !b.Enabled {
+			continue
+		}
+		req, err := s.backendRequest(ctx, b, http.MethodGet, "/models", nil)
+		if err != nil {
+			return 0, 0, err
+		}
+		response, err := s.client.Do(req)
+		if err != nil {
+			return 0, 0, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return 0, response.StatusCode, fmt.Errorf("upstream HTTP %d", response.StatusCode)
+		}
+		var responseData struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&responseData); err != nil {
+			return 0, response.StatusCode, err
+		}
+		count := 0
+		for _, model := range responseData.Data {
+			if model.ID != "" {
+				count++
+			}
+		}
+		return count, http.StatusOK, nil
+	}
+	return 0, 0, errors.New("backend not enabled")
+}
+
+// verifyManagedBackend runs only for the providers started by MIXED-API.
+// Await user authorization if necessary; never mark "ready" before models exist.
+func (s *Server) verifyManagedBackend(id string, maxWait time.Duration) {
+	end := time.Now().Add(maxWait)
+	sawEmptyModels := false
+	lastError := "upstream not ready"
+	for {
+		s.mu.RLock()
+		processState := s.status[id]
+		s.mu.RUnlock()
+		if strings.HasPrefix(processState, "exited") {
+			s.backendState(id, "failed: 上游进程已经退出。请检查本地日志或依赖")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		count, status, err := s.probeManagedModels(ctx, id)
+		cancel()
+		if err == nil && count > 0 {
+			s.backendState(id, fmt.Sprintf("ready: 后端已启动，模型 API 验证成功（%d 个模型）", count))
+			return
+		}
+		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+			s.backendState(id, "needs_auth: 上游要求登录或授权，请在本卡片完成官方授权后刷新模型")
+			return
+		}
+		if err == nil && count == 0 {
+			sawEmptyModels = true
+		} else if err != nil {
+			lastError = err.Error()
+		}
+		if time.Now().After(end) {
+			if sawEmptyModels {
+				s.backendState(id, "needs_auth: 已连接上游，但未发现可用模型。请检查账号授权或上游自身的模型列表")
+			} else {
+				s.backendState(id, "failed: 进程已启动，但模型 API 检测超时或不可达（"+lastError+"）")
+			}
+			return
+		}
+		delay := 2 * time.Second
+		if remaining := time.Until(end); remaining < delay {
+			delay = remaining
+		}
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+	}
+}
+
+// Only check the human-readable status of the official CLI, never open,
+// copy or persist its OAuth credentials. API-key logins do not count.
 func codexStatusIsSubscription(output string) bool {
-    out := strings.ToLower(output)
-    return strings.Contains(out, "logged in") && strings.Contains(out, "chatgpt") && !strings.Contains(out, "api key")
+	out := strings.ToLower(output)
+	return strings.Contains(out, "logged in") && strings.Contains(out, "chatgpt") && !strings.Contains(out, "api key")
 }
 
 func codexSubscriptionReady() bool {
-    ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-    defer cancel()
-    cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "codex", "login", "status")
-    out, err := cmd.CombinedOutput()
-    return err == nil && codexStatusIsSubscription(string(out))
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "codex", "login", "status")
+	out, err := cmd.CombinedOutput()
+	return err == nil && codexStatusIsSubscription(string(out))
 }
 
-// The user makes one click. We launch the official login when required and
-// observe only its success state, never collecting or storing auth tokens.
+// One click launches the provider's own authorization flow if necessary,
+// then waits for the user to complete it instead of requiring a second click.
 func (s *Server) finishCodexQuickstart() {
-    const id = "codex"
-    if !toolAvailable("codex") {
-        s.backendState(id, "needs_runtime: 安装后当前进程找不到 Codex CLI，请重启 MIXED-API 再点一次一键接入")
-        return
-    }
-    if codexSubscriptionReady() {
-        s.backendState(id, "ready: 已确认 ChatGPT 订阅登录，可以刷新 Codex 模型")
-        return
-    }
-    if err := s.loginInstalled(id); err != nil {
-        s.backendState(id, "needs_auth: 无法打开官方 Codex 登录窗口："+err.Error())
-        return
-    }
-    s.backendState(id, "auth_pending: 已自动打开官方登录窗口，请本人完成 ChatGPT 授权；无需填写任何 Token")
-    go func() {
-        ticker := time.NewTicker(5 * time.Second)
-        defer ticker.Stop()
-        deadline := time.NewTimer(12 * time.Minute)
-        defer deadline.Stop()
-        for {
-            select {
-            case <-deadline.C:
-                s.backendState(id, "needs_auth: 尚未检测到 ChatGPT 登录；完成官方授权后重新点一键接入")
-                return
-            case <-ticker.C:
-                if codexSubscriptionReady() {
-                    s.backendState(id, "ready: ChatGPT 官方登录完成，已启用 Codex，模型可以刷新")
-                    return
-                }
-            }
-        }
-    }()
+	const id = "codex"
+	if !toolAvailable("codex") {
+		s.backendState(id, "needs_runtime: Codex CLI 已安装但当前程序还找不到它；请关闭并重新启动 MIXED-API，再点一键接入")
+		return
+	}
+	if codexSubscriptionReady() {
+		s.backendState(id, "ready: ChatGPT 订阅已授权；可以刷新聚合模型")
+		return
+	}
+	if err := s.loginInstalled(id); err != nil {
+		s.backendState(id, "needs_auth: 无法打开 Codex 官方登录窗口："+err.Error())
+		return
+	}
+	s.backendState(id, "auth_pending: 已自动打开 Codex 官方登录窗口，请在窗口中完成 ChatGPT 账号授权；无需把 Token 填入本软件")
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		deadline := time.NewTimer(12 * time.Minute)
+		defer deadline.Stop()
+		for {
+			select {
+			case <-deadline.C:
+				s.backendState(id, "needs_auth: 尚未检测到 ChatGPT 订阅授权；完成 Codex 官方登录后再次点击一键接入")
+				return
+			case <-ticker.C:
+				if codexSubscriptionReady() {
+					s.backendState(id, "ready: 已确认 ChatGPT 订阅登录，Codex 模型已可刷新")
+					return
+				}
+			}
+		}
+	}()
 }
