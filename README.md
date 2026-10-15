@@ -10,6 +10,17 @@ Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览�
 
 本项目只实现一个本地网关，**不复制、捆绑、不尝试绕过上游认证**。上游授权、额度、收费和软件许可证继续生效。
 
+## Release 下载：安装版 / 免安装版 / Android
+
+在仓库右侧点击 **Releases → Latest**，选择以下附件：
+
+- **Windows 一键安装包 `MIXED-API-Windows-x64-Setup.exe`**：下载后双击，按照中文向导安装，会创建桌面/开始菜单快捷方式，支持从 Windows「已安装的应用」卸载。使用当前用户的 `%LOCALAPPDATA%\\MIXED-API`，不申请管理员权限；升级会保留原先生成的 `mixed-api.json`。
+- **Windows 免安装包 `MIXED-API-Windows-x64.zip`**：解压到任意可写文件夹，双击 `Start-MIXED-API.cmd`。ZIP 含 `Start-MIXED-API-LAN.cmd`，可显式开启仅用于 API 的局域网 8766 端口。
+- **Windows 单独 EXE `MIXED-API-Windows-x64.exe`**：下载后放进独立文件夹直接运行；它是便携主程序，**不是安装程序**，不会创建快捷方式或卸载信息。
+- **Android APK `MIXED-API-Android.apk`**：下载后安装，打开 APP 并启动本地网关。手机上用不了 Windows 专属的 Codex/WorkBuddy 桌面进程，连接电脑的 LAN API 则可以复用其模型。
+
+安装器目前未进行 Windows 代码签名。Windows 可能弹出 SmartScreen 提示；请仅从本仓库官方 Release 下载。所有上游凭证仍需要依照对应指引配置；**装好安装包不代表六家上游已经自动登录**。
+
 ## 一键使用与保姆级反代指引（最新）
 
 **首次使用请先看 [零基础使用指南](docs/quickstart-zh.md)**。管理后台的每张上游卡片也内置逐步教程和官方网址，解释每个 Key 的来源。
@@ -19,7 +30,7 @@ Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览�
 - **AI Studio Build：** Windows 点击「一键准备环境」→「打开账号授权窗口」→「启动后端」。自动安装 Node 依赖并设置本地随机上游密钥/回环监听；原项目 Camoufox 登录需要本人完成一次。无需浏览器认证时请考虑官方 Express Key 模式而不是 Build App 浏览器代理。
 - **其余三项：** 在控制台按每个来源的「从零开始配置向导」安装对应项目，填写它们各自的服务器 Key 和 API 地址。
 
-> **实际打包区别：** `MIXED-API-Windows-x64.exe` 是可独立双击的 Go 可执行文件，**无须安装 Go、Node 或 Python 就能运行聚合网关**。Node/Git/Codex 只在使用对应的桌面上游时需要；ZIP 版多了启动脚本和 LAN 模式入口。
+> **实际打包区别：** `MIXED-API-Windows-x64-Setup.exe` 才是真正的一键安装器，`MIXED-API-Windows-x64.exe` 是可独立双击的 Go 可执行文件，**无须安装 Go、Node 或 Python 就能运行聚合网关**。Node/Git/Codex 只在使用对应的桌面上游时需要；ZIP 版多了启动脚本和 LAN 模式入口。
 
 > **平台差异：** Windows 版拥有本机 Codex 适配器和部分自动安装功能；Android APK 提供统一 HTTP 网关与教程，但不能在 APK 内运行桌面版 Codex、WorkBuddy、Camoufox。所有来源依赖各自权限/额度，未经真实账号登录不保证端到端成功。
 
@@ -28,8 +39,8 @@ Windows 提供深蓝色桌面控制台（独立 EXE 启动后自动打开浏览�
 
 ### Windows（x64）
 
-1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases) **直接下载 `MIXED-API-Windows-x64.exe`**（无需解压或安装 Go/Node），放进一个单独文件夹，双击启动。可选：下载 ZIP 便携包，内含 EXE 和局域网启动脚本。
-2. 直接双击 `MIXED-API-Windows-x64.exe`（ZIP 用户也可以双击 `Start-MIXED-API.cmd`）。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到 **EXE 所在文件夹**的 `mixed-api.json`。程序会打开浏览器管理后台，命令行窗口请勿关闭。
+1. 在 [GitHub Releases](https://github.com/NLKASHEI/MIXED-API/releases/latest) **优先下载 `MIXED-API-Windows-x64-Setup.exe`**，按向导完成一键安装后点击桌面或开始菜单快捷方式。无需安装 Go。也可下载 ZIP 便携版（含 EXE 和 LAN 启动脚本），或者仅下载单个 EXE。
+2. 安装版从快捷方式启动；ZIP 用户双击 `Start-MIXED-API.cmd`；单文件用户双击 `MIXED-API-Windows-x64.exe`。首次运行自动生成独立的 **API Key** 和 **Admin Key**，并保存到 **EXE 所在文件夹**的 `mixed-api.json`。程序会打开浏览器管理后台，命令行窗口请勿关闭。
 3. EXE 默认自动打开 `http://127.0.0.1:8765`；若没有自动打开，则自己在浏览器访问此地址。输入窗口中显示的 **Admin Key**。Windows SmartScreen 对未签名预览 EXE 可能提出警告，请仅从本仓库 Releases 下载，核实文件后再决定是否运行。
 4. 在左边导航点击**「上游服务」**，先选择一个来源，打开**「从零开始」**向导，按步骤下载/登录/启动，再填写该来源的 `Base URL` 和上游 Key（Windows 原生 Codex 不需要这些字段），最后勾选启用并点击**「保存所有配置」**。
 5. 点击左侧**「聚合模型」**→「刷新列表」。看到模型后点击「复制模型名」，在任意兼容客户端使用 `http://127.0.0.1:8765/v1` 和 **MIXED-API 客户端 API Key**。

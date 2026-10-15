@@ -60,7 +60,29 @@ jobs:
         shell: pwsh
         run: |
           go test ./...
-          go build -o "$env:RUNNER_TEMP\MIXED-API.exe" ./cmd/mixed-api
+          New-Item -ItemType Directory -Path windows -Force | Out-Null
+          go build -trimpath -ldflags="-s -w" -o "windows/MIXED-API.exe" ./cmd/mixed-api
+          if ($LASTEXITCODE -ne 0) { throw "Windows native Go build failed" }
+      - name: Build NSIS one-click installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (!(Test-Path $nsis)) {
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed" }
+          }
+          if (!(Test-Path $nsis)) { throw "makensis.exe unavailable" }
+          & $nsis /V3 "packaging/windows/installer.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installer compile failed" }
+          if (!(Test-Path "MIXED-API-Windows-x64-Setup.exe")) { throw "Installer output missing" }
+          if ((Get-Item "MIXED-API-Windows-x64-Setup.exe").Length -lt 1000000) { throw "Installer unexpectedly small" }
+          Get-FileHash "MIXED-API-Windows-x64-Setup.exe" -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: MIXED-API-Windows-x64-Setup.exe
+          if-no-files-found: error
 
   android:
     name: Android APK (debug signed)
@@ -97,7 +119,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish GitHub prerelease
+    name: Publish GitHub Release
     needs: [windows, windows-native-tests, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -115,12 +137,15 @@ jobs:
           set -euo pipefail
           test -s dist/MIXED-API-Windows-x64.zip
           test -s dist/MIXED-API-Windows-x64.exe
+          test -s dist/MIXED-API-Windows-x64-Setup.exe
           test -s dist/MIXED-API-Android.apk
-          tag="v0.1.0-preview.${GITHUB_RUN_NUMBER}"
+          tag="v0.2.${GITHUB_RUN_NUMBER}"
           cat > notes.md <<'NOTES'
           MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI、Windows 一键配置助手及 Android→PC 局域网桥接。
 
-          - Windows：直接下载 `MIXED-API-Windows-x64.exe`，双击运行（或者下载 ZIP 便携包）；要给手机分享模型时请显式使用 `Start-MIXED-API-LAN.cmd`。
+          - Windows 一键安装：`MIXED-API-Windows-x64-Setup.exe`，中文安装向导、开始菜单/桌面快捷方式、卸载入口。安装目录为用户 LocalAppData，无需管理员权限；卸载保留 mixed-api.json。
+          - Windows 免安装：`MIXED-API-Windows-x64.zip`，解压后运行 `Start-MIXED-API.cmd`；分享给手机则改用 `Start-MIXED-API-LAN.cmd`。
+          - Windows 单文件：`MIXED-API-Windows-x64.exe`，不需要安装，独立运行网关。
           - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
           - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
           - 六个上游默认禁用；全新深蓝桌面 UI，分为概览、上游、模型、指引、设置；Android 使用轻量管理界面。
@@ -132,9 +157,9 @@ jobs:
           - 保姆级配置指南：https://github.com/NLKASHEI/MIXED-API/blob/main/docs/quickstart-zh.md
           - 请遵守上游许可证和服务条款。
 
-          **注意：Android 为 Debug 签名的预览 APK，云端编译成功不等于手机运行实测通过。**
+          **注意：这是功能预览版软件（作为 GitHub 普通 Release 发布以方便下载），未做所有上游的真实账号端到端实测。Android 为 Debug 签名 APK，Windows 安装器和 EXE 未代码签名。安装器只打包 MIXED-API 网关，不捆绑第三方上游客户端。**
           NOTES
-          gh release create "$tag" dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Windows-x64.exe dist/MIXED-API-Android.apk \
+          gh release create "$tag" dist/MIXED-API-Windows-x64-Setup.exe dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Windows-x64.exe dist/MIXED-API-Android.apk \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "MIXED-API $tag · Windows + Android" --notes-file notes.md --prerelease
+            --title "MIXED-API $tag · Windows Setup / Portable / Android" --notes-file notes.md
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'

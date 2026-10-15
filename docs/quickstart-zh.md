@@ -13,7 +13,7 @@
 
 ## 首次使用
 
-1. Windows：从 [Releases](https://github.com/NLKASHEI/MIXED-API/releases) 下载 **`MIXED-API-Windows-x64.exe`**，放进自己新建的文件夹中，直接双击，不需要先安装 Go。如果需要给手机分享模型，则下载 ZIP 便携包（内含 `Start-MIXED-API-LAN.cmd`）。Android：安装 APK 并点击启动服务。**运行中的 Windows 命令行窗口不要关闭**。
+1. Windows：从 [Releases 最新版本](https://github.com/NLKASHEI/MIXED-API/releases/latest) 下载 **`MIXED-API-Windows-x64-Setup.exe`**，双击按中文向导安装，安装后从桌面/开始菜单启动。若不想安装软件，则下载 **`MIXED-API-Windows-x64.zip`**，解压并双击 `Start-MIXED-API.cmd`；也可以只下载单个独立 EXE。安装版卸载保留 `mixed-api.json` 中的密钥和配置。想让手机访问电脑的上游时，请运行 ZIP 包里的 LAN 脚本，或者从安装版开始菜单选择「局域网模式」。Android：安装 APK 并点击启动服务。**运行中的 Windows 命令行窗口不要关闭**。
 2. 打开 `http://127.0.0.1:8765`，填写管理密码。
 3. 点击左侧 **「上游服务」**，找到你要连接的来源，展开 **「从零开始 · 安装、登录、密钥填写指引」**。有些来源可以点击 **「一键安装 / 准备」→「打开登录窗口」→「启动上游」**。不会擅自安装或绕过账号授权。
 4. 成功启动并登录上游后，勾选 **「启用这个来源」** → 点击页面右上角 **「保存所有配置」** → 点左侧 **「聚合模型」** → 点击 **「刷新列表」**。如果出现 `来源/模型` 即成功，否则查看模型列表下的上游错误提示。
@@ -23,7 +23,7 @@
 
 这里是之前漏掉的关键架构：**电脑为后端宿主机，手机为前端网关。** 安卓 APK 不会、也无法直接启动 Windows Codex/WorkBuddy/Camoufox；现在提供电脑的 **API-only LAN 端口** 做桥接。
 
-1. **电脑：**先让 Windows MIXED-API 后台中的 Codex、WorkBuddy 等上游可用，刷新出真实模型。然后关闭旧启动窗口，双击 `Start-MIXED-API-LAN.cmd`。
+1. **电脑：**先让 Windows MIXED-API 后台中的 Codex、WorkBuddy 等上游可用，刷新出真实模型。然后关闭旧启动窗口：**安装版**从开始菜单打开「MIXED-API → 局域网模式」，**免安装 ZIP** 则双击 `Start-MIXED-API-LAN.cmd`。
 2. **电脑：**打开 `http://127.0.0.1:8765`，复制 **客户端 API Key**。千万别复制 Admin Key。
 3. **电脑：**运行 `ipconfig`，找到联网网卡 IPv4，比如 `192.168.1.20`；防火墙仅允许 **专用网络** TCP 8766 入站。不要给端口做公网映射。
 4. **手机：**安装新版 MIXED-API APK，启动并进入管理后台，打开 **「电脑 MIXED-API」** 卡片。填地址 `http://192.168.1.20:8766/v1`（改成电脑真实 IP），**上游 Key** 填第 2 步的电脑客户端 Key，方式选 `bearer`，勾选启用、保存。
@@ -121,3 +121,11 @@
 | 后台界面 | 五栏：总览、上游、模型、指引、网络设置 | 精简：本机地址、密钥、上游、模型 |
 
 **一键运行的确切含义：** 双击 `MIXED-API-Windows-x64.exe` 可以直接启动 *MIXED-API 网关*。上游平台是否可用仍取决于对应服务安装、账号授权及可用额度。Windows EXE 不是将六套第三方软件全部静态打包进去。
+
+## Windows 一键安装包与便携版的区别
+
+**Setup.exe 是真正的 NSIS 用户级安装程序**：默认目录 `%LOCALAPPDATA%\\MIXED-API`，安装后自动生成开始菜单及桌面入口，并在「已安装的应用」提供卸载功能。无需管理员权限。升级相同目录时保留 `mixed-api.json`（包含客户端 Key、管理员 Key、上游配置）；卸载也保留该文件，以免丢失凭证。若希望完全清除私人数据，请先关闭 MIXED-API，再手动删除 `%LOCALAPPDATA%\\MIXED-API\\mixed-api.json`。
+
+**ZIP 是绿色免安装包**：解压到你希望长期保存的文件夹。配置 `mixed-api.json` 保存在 exe 同一目录；删除整个文件夹就会一并删除配置。**单文件 EXE** 与 ZIP 内的 exe 运行的是同一个网关，仅缺少启动脚本。
+
+三者都不会自动替你安装所有六家上游的软件或绕过登录流程。打开 Windows 本地网页后台 `http://127.0.0.1:8765` 按上游向导操作即可。
