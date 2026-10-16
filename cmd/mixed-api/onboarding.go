@@ -116,3 +116,66 @@ func guideSteps(g onboardingGuide) string {
 		"② 需要你做　" + g.Authorize + "\r\n\r\n" +
 		"③ 验证与使用　" + g.Verify
 }
+
+
+ // Wizard stages are UI-level gates, not backend statuses. A successful
+ // background download or API probe is NEVER permission to skip the user's
+ // explicit "我已完成，下一步" confirmation.
+ type wizardPhase string
+
+ const (
+     wizardIdle      wizardPhase = "idle"
+     wizardPreparing wizardPhase = "preparing"
+     wizardAwaitUser wizardPhase = "await_user"
+     wizardVerifying wizardPhase = "verifying"
+     wizardComplete wizardPhase = "complete"
+     wizardBlocked  wizardPhase = "blocked"
+ )
+
+ func wizardAfterStatus(phase wizardPhase, state string) wizardPhase {
+     if phase == wizardIdle || phase == wizardVerifying {
+         return phase
+     }
+     if strings.HasPrefix(state, "failed:") || strings.HasPrefix(state, "exited:") || strings.HasPrefix(state, "needs_runtime:") {
+         return wizardBlocked
+     }
+     if phase == wizardPreparing && (strings.HasPrefix(state, "ready:") ||
+         strings.HasPrefix(state, "checking:") || strings.HasPrefix(state, "auth_pending:") ||
+         strings.HasPrefix(state, "needs_auth:") || strings.HasPrefix(state, "running") ||
+         strings.HasPrefix(state, "installed:")) {
+         return wizardAwaitUser
+     }
+     return phase
+ }
+
+ func wizardCanConfirm(phase wizardPhase) bool { return phase == wizardAwaitUser }
+
+ func wizardStageText(phase wizardPhase, g onboardingGuide, status string, models []string, validationError string) (string, string, string) {
+     switch phase {
+     case wizardPreparing:
+         return "①/③ 由软件自动准备", "正在自动下载、安装、生成本地配置并启动服务。请等待完成；此时不能跳过到下一步。\r\n\r\n" + g.Prepare +
+             "\r\n\r\n当前进度：" + status, "准备中…"
+     case wizardAwaitUser:
+         detail := "②/③ 请完成授权或确认"
+         next := "请先按下面的说明操作，操作完成后再点击『我已完成，下一步』。\r\n\r\n" + g.Authorize
+         if g.Name == "APS2api" {
+             next += "\r\n\r\n请确认你遵守原项目的非商业许可证与使用规则。"
+         }
+         if validationError != "" {
+             next += "\r\n\r\n上次验证未通过：" + validationError + "\r\n请解决后再点『我已完成，下一步』，不会自动跳过。"
+         }
+         next += "\r\n\r\n当前后端状态：" + status + "\r\n\r\n遇到问题：" + g.Recovery
+         return detail, next, "我已完成，下一步 →"
+     case wizardVerifying:
+         return "③/③ 软件正在验证模型", "已收到你的确认。正在向统一网关检查该来源的模型接口及授权状态；验证通过才能进入完成页。\r\n\r\n" + g.Verify, "正在验证…"
+     case wizardComplete:
+         id := ""
+         if len(models) > 0 { id = models[0] }
+         return "✓ 已验证模型列表", fmt.Sprintf("当前来源已读取到 %d 个模型。\r\n\r\n接下来在你使用的 AI 软件中填写：\r\nBase URL：http://127.0.0.1:8765/v1\r\nAPI Key：点击顶部「复制客户端 Key」\r\n模型：在下方选择并点击「复制模型 ID」\r\n\r\n例如：%s\r\n\r\n注意：模型列表验证通过不等于已完成实际对话测试。", len(models), id), "重新检查模型"
+     case wizardBlocked:
+         return "需要你处理后重试", "自动准备未完成，不能继续到验证步骤。\r\n\r\n当前错误：" + status +
+             "\r\n\r\n建议：" + g.Recovery + "\r\n\r\n处理好后点「重新接入」。", "请先解决问题"
+     default:
+         return "①/③ 先选择来源", "选择左侧的「一键接入」，软件会先自动准备运行环境；遇到首次授权时自动打开可用的官方登录入口，然后停下等待你点击「我已完成，下一步」。", "尚未开始"
+     }
+ }
