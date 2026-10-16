@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -39,13 +40,17 @@ type Server struct {
 func NewServer(path string, cfg Config) *Server {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyFromEnvironment
-	return &Server{cfg: cfg, path: path, client: &http.Client{Transport: transport, Timeout: 0}, children: make(map[string]*exec.Cmd), status: make(map[string]string)}
+	return &Server{cfg: cfg, path: path, client: &http.Client{Transport: transport, Timeout: 0, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, children: make(map[string]*exec.Cmd), status: make(map[string]string)}
 }
 func (s *Server) config() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	c := s.cfg
 	c.Backends = append([]Backend(nil), c.Backends...)
+	c.Aliases = make(map[string]string, len(s.cfg.Aliases))
+	for name, target := range s.cfg.Aliases {
+		c.Aliases[name] = target
+	}
 	return c
 }
 func backendURL(s string) (*url.URL, error) {
@@ -104,7 +109,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(data)
 		return
 	}
-	if r.URL.Path == "/" && r.Method == "GET" {
+	if (r.URL.Path == "/" || r.URL.Path == "/admin") && r.Method == "GET" {
 		data, _ := static.ReadFile("index.html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -164,75 +169,30 @@ func (s *Server) backendRequest(ctx context.Context, b Backend, method, path str
 	return req, nil
 }
 func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
-	type Model struct {
-		ID       string `json:"id"`
-		Object   string `json:"object"`
-		OwnedBy  string `json:"owned_by"`
-		Original string `json:"original_id"`
-	}
-	models := make([]Model, 0)
+	results := s.discover(r.Context(), c)
+	models := make([]catalogModel, 0)
 	errorsByBackend := map[string]string{}
-	for _, b := range c.Backends {
-		if !b.Enabled {
-			continue
-		}
-		if b.Kind == "codex_cli" {
-			ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
-			cli, err := openCodex(ctx)
-			if err != nil {
-				errorsByBackend[b.ID] = err.Error()
-				cancel()
-				continue
-			}
-			ids, err := cli.models(ctx)
-			cli.close()
-			cancel()
-			if err != nil {
-				errorsByBackend[b.ID] = err.Error()
-				continue
-			}
-			for _, id := range ids {
-				models = append(models, Model{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id})
-			}
-			continue
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-		q, e := s.backendRequest(ctx, b, "GET", "/models", nil)
-		if e != nil {
-			cancel()
-			errorsByBackend[b.ID] = e.Error()
-			continue
-		}
-		resp, e := s.client.Do(q)
-		if e != nil {
-			cancel()
-			errorsByBackend[b.ID] = e.Error()
-			continue
-		}
-		var data struct {
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		e = json.NewDecoder(io.LimitReader(resp.Body, 5<<20)).Decode(&data)
-		resp.Body.Close()
-		cancel()
-		if resp.StatusCode != 200 {
-			errorsByBackend[b.ID] = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
-			continue
-		}
-		if e != nil {
-			errorsByBackend[b.ID] = "invalid upstream model list"
-			continue
-		}
-		for _, m := range data.Data {
-			if m.ID != "" {
-				models = append(models, Model{ID: b.ID + "/" + m.ID, Object: "model", OwnedBy: b.ID, Original: m.ID})
-			}
+	for _, result := range results {
+		models = append(models, result.models...)
+		if result.Error != "" {
+			errorsByBackend[result.ID] = result.Error
+			s.addLog(RequestLog{Time: time.Now().Format(time.RFC3339), Method: "GET", Path: "/v1/models", Backend: result.ID, Status: 502, Error: result.Error})
 		}
 	}
-	for source, reason := range errorsByBackend {
-		s.addLog(RequestLog{Time: time.Now().Format(time.RFC3339), Method: "GET", Path: "/v1/models", Backend: source, Status: 502, Error: safeDiagnostic([]byte(reason))})
+	available := map[string]bool{}
+	for _, m := range models {
+		available[m.ID] = true
+	}
+	names := make([]string, 0, len(c.Aliases))
+	for name := range c.Aliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		target := c.Aliases[name]
+		if available[target] {
+			models = append(models, catalogModel{ID: name, Object: "model", OwnedBy: "alias", Original: target})
+		}
 	}
 	jsonResult(w, 200, map[string]any{"object": "list", "data": models, "backend_errors": errorsByBackend})
 }
@@ -253,6 +213,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 		jsonError(w, 400, "Missing model")
 		return
 	}
+	if target, exists := c.Aliases[model]; exists {
+		model = target
+	}
 	id, upstreamModel, ok := strings.Cut(model, "/")
 	if !ok || upstreamModel == "" {
 		jsonError(w, 400, "Model must have backend prefix: backend/model")
@@ -269,7 +232,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 		jsonError(w, 404, "Backend not enabled: "+id)
 		return
 	}
-	if observed, ok := w.(*observedResponse); ok { observed.backend = id }
+	if observed, ok := w.(*observedResponse); ok {
+		observed.backend = id
+	}
 	if b.Kind == "codex_cli" {
 		if r.URL.Path != "/v1/chat/completions" {
 			jsonError(w, 501, "Codex CLI supports /v1/chat/completions only")
@@ -329,8 +294,16 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 }
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/engine-settings/"):
+		s.handleEngineSettings(w, r)
+	case r.URL.Path == "/api/local/import" && r.Method == http.MethodPost:
+		s.handleLocalImport(w, r)
+	case r.URL.Path == "/api/diagnostics" && r.Method == http.MethodGet:
+		jsonResult(w, 200, map[string]any{"version": BuildVersion, "platform": runtime.GOOS, "backends": s.discover(r.Context(), c)})
+	case r.URL.Path == "/api/upstreams" && r.Method == http.MethodGet:
+		jsonResult(w, 200, upstreamCatalog)
 	case r.URL.Path == "/api/logs" && (r.Method == http.MethodGet || r.Method == http.MethodDelete):
-		s.writeLogs(w,r)
+		s.writeLogs(w, r)
 	case r.URL.Path == "/api/config" && r.Method == "GET":
 		jsonResult(w, 200, c)
 	case r.URL.Path == "/api/guides" && r.Method == "GET":
@@ -386,6 +359,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		}
 		var err error
 		switch action {
+		case "prepare":
+			err=s.prepareBackend(id)
+		case "activate":
+			err=s.activateBackend(r.Context(),id)
 		case "quickstart":
 			err = s.quickstartBackend(id)
 		case "install":

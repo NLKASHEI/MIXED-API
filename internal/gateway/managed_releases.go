@@ -26,18 +26,7 @@ type binaryUpstream struct {
 	url, sha256, executable string
 }
 
-var binaryUpstreams = map[string]binaryUpstream{
-	"opencode": {
-		url:        "https://github.com/jasonxu114514/opencode2api/releases/download/v1.4.0/opencode2api_v1.4.0_windows_amd64.zip",
-		sha256:     "f63e1049aa9aa489c5032cdd5f007088c192e4ed5d08afca0122ebdc0de41bab",
-		executable: "opencode2api.exe",
-	},
-	"aps": {
-		url:        "https://github.com/DeconstructedCube/APS2api/releases/download/v1.2.0/vertex-proxy-windows-amd64.zip",
-		sha256:     "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
-		executable: "vertex-proxy.exe",
-	},
-}
+var binaryUpstreams = binaryPackages()
 
 const maxManagedArchive = 75 << 20
 const maxManagedUnpacked = 500 << 20

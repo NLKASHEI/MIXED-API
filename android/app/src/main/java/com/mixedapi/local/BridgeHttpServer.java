@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class BridgeHttpServer implements AutoCloseable {
     private final Context context;
     private final ExecutorService pool=Executors.newFixedThreadPool(12);
+    private final ExecutorService discoveryPool=Executors.newFixedThreadPool(6);
     private final AtomicBoolean open=new AtomicBoolean(false);
     private ServerSocket socket;
     private Thread acceptor;
@@ -50,7 +51,7 @@ public final class BridgeHttpServer implements AutoCloseable {
             }
         },"MixedApiAccept");acceptor.setDaemon(true);acceptor.start();
     }
-    @Override public synchronized void close(){open.set(false);try{if(socket!=null)socket.close();}catch(Exception ignored){}pool.shutdownNow();}
+    @Override public synchronized void close(){open.set(false);try{if(socket!=null)socket.close();}catch(Exception ignored){}pool.shutdownNow();discoveryPool.shutdownNow();}
     private static byte[] bounded(InputStream in,int max)throws IOException{
         ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] tmp=new byte[8192];int n;
         while((n=in.read(tmp))!=-1){if(b.size()+n>max)throw new IOException("Response too large");b.write(tmp,0,n);}
@@ -107,7 +108,7 @@ public final class BridgeHttpServer implements AutoCloseable {
             if(len<0||len>MAX_BODY){fail(out,413,"Body too large");return;}
             byte[] body=read(in,len);
             JSONObject config=BridgeConfig.load(context);
-            if("/".equals(path)&&"GET".equals(method)){
+            if(("/".equals(path)||"/admin".equals(path))&&"GET".equals(method)){
                 try(InputStream asset=context.getAssets().open("index.html")){response(out,200,"text/html; charset=utf-8",bounded(asset,2*1024*1024));}return;
             }
             if("/health".equals(path)){json(out,200,new JSONObject().put("ok",true).put("service","MIXED-API"));return;}
@@ -124,6 +125,12 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
     private void admin(OutputStream out,String method,String path,byte[] body,JSONObject config)throws Exception{
         if("/api/config".equals(path)&&"GET".equals(method)){json(out,200,config);return;}
+        if("/api/assist/status".equals(path)&&"GET".equals(method)){json(out,200,new JSONObject().put("platform","android").put("native_codex_supported",false));return;}
+        if("/api/upstreams".equals(path)&&"GET".equals(method)){try(InputStream asset=context.getAssets().open("upstreams.json")){response(out,200,"application/json; charset=utf-8",bounded(asset,1024*1024));}return;}
+        if("/api/logs".equals(path)){if("DELETE".equals(method))BridgeLogs.clear();json(out,200,new JSONObject().put("text",BridgeLogs.text()));return;}
+        if("/api/local/import".equals(path)){fail(out,501,"Android 不能导入 Windows EXE；请在电脑接入后使用电脑桥接。");return;}
+        if("/api/diagnostics".equals(path)&&"GET".equals(method)){JSONArray diagnostics=new JSONArray();for(Discovery d:discover(config))diagnostics.put(d.diagnostic);json(out,200,new JSONObject().put("platform","android").put("version",BuildConfig.VERSION_NAME).put("backends",diagnostics));return;}
+        if("/api/update".equals(path)&&"GET".equals(method)){fail(out,501,"请点击 Release，使用 Android 系统安装界面更新 APK。");return;}
         if("/api/guides".equals(path)&&"GET".equals(method)){json(out,200,new JSONObject());return;}
         if("/api/config".equals(path)&&"PUT".equals(method)){
             try{JSONObject next=new JSONObject(new String(body,StandardCharsets.UTF_8));
@@ -135,40 +142,59 @@ public final class BridgeHttpServer implements AutoCloseable {
         if("/api/status".equals(path)){json(out,200,new JSONObject().put("processes",new JSONObject()).put("backends",config.getJSONArray("backends")));return;}
         fail(out,404,"Unknown admin API");
     }
-    private void models(OutputStream out,JSONObject cfg)throws Exception{
-        JSONArray all=new JSONArray();JSONObject errors=new JSONObject();JSONArray bs=enabled(cfg);
-        for(int i=0;i<bs.length();i++){
-            JSONObject b=bs.getJSONObject(i);if(!b.optBoolean("enabled"))continue;
-            HttpURLConnection c=null;
-            try{
-                c=connection(b,"/models","GET");c.setReadTimeout(8000);int status=c.getResponseCode();
-                if(status!=200){errors.put(b.getString("id"),"HTTP "+status);BridgeLogs.add(status,b.optString("id"),"/v1/models","模型列表返回错误");continue;}
-                byte[] data=bounded(c.getInputStream(),5*1024*1024);
-                JSONArray original=new JSONObject(new String(data,StandardCharsets.UTF_8)).getJSONArray("data");
-                for(int k=0;k<original.length();k++){
-                    String model=original.getJSONObject(k).optString("id");
-                    if(!model.isEmpty()) {
-                        // PC gateway already prefixes models (codex/gpt, workbuddy/...),
-                        // so preserve those IDs exactly rather than adding pc/ in Android.
-                        String publicID="pc".equals(b.optString("id"))?model:b.getString("id")+"/"+model;
-                        all.put(new JSONObject().put("id",publicID).put("object","model").put("owned_by",b.getString("id")).put("original_id",model));
-                    }
+    private static final class Discovery {
+        JSONArray models=new JSONArray();JSONObject diagnostic=new JSONObject();String error="";
+    }
+    private Discovery probe(JSONObject b)throws Exception{
+        Discovery result=new Discovery();String id=b.getString("id");long begin=System.nanoTime();
+        result.diagnostic.put("id",id).put("state","disabled").put("model_count",0).put("duration_ms",0).put("next","启用来源后检查模型；桌面引擎请连接电脑网关。");
+        if(!b.optBoolean("enabled"))return result;
+        String code="",next="";HttpURLConnection c=null;
+        try{
+            c=connection(b,"/models","GET");c.setReadTimeout(8000);int status=c.getResponseCode();
+            if(status!=200){code=status==401||status==403?"unauthorized":status==429?"rate_limited":status>=300&&status<400?"redirect":"http_error";result.error="上游模型接口返回 HTTP "+status;next="检查账号授权、上游通信 Key、额度与最终 API 地址。";}
+            else{
+                JSONArray rows=new JSONObject(new String(bounded(c.getInputStream(),5*1024*1024),StandardCharsets.UTF_8)).getJSONArray("data");
+                java.util.HashSet<String> seen=new java.util.HashSet<>();
+                for(int i=0;i<rows.length();i++){
+                    String original=rows.getJSONObject(i).optString("id");if(original.isEmpty()||!seen.add(original))continue;
+                    String publicId="pc".equals(id)?original:id+"/"+original;
+                    result.models.put(new JSONObject().put("id",publicId).put("object","model").put("owned_by",id).put("original_id",original));
                 }
-            }catch(Exception e){errors.put(b.getString("id"),"Unavailable or invalid model list");BridgeLogs.add(502,b.optString("id"),"/v1/models","连接上游失败："+e.getClass().getSimpleName());}
-            finally{if(c!=null)c.disconnect();}
+                if(result.models.length()==0){code="empty_models";result.error="上游返回空模型列表";next="检查账号授权与上游模型配置；模型为空不能算接入成功。";}
+            }
+        }catch(Exception e){code="unreachable";result.error="无法连接上游或模型列表无效";next="确认上游已启动、地址正确且手机可以访问。";}
+        finally{if(c!=null)c.disconnect();}
+        result.diagnostic.put("duration_ms",(System.nanoTime()-begin)/1000000L).put("model_count",result.models.length());
+        if(result.error.isEmpty())result.diagnostic.put("state","catalog_ready").put("next","已读取模型目录；在客户端发送一次消息验证实际推理权限。");
+        else result.diagnostic.put("state","error").put("code",code).put("error",result.error).put("next",next);
+        return result;
+    }
+    private java.util.List<Discovery> discover(JSONObject cfg)throws Exception{
+        JSONArray backends=enabled(cfg);java.util.List<java.util.concurrent.Future<Discovery>> jobs=new java.util.ArrayList<>();
+        for(int i=0;i<backends.length();i++){final JSONObject backend=backends.getJSONObject(i);jobs.add(discoveryPool.submit(()->probe(backend)));}
+        java.util.List<Discovery> out=new java.util.ArrayList<>();for(java.util.concurrent.Future<Discovery> job:jobs)out.add(job.get());return out;
+    }
+    private void models(OutputStream out,JSONObject cfg)throws Exception{
+        JSONArray all=new JSONArray();JSONObject errors=new JSONObject();java.util.HashSet<String> available=new java.util.HashSet<>();
+        for(Discovery result:discover(cfg)){
+            for(int i=0;i<result.models.length();i++){JSONObject model=result.models.getJSONObject(i);if(available.add(model.getString("id")))all.put(model);}
+            if(!result.error.isEmpty())errors.put(result.diagnostic.getString("id"),result.error);
         }
-        BridgeLogs.add(200,"aggregate","/v1/models","模型总数 "+all.length());
-        json(out,200,new JSONObject().put("object","list").put("data",all).put("backend_errors",errors));
+        JSONObject aliases=cfg.optJSONObject("aliases");if(aliases!=null){java.util.List<String> names=new java.util.ArrayList<>();aliases.keys().forEachRemaining(names::add);java.util.Collections.sort(names);
+            for(String name:names){String target=aliases.getString(name);String lookup=target.startsWith("pc/")?target.substring(3):target;if(available.contains(lookup)&&!available.contains(name))all.put(new JSONObject().put("id",name).put("object","model").put("owned_by","alias").put("original_id",target));}}
+        BridgeLogs.add(200,"aggregate","/v1/models","模型总数 "+all.length());json(out,200,new JSONObject().put("object","list").put("data",all).put("backend_errors",errors));
     }
     private void forward(OutputStream out,String path,byte[] body,JSONObject cfg,Map<String,String> headers)throws Exception{
         JSONObject input;try{input=new JSONObject(new String(body,StandardCharsets.UTF_8));}catch(Exception e){fail(out,400,"Invalid JSON body");return;}
-        String model=input.optString("model");int slash=model.indexOf('/');
-        if(slash<1||slash==model.length()-1){fail(out,400,"Expected model: backend/model");return;}
-        String id=model.substring(0,slash),upstreamModel=model.substring(slash+1);
+        String requested=input.optString("model");JSONObject aliases=cfg.optJSONObject("aliases");boolean aliased=aliases!=null&&aliases.has(requested);
+        String model=aliased?aliases.getString(requested):requested;int slash=model.indexOf('/');
+        if(model.isEmpty()||slash==model.length()-1){fail(out,400,"Expected model: backend/model or configured alias");return;}
+        String id=slash<1?"pc":model.substring(0,slash),upstreamModel=slash<1?model:model.substring(slash+1);
         JSONObject b=null;JSONArray bs=enabled(cfg);for(int i=0;i<bs.length();i++){
             JSONObject item=bs.getJSONObject(i);if(item.optBoolean("enabled")&&id.equals(item.optString("id"))){b=item;break;}
         }
-        if(b==null){
+        if(b==null&&!aliased){
             // Forward any model advertised by the desktop gateway directly,
             // preserving codex/gpt, workbuddy/model and other existing prefixes.
             for(int i=0;i<bs.length();i++){
@@ -178,6 +204,7 @@ public final class BridgeHttpServer implements AutoCloseable {
             if(b==null){BridgeLogs.add(404,id,path,"该模型的上游未启用");fail(out,404,"Backend not enabled: "+id+"; enable the PC bridge or the backend locally");return;}
             upstreamModel=model;
         }
+        if(b==null){fail(out,404,"Alias backend not enabled");return;}
         input.put("model",upstreamModel);byte[] packet=input.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c=null;boolean started=false;
         try{

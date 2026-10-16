@@ -14,3 +14,12 @@ android/local.properties
 .idea/
 *.log
 .DS_Store
+
+node_modules/
+.ui-evidence/
+.ui-tools/
+dist/
+windows/
+MIXED-API-Windows-x64*
+MIXED-API-Android.apk
+mixed-api.backup-*.json

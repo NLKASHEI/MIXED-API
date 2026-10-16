@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -26,10 +27,11 @@ type Backend struct {
 	Workdir     string `json:"workdir,omitempty"`
 }
 type Config struct {
-	Listen   string    `json:"listen"`
-	APIKey   string    `json:"api_key"`
-	AdminKey string    `json:"admin_key"`
-	Backends []Backend `json:"backends"`
+	Listen   string            `json:"listen"`
+	APIKey   string            `json:"api_key"`
+	AdminKey string            `json:"admin_key"`
+	Backends []Backend         `json:"backends"`
+	Aliases  map[string]string `json:"aliases,omitempty"`
 }
 
 var Guide = map[string]struct{ Repo, Note string }{
@@ -88,8 +90,17 @@ func Validate(c Config) error {
 			return fmt.Errorf("backend %s: %w", b.ID, err)
 		}
 	}
+	for alias, target := range c.Aliases {
+		id, model, ok := strings.Cut(target, "/")
+		if !aliasName.MatchString(alias) || !ok || model == "" || !ids[id] {
+			return errors.New("aliases require a simple name and an existing backend/model target")
+		}
+	}
 	return nil
 }
+
+var aliasName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
 func LoadOrCreate(path string) (Config, error) {
 	data, e := os.ReadFile(path)
 	if os.IsNotExist(e) {

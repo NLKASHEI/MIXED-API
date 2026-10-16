@@ -6,7 +6,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,11 +23,7 @@ type sourcePackage struct {
 	needsNPM                bool
 }
 
-var managedSources = map[string]sourcePackage{
-	"vertex":    {"bad-woman/vertex2openai", "53a45b63bfef39e783edf8ea9c1e06800fc17496", "app/main.py", false},
-	"workbuddy": {"sitingge/workboddy-proxy", "676b64d21a1ff7ea7ca6b4def5850ee61e97a06f", "wb-relay.js", false},
-	"aistudio":  {"iBUHub/AIStudioToAPI", "fec035bcaa1f99df967abd2f3e0ed93d07369f50", "main.js", true},
-}
+var managedSources = sourcePackages()
 
 func (s *Server) sourceDir(id string) (string, error) {
 	if _, ok := managedSources[id]; !ok {
@@ -303,29 +298,4 @@ func (s *Server) getBackendKey(id string) string {
 		}
 	}
 	return ""
-}
-func (s *Server) saveLocalCredentials(id, key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c := s.cfg
-	c.Backends = append([]Backend(nil), s.cfg.Backends...)
-	for i := range c.Backends {
-		if c.Backends[i].ID == id {
-			c.Backends[i].Key = key
-			c.Backends[i].Auth = "bearer"
-			c.Backends[i].Enabled = true
-		}
-	}
-	if err := Save(s.path, c); err != nil {
-		return err
-	}
-	s.cfg = c
-	return nil
-}
-func (s *Server) setVendorKey(id, key string) error {
-	// Reserved for managed providers that accept official credentials through the UI.
-	_ = json.Valid
-	_ = id
-	_ = key
-	return nil
 }
