@@ -118,6 +118,7 @@ type nativeView struct {
 	states                                                                    map[string]string
 	rowStatus                                                                 [6]string
 	modelIDs                                                                  []string
+	modelCache                                                                map[string][]string
 	shownModels                                                               []string
 	rendered                                                                  map[uintptr]string
 	modelError                                                                string
@@ -362,13 +363,15 @@ func (v *nativeView) notify(msg string) {
 }
 func (v *nativeView) selectProvider(id string) {
 	v.mu.Lock()
-	v.selected = id
-	putText(v.officialKey, "") // Never carry an unsaved vendor credential to another source.
-	v.modelFor = ""
-	v.modelIDs = nil
-	v.modelError = ""
-	v.modelPull = time.Time{}
+	if v.selected != id {
+		v.selected = id
+		v.modelFor = ""
+		v.modelIDs = append([]string(nil), v.modelCache[id]...)
+		v.modelError = v.wizardError[id]
+		v.modelPull = time.Time{}
+	}
 	v.mu.Unlock()
+	putText(v.officialKey, "") // Never carry an unsaved vendor credential to another source.
 	pPost.Call(v.hwnd, wmUserUpdate, 0, 0)
 }
 func (v *nativeView) openLogin(id string) {
@@ -611,7 +614,12 @@ func (v *nativeView) saveOfficialKey(id, key string) {
 	}
 	// Clear the credential entry immediately after saving.
 	pPost.Call(v.hwnd, 0x8002, 0, 0)
-	v.notify("官方凭证已保存。正在重新接入 " + id + "……")
+	v.notify("官方凭证已保存。软件会自动重启后端，再等待你确认进入模型验证步骤。")
+	v.mu.Lock()
+	v.wizard[id] = wizardPreparing
+	v.wizardError[id] = ""
+	v.autoAuthOpened[id] = true // already supplied vendor key; no new browser popup
+	v.mu.Unlock()
 	_, _ = v.request("POST", "/api/process/"+id+"/stop")
 	time.Sleep(1300 * time.Millisecond)
 	v.connectProvider(id)
@@ -718,7 +726,7 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 		defer share.Close()
 		go share.Serve(ln)
 	}
-	view := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", selected: "codex", states: map[string]string{}, wizard: map[string]wizardPhase{}, autoAuthOpened: map[string]bool{}, wizardError: map[string]string{}, stop: make(chan struct{}), client: &http.Client{Timeout: 10 * time.Second}}
+	view := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", selected: "codex", states: map[string]string{}, wizard: map[string]wizardPhase{}, autoAuthOpened: map[string]bool{}, wizardError: map[string]string{}, modelCache: map[string][]string{}, stop: make(chan struct{}), client: &http.Client{Timeout: 10 * time.Second}}
 	desktop = view
 	hinst, _, _ := pGetModule.Call(0)
 	cl := wz("MIXEDAPINativeWinGuide")
