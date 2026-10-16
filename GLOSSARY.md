@@ -1,5 +1,7 @@
 # MIXED-API glossary
 
+The definitions below describe the shipped v0.3.1 implementation. ADR-0003 defines the next architecture; it is not implemented yet.
+
 - **Gateway**: The standalone MIXED-API HTTP listener, not a model provider.
 - **Backend**: An already-running upstream proxy reachable at a configured Base URL.
 - **Model namespace**: The stable backend ID prefix such as `codex/`, used to disambiguate names.
@@ -14,3 +16,4 @@
 - **Model alias**: A user-defined simple name bound to one explicit backend/model, never an automatic fallback.
 - **Preparation**: Component download and private configuration, without enabling the source.
 - **Activation**: Enabling/starting a prepared source only after user confirmation of the authorization step.
+- **Integrated core module (planned)**: Provider protocol and reverse-proxy logic owned by the application, using shared routing, streaming and credential boundaries; not an installer or launcher for an upstream application.
