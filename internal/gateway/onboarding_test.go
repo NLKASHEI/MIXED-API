@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -99,5 +100,25 @@ func TestPrepareInstallsCredentialsWithoutEnablingOrStartingSource(t *testing.T)
 		if b.ID == "opencode" && (b.Enabled || b.Key != expectedKey) {
 			t.Fatal("existing component was not reconnected privately before activation")
 		}
+	}
+	// A broken existing component config must not leave the legacy quickstart
+	// busy forever. After repair, a retry reaches the (intentionally invalid)
+	// fixture executable rather than being rejected as an active task.
+	runtimeDir, _ := app.binaryDir("opencode")
+	componentConfig := filepath.Join(runtimeDir, "config.json")
+	valid, _ := os.ReadFile(componentConfig)
+	os.WriteFile(componentConfig, []byte("{"), 0600)
+	failed := call("POST", "/api/assist/opencode/quickstart")
+	if failed.Code != 400 {
+		t.Fatal("malformed runtime configuration accepted")
+	}
+	stateAfterFailure := call("GET", "/api/status")
+	if !strings.Contains(stateAfterFailure.Body.String(), "failed:") {
+		t.Fatal("recovery failure left quickstart busy")
+	}
+	os.WriteFile(componentConfig, valid, 0600)
+	retry := call("POST", "/api/assist/opencode/quickstart")
+	if strings.Contains(retry.Body.String(), "已有部署任务") {
+		t.Fatal("repaired component cannot retry")
 	}
 }

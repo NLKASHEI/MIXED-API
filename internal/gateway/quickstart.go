@@ -98,6 +98,7 @@ func (s *Server) quickstartBackend(id string) error {
 	s.mu.Unlock()
 	if s.managedPresent(id) {
 		if err := s.restorePreparedConnection(id); err != nil {
+			s.backendState(id, "failed: "+err.Error())
 			return err
 		}
 		if err := s.enableBackend(id); err != nil {
