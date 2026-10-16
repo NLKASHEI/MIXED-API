@@ -112,6 +112,9 @@ type nativeView struct {
 	mu                                                                        sync.Mutex
 	logText, footerText, guideBody, guideHeader, guideState, modelText        string
 	selected                                                                  string
+	wizard                                                                    map[string]wizardPhase
+	autoAuthOpened                                                            map[string]bool
+	wizardError                                                               map[string]string
 	states                                                                    map[string]string
 	rowStatus                                                                 [6]string
 	modelIDs                                                                  []string
@@ -184,11 +187,11 @@ func (v *nativeView) position() {
 	pMove.Call(v.officialKey, uintptr(detailX), 516, uintptr(max(120, detailW-145)), 39, 1)
 	pMove.Call(v.officialSave, uintptr(detailX+detailW-138), 516, 138, 39, 1)
 	pMove.Call(v.modelLabel, uintptr(detailX), 485, uintptr(detailW), 27, 1)
-	pMove.Call(v.modelChoice, uintptr(detailX), 515, uintptr(detailW), 200, 1)
-	pMove.Call(v.retryButton, uintptr(detailX), 558, 150, 38, 1)
-	pMove.Call(v.refreshModels, uintptr(detailX+162), 558, 145, 38, 1)
-	pMove.Call(v.modelButton, uintptr(detailX+319), 558, 160, 38, 1)
-	pMove.Call(v.authButton, uintptr(detailX+491), 558, uintptr(max(125, detailW-491)), 38, 1)
+	pMove.Call(v.modelChoice, uintptr(detailX), 515, uintptr(max(125, detailW-168)), 200, 1)
+	pMove.Call(v.modelButton, uintptr(detailX+detailW-160), 515, 160, 38, 1)
+	pMove.Call(v.refreshModels, uintptr(detailX), 558, 225, 38, 1)
+	pMove.Call(v.retryButton, uintptr(detailX+236), 558, 110, 38, 1)
+	pMove.Call(v.authButton, uintptr(detailX+356), 558, uintptr(max(125, detailW-356)), 38, 1)
 	bottomStart := 620
 	pMove.Call(v.logTitle, uintptr(left), uintptr(bottomStart), uintptr(width), 30, 1)
 	pMove.Call(v.logBox, uintptr(left), uintptr(bottomStart+34), uintptr(width), uintptr(max(95, h-bottomStart-102)), 1)
@@ -226,7 +229,7 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			go v.refresh()
 		case id >= 200 && id < 206:
 			v.selectProvider(providers[id-200].ID)
-			go v.connectProvider(providers[id-200].ID)
+			go v.beginProvider(providers[id-200].ID)
 		case id == 107:
 			v.mu.Lock()
 			provider := v.selected
@@ -242,10 +245,10 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			id := v.selected
 			v.mu.Unlock()
 			if id != "" {
-				go v.connectProvider(id)
+				go v.retryProvider(id)
 			}
 		case id == 110:
-			go v.forceCheckModels()
+			go v.confirmStep()
 		case id == 111:
 			v.mu.Lock()
 			model := ""
@@ -273,6 +276,9 @@ func nativeCallback(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://console.cloud.google.com/expressmode").Start()
 			} else if id == "opencode" {
 				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://opencode.ai/zen").Start()
+			} else if id == "workbuddy" {
+				_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://copilot.tencent.com").Start()
+				v.notify("已打开 WorkBuddy 官方网站。请在 WorkBuddy 桌面客户端完成账号登录，再点『我已完成，下一步』。")
 			} else {
 				v.notify("请按右侧第二步完成授权；其他来源无需输入本地服务 Key。")
 			}
@@ -382,7 +388,7 @@ func (v *nativeView) forceCheckModels() {
 	v.notify("正在读取统一模型列表……")
 	v.refresh()
 }
-func (v *nativeView) requestModels() ([]string, string) {
+func (v *nativeView) requestModelsFor(selected string) ([]string, string) {
 	req, err := http.NewRequest(http.MethodGet, v.base+"/models", nil)
 	if err != nil {
 		return nil, err.Error()
@@ -406,9 +412,6 @@ func (v *nativeView) requestModels() ([]string, string) {
 	if err != nil {
 		return nil, "模型列表格式异常：" + err.Error()
 	}
-	v.mu.Lock()
-	selected := v.selected
-	v.mu.Unlock()
 	result := make([]string, 0, 12)
 	for _, m := range doc.Data {
 		if strings.HasPrefix(m.ID, selected+"/") && len(result) < 12 {
@@ -437,7 +440,7 @@ func (v *nativeView) updateModelList(models []string) {
 	}
 	oldIndex, _, _ := pSend.Call(v.modelChoice, 0x0147, 0, 0)
 	oldModel := ""
-	if int(oldIndex) >= 0 && int(oldIndex) < len(v.shownModels) {
+	if oldIndex != ^uintptr(0) && int(oldIndex) >= 0 && int(oldIndex) < len(v.shownModels) {
 		oldModel = v.shownModels[int(oldIndex)]
 	}
 	pSend.Call(v.modelChoice, 0x014B, 0, 0) // CB_RESETCONTENT
@@ -457,6 +460,8 @@ func (v *nativeView) paint() {
 	v.mu.Lock()
 	selected := v.selected
 	state := v.states[selected]
+	phase := v.wizard[selected]
+	validationError := v.wizardError[selected]
 	ids := append([]string(nil), v.modelIDs...)
 	modelProblem := v.modelError
 	logText := v.logText
@@ -485,10 +490,16 @@ func (v *nativeView) paint() {
 	}
 	guide := guideFor(selected, state, ids)
 	putText(v.guideTitle, "当前来源："+guide.Name)
-	stageText := "【" + guide.StageLabel + "】" + guide.Detail
-	putText(v.guideStage, stageText)
-	v.setIfChanged(v.guideText, guideSteps(guide)+"\r\n\r\n"+"下一步："+guide.Next+"\r\n\r\n"+"常见问题："+guide.Recovery)
-	if guide.NeedsKey && guide.Stage != "ready" {
+	stageLabel, stageBody, nextLabel := wizardStageText(phase, guide, state, ids, validationError)
+	putText(v.guideStage, stageLabel)
+	v.setIfChanged(v.guideText, stageBody)
+	putText(v.refreshModels, nextLabel)
+	if phase == wizardAwaitUser || phase == wizardComplete {
+		pShow.Call(v.refreshModels, swShow)
+	} else {
+		pShow.Call(v.refreshModels, swHide)
+	}
+	if guide.NeedsKey && phase == wizardAwaitUser {
 		putText(v.officialHelp, "可选／必要时填写官方 Key（不是 MIXED-API 客户端 Key）")
 		pShow.Call(v.officialHelp, swShow)
 		pShow.Call(v.officialKey, swShow)
@@ -500,21 +511,23 @@ func (v *nativeView) paint() {
 		pShow.Call(v.officialKey, swHide)
 		pShow.Call(v.officialSave, swHide)
 		pShow.Call(v.modelLabel, swShow)
-		if len(ids) > 0 {
+		if len(ids) > 0 && phase == wizardComplete {
 			pShow.Call(v.modelChoice, swShow)
 		} else {
 			pShow.Call(v.modelChoice, swHide)
 		}
 	}
 	modelLine := "尚无可复制的模型：完成授权后点『检查模型』。"
-	if len(ids) > 0 {
-		modelLine = "已发现 " + fmt.Sprint(len(ids)) + " 个模型；首个：" + ids[0]
+	if len(ids) > 0 && phase == wizardComplete {
+		modelLine = "已验证 " + fmt.Sprint(len(ids)) + " 个模型；请选择一个复制。"
 	}
 	if modelProblem != "" {
 		modelLine += "\r\n模型检查：" + modelProblem
 	}
 	putText(v.modelLabel, modelLine)
 	v.updateModelList(ids)
+	if phase == wizardComplete { pShow.Call(v.modelButton, swShow) } else { pShow.Call(v.modelButton, swHide) }
+	if phase == wizardBlocked || phase == wizardAwaitUser || phase == wizardComplete { pShow.Call(v.retryButton, swShow) } else { pShow.Call(v.retryButton, swHide) }
 	switch selected {
 	case "codex", "aistudio":
 		putText(v.authButton, "打开登录窗口")
@@ -525,9 +538,13 @@ func (v *nativeView) paint() {
 	case "opencode":
 		putText(v.authButton, "Zen 服务官网")
 		pShow.Call(v.authButton, swShow)
+	case "workbuddy":
+		putText(v.authButton, "WorkBuddy 官网")
+		pShow.Call(v.authButton, swShow)
 	default:
 		pShow.Call(v.authButton, swHide)
 	}
+	if phase != wizardAwaitUser { pShow.Call(v.authButton, swHide) }
 	if len(logText) > 0 {
 		v.setIfChanged(v.logBox, logText)
 	}
@@ -659,31 +676,25 @@ func (v *nativeView) refresh() {
 			}
 		}
 	}
-	v.mu.Lock()
-	selected := v.selected
-	pull := selected != "" && (v.modelFor != selected || time.Since(v.modelPull) > 20*time.Second)
-	if pull {
-		v.modelFor = selected
-		v.modelPull = time.Now()
-	}
-	v.mu.Unlock()
-	var ids []string
-	var modelErr string
-	if pull {
-		ids, modelErr = v.requestModels()
-	}
+	var autoAuth []struct{ id, status string }
 	v.mu.Lock()
 	v.states = states
+	for _, p := range providers {
+		id := p.ID
+		was := v.wizard[id]
+		v.wizard[id] = wizardAfterStatus(was, states[id])
+		if was != wizardAwaitUser && v.wizard[id] == wizardAwaitUser && !v.autoAuthOpened[id] {
+			v.autoAuthOpened[id] = true
+			autoAuth = append(autoAuth, struct{ id, status string }{id, states[id]})
+		}
+	}
 	if len(lines) == 0 {
 		v.logText = "暂无请求。配置来源并在你的 AI 客户端发送消息后，这里会显示请求及错误。"
 	} else {
 		v.logText = strings.Join(lines, "\r\n")
 	}
-	if pull && v.selected == selected {
-		v.modelIDs = ids
-		v.modelError = modelErr
-	}
 	v.mu.Unlock()
+	for _, target := range autoAuth { go v.autoAuthFor(target.id, target.status) }
 	pPost.Call(v.hwnd, wmUserUpdate, 0, 0)
 }
 
@@ -707,7 +718,7 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 		defer share.Close()
 		go share.Serve(ln)
 	}
-	view := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", selected: "codex", states: map[string]string{}, stop: make(chan struct{}), client: &http.Client{Timeout: 10 * time.Second}}
+	view := &nativeView{key: cfg.APIKey, admin: cfg.AdminKey, base: "http://127.0.0.1:8765/v1", selected: "codex", states: map[string]string{}, wizard: map[string]wizardPhase{}, autoAuthOpened: map[string]bool{}, wizardError: map[string]string{}, stop: make(chan struct{}), client: &http.Client{Timeout: 10 * time.Second}}
 	desktop = view
 	hinst, _, _ := pGetModule.Call(0)
 	cl := wz("MIXEDAPINativeWinGuide")
@@ -740,7 +751,7 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 	}
 	view.guideTitle = createChild("STATIC", "第 2 步   当前来源：Codex", 4, hwnd, 0)
 	pSend.Call(view.guideTitle, wmSetFont, view.heading, 1)
-	view.guideStage = createChild("STATIC", "【尚未接入】点击左侧一键接入，软件负责准备。", 5, hwnd, 0)
+	view.guideStage = createChild("STATIC", "①/③ 点击左侧来源，开始自动准备", 5, hwnd, 0)
 	view.guideText = createChild("EDIT", "", 6, hwnd, wsVScroll|esMultiline|esAutoVScroll|esReadOnly|0x00800000)
 	view.officialHelp = createChild("STATIC", "", 20, hwnd, 0)
 	view.officialKey = createChild("EDIT", "", 108, hwnd, 0x00000020|0x00800000)
@@ -748,7 +759,7 @@ func startNative(cfg gateway.Config, s *gateway.Server, lan bool) error {
 	view.modelLabel = createChild("STATIC", "等待检查模型", 21, hwnd, 0)
 	view.modelChoice = createChild("COMBOBOX", "", 115, hwnd, 0x0003|wsVScroll) // select discovered model
 	view.retryButton = createChild("BUTTON", "重新接入", 109, hwnd, bsPushButton)
-	view.refreshModels = createChild("BUTTON", "检查模型", 110, hwnd, bsPushButton)
+	view.refreshModels = createChild("BUTTON", "我已完成，下一步 →", 110, hwnd, bsPushButton)
 	view.modelButton = createChild("BUTTON", "复制模型 ID", 111, hwnd, bsPushButton)
 	view.authButton = createChild("BUTTON", "打开官方授权", 112, hwnd, bsPushButton)
 	view.logTitle = createChild("STATIC", "第 3 步   请求记录 / 排错（自动刷新；不保存聊天内容）", 10, hwnd, 0)
