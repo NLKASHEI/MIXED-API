@@ -22,6 +22,9 @@ func (s *Server) prepareBackend(id string) error {
 		}
 	}
 	if s.managedPresent(id) {
+		if err := s.restorePreparedConnection(id); err != nil {
+			return err
+		}
 		s.backendState(id, "installed: 运行组件已准备，下一步完成本人授权")
 		return nil
 	}
