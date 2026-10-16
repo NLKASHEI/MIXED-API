@@ -300,7 +300,6 @@ func (s *Server) saveGeneratedBackend(id, key string) error {
 		if next.Backends[i].ID == id {
 			next.Backends[i].Key = key
 			next.Backends[i].Auth = "bearer"
-			next.Backends[i].Enabled = true
 			found = true
 		}
 	}

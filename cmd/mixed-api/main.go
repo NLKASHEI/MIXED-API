@@ -19,8 +19,8 @@ import (
 func main() {
 	file := flag.String("config", "mixed-api.json", "local JSON config path")
 	noBrowser := flag.Bool("no-browser", false, "don't open the browser automatically")
-	nativeUI := flag.Bool("native-ui", false, "legacy Win32 UI (optional compatibility mode)")
 	lan := flag.Bool("lan", false, "opt-in read-only LAN API listener at :8766; never exposes admin panel")
+	importEngine := flag.String("import-engine", "", "maintenance: prepare a local APS-family runtime without starting it")
 	flag.Parse()
 	// Double-clicking the EXE should work regardless of the Explorer or shortcut
 	// working directory. Keep the local config next to the portable Windows EXE.
@@ -34,12 +34,11 @@ func main() {
 		log.Fatal(err)
 	}
 	server := gateway.NewServer(*file, cfg)
-	// Desktop: open a real native Win32 window. The gateway still serves APIs
-	// inside this EXE. Use --no-browser for headless/automation mode.
-	if runtime.GOOS == "windows" && *nativeUI && !*noBrowser {
-		if err := startNative(cfg, server, *lan); err != nil {
+	if *importEngine != "" {
+		if err := server.ImportEngine(*importEngine); err != nil {
 			log.Fatal(err)
 		}
+		fmt.Println("无头V组件已准备，统一客户端地址不变。")
 		return
 	}
 	url := "http://" + cfg.Listen

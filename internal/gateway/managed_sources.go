@@ -243,7 +243,6 @@ func (s *Server) ensureNoAuth(id string) {
 	for i := range next.Backends {
 		if next.Backends[i].ID == id && next.Backends[i].Key == "" {
 			next.Backends[i].Auth = "none"
-			next.Backends[i].Enabled = true
 		}
 	}
 	if Save(s.path, next) == nil {

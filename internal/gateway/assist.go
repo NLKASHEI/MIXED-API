@@ -57,7 +57,7 @@ func (s *Server) installedCommand(id string) (*exec.Cmd, error) {
 	return nil, errors.New("不支持一键启动")
 }
 func (s *Server) launchInstalled(id string) error {
-	if id == localEngineID && localEnginePresent() {
+	if id == localEngineID {
 		return s.launchLocalEngine()
 	}
 	if runtime.GOOS != "windows" {
@@ -124,14 +124,14 @@ func (s *Server) loginInstalled(id string) error {
 	if id != "aistudio" {
 		return errors.New("该后端请在原始桌面软件中完成账号登录")
 	}
-	// The managed source installer uses sourceDir, not the historical
-	// upstreamDir. Prefer the managed package so the built-in Login button
-	// works immediately after one-click deployment.
+	// Authorization uses the same managed directory prepared in step 1.
 	dir, err := s.sourceDir(id)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(dir,"package.json"));err!=nil {return errors.New("请先点击一键接入准备 AIStudioToAPI")}
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		return errors.New("请先点击一键接入准备 AIStudioToAPI")
+	}
 	// Interactive terminal: only the upstream login wizard sees Google credentials.
 	cmd := exec.Command("cmd.exe", "/d", "/c", "start", "\"AI Studio Login\"", "cmd.exe", "/k", "npm run setup-auth")
 	cmd.Dir = dir

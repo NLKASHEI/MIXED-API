@@ -60,8 +60,14 @@ func TestLocalEngineImportIsPrivateAndDoesNotExecuteOrModifyOriginal(t *testing.
 	}
 	current := app.config()
 	var b Backend
- for _,candidate:=range current.Backends {if candidate.ID==localEngineID {b=candidate}}
- if len(current.Backends)!=len(cfg.Backends) {t.Fatal("local component created an extra user-facing source")}
+	for _, candidate := range current.Backends {
+		if candidate.ID == localEngineID {
+			b = candidate
+		}
+	}
+	if len(current.Backends) != len(cfg.Backends) {
+		t.Fatal("local component created an extra user-facing source")
+	}
 	if b.ID != localEngineID || b.Enabled || b.Key == "" {
 		t.Fatal("import must register a disabled engine with fresh credentials")
 	}

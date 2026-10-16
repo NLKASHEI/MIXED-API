@@ -29,6 +29,7 @@ try {
   child.on('error',error=>console.error(error.message));
   let ready=false;for(let i=0;i<60;i++){try{ready=(await fetch(base+'/health')).ok;if(ready)break}catch{}await delay(100)}assert(ready,'gateway did not start');
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  const output=resolve(process.env.MIXED_UI_OUTPUT||'.git/ui-evidence');await mkdir(output,{recursive:true});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base+'/#admin=ui-test-admin');await page.locator('#app').waitFor({state:'visible'});
   assert.equal(new URL(page.url()).hash,'','bootstrap credential fragment remains visible');
@@ -36,18 +37,49 @@ try {
   await page.locator('#manual-settings').evaluate(n=>n.open=true);await page.locator('#backend-enabled').check();await page.locator('#save-provider').click();
   await page.locator('#next-provider').click();await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
   await page.getByRole('button',{name:'关闭',exact:true}).first().click();
+  // Reopen completion, then fail the next real HTTP refresh. Old model data
+  // must never turn a failed verification into a successful completion.
+  await page.locator('#providers .card').nth(1).getByRole('button').click();
+  await page.route('**/v1/models',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'fixture unavailable'}})}));
+  await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'本次读取失败'}).waitFor();
+  assert(await page.locator('#provider-models').isHidden(),'stale models were accepted');
+  await page.locator('#back-provider').click();await page.locator('#back-provider').click();
+  assert(await page.locator('#manual-settings').isVisible(),'user cannot return to fix connection settings');
+  await page.unroute('**/v1/models');await page.keyboard.press('Escape');await page.locator('#refresh').click();
+  // A fresh session exercises the normal managed 快速V path. Only the
+  // installation/activation boundary is faked; config and discovery are real.
+  await page.reload();await page.locator('#app').waitFor({state:'visible'});
+  await page.route('**/api/assist/vertex/prepare',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
+  await page.route('**/api/assist/vertex/activate',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
+  await page.route('**/api/status',route=>route.fulfill({contentType:'application/json',body:'{"processes":{"setup:vertex":"installed: fixture prepared"}}'}));
+  await page.locator('#providers .card').nth(1).getByRole('button').click();
+  assert(await page.locator('#official-field').isHidden(),'credentials shown before the authorization step');
+  assert(await page.locator('#verify-provider').isHidden(),'preparation can skip to verification');
+  await page.locator('#prepare-provider').click();await page.locator('#official-field').waitFor({state:'visible'});
+  await page.locator('#next-provider').click();await page.locator('#toast').filter({hasText:'Express API Key'}).waitFor();
+  assert(await page.locator('#official-field').isVisible(),'快速V continued without Express API Key');
+  await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:join(output,'onboarding-fast-v.png'),fullPage:true});
+  await page.locator('#official-key').fill('fixture-express-key');await page.locator('#next-provider').click();
+  await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
+  assert.equal(await page.locator('.client-summary').textContent(),`所有来源共用这个客户端地址：\n${base}/v1`);
+  await page.keyboard.press('Escape');await page.unroute('**/api/status');await page.unroute('**/api/assist/vertex/prepare');await page.unroute('**/api/assist/vertex/activate');
   await page.locator('[data-page="models"]').click();await page.locator('#model-search').fill('test-chat');assert.equal(await page.locator('.model-row').count(),1);
   await page.locator('#open-alias').click();await page.locator('#alias-name').fill('daily-chat');await page.locator('#alias-target').selectOption('vertex/test-chat');await page.locator('#alias-form').getByRole('button',{name:'保存别名'}).click();
   await page.locator('#alias-dialog').waitFor({state:'hidden'});await page.locator('#aliases').getByText('daily-chat',{exact:true}).waitFor();
   const response=await fetch(base+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer ui-test-client','Content-Type':'application/json'},body:JSON.stringify({model:'daily-chat',messages:[{role:'user',content:'hello'}]})});assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'Alias routing works');
   await page.locator('[data-page="diagnostics"]').click();await page.locator('#run-diagnostics').click();await page.locator('#diagnostics').getByText('2 个模型',{exact:false}).waitFor();
   await page.locator('[data-page="home"]').click();
-  const output=resolve(process.env.MIXED_UI_OUTPUT||'.git/ui-evidence');await mkdir(output,{recursive:true});
+  if(process.env.MIXED_LOCAL_ENGINE_PATH){
+    const imported=await fetch(base+'/api/local/import',{method:'POST',headers:{Authorization:'Bearer ui-test-admin','Content-Type':'application/json'},body:JSON.stringify({path:process.env.MIXED_LOCAL_ENGINE_PATH})});assert.equal(imported.status,201);const origin=await imported.json();assert.equal(origin.origin.module,'github.com/bsfdsagfadg/vertex');
+    const state=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();assert.equal(state.backends.length,6,'component import created another source');assert(!state.backends.some(b=>b.id==='vertex_local'));await page.reload();await page.locator('#app').waitFor({state:'visible'});
+  }
   await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:join(output,'console-desktop.png'),fullPage:true});
   await page.locator('[data-page="admin"]').click();
   await page.locator('#admin-engines tr').nth(5).waitFor();
   assert.equal(await page.locator('#admin-enabled').textContent(),'1');
   assert.equal(await page.locator('#admin-engines tr').count(),6);
+  assert.equal(await page.locator('#admin-engines').getByText(/http:\/\//).count(),0,'internal addresses are exposed in the admin list');
+  if(process.env.MIXED_LOCAL_ENGINE_PATH){await page.locator('#load-engine-settings').click();await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();}
   await page.screenshot({path:join(output,'console-admin.png'),fullPage:true});
   await page.locator('[data-page="home"]').click();
   await page.setViewportSize({width:390,height:844});

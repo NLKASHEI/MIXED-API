@@ -1,0 +1,83 @@
+package gateway
+
+import (
+	"archive/zip"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestPrepareInstallsCredentialsWithoutEnablingOrStartingSource(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows installer")
+	}
+	t.Setenv("APPDATA", t.TempDir())
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, _ := writer.Create("opencode2api.exe")
+	file.Write([]byte("fixture: must not execute"))
+	writer.Close()
+	digest := sha256.Sum256(archive.Bytes())
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(archive.Bytes()) }))
+	defer vendor.Close()
+	original := binaryUpstreams["opencode"]
+	binaryUpstreams["opencode"] = binaryUpstream{vendor.URL, hex.EncodeToString(digest[:]), "opencode2api.exe"}
+	defer func() { binaryUpstreams["opencode"] = original }()
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.AdminKey = "admin"
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	call := func(method, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		r.Header.Set("Authorization", "Bearer admin")
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, r)
+		return w
+	}
+	if w := call("POST", "/api/assist/opencode/prepare"); w.Code != 200 {
+		t.Fatalf("prepare: %d %s", w.Code, w.Body.String())
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		w := call("GET", "/api/status")
+		var status struct {
+			Processes map[string]string `json:"processes"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &status)
+		state := status.Processes["setup:opencode"]
+		if strings.HasPrefix(state, "failed:") {
+			t.Fatal(state)
+		}
+		if strings.HasPrefix(state, "installed:") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("preparation did not finish")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	w := call("GET", "/api/config")
+	var saved Config
+	json.Unmarshal(w.Body.Bytes(), &saved)
+	for _, backend := range saved.Backends {
+		if backend.Enabled {
+			t.Fatal("preparation activated a source before user confirmation")
+		}
+		if backend.ID == "opencode" && backend.Key == "" {
+			t.Fatal("preparation failed to generate communication credentials")
+		}
+	}
+	status := call("GET", "/api/status")
+	if strings.Contains(status.Body.String(), `"opencode":"running"`) {
+		t.Fatal("preparation started the executable")
+	}
+}

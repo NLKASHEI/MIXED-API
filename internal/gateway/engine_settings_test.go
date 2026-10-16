@@ -16,7 +16,7 @@ func TestEngineSettingsAreValidatedAndPreservePrivateConfiguration(t *testing.T)
 	t.Setenv("APPDATA", t.TempDir())
 	dir, _ := localEngineDir()
 	os.MkdirAll(filepath.Join(dir, "config"), 0700)
- os.WriteFile(filepath.Join(dir,"vertex-proxy.exe"),[]byte("test component marker"),0600)
+	os.WriteFile(filepath.Join(dir, "vertex-proxy.exe"), []byte("test component marker"), 0600)
 	original := `{"admin_password":"private-admin","port_api":2157,"max_retries":2,"request_timeout_seconds":180,"aggregate_stream":false,"custom_setting":"keep"}`
 	path := filepath.Join(dir, "config", "config.json")
 	os.WriteFile(path, []byte(original), 0600)

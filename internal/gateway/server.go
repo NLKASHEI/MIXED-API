@@ -360,9 +360,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		var err error
 		switch action {
 		case "prepare":
-			err=s.prepareBackend(id)
+			err = s.prepareBackend(id)
 		case "activate":
-			err=s.activateBackend(r.Context(),id)
+			err = s.activateBackend(r.Context(), id)
 		case "quickstart":
 			err = s.quickstartBackend(id)
 		case "install":

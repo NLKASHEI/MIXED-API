@@ -153,15 +153,27 @@ func (s *Server) importLocalEngine(root string) (localEngineOrigin, error) {
 	defer s.mu.Unlock()
 	next := s.cfg
 	next.Backends = append([]Backend(nil), s.cfg.Backends...)
-	found:=false
- for i:=range next.Backends {if next.Backends[i].ID==localEngineID {next.Backends[i].URL="http://127.0.0.1:2157/v1";next.Backends[i].Key=key;next.Backends[i].Auth="bearer";next.Backends[i].Name="无头V";next.Backends[i].Enabled=false;found=true;break}}
- if !found {return origin,errors.New("无头V来源未配置")}
+	found := false
+	for i := range next.Backends {
+		if next.Backends[i].ID == localEngineID {
+			next.Backends[i].URL = "http://127.0.0.1:2157/v1"
+			next.Backends[i].Key = key
+			next.Backends[i].Auth = "bearer"
+			next.Backends[i].Name = "无头V"
+			next.Backends[i].Enabled = false
+			found = true
+			break
+		}
+	}
+	if !found {
+		return origin, errors.New("无头V来源未配置")
+	}
 	if err = os.Rename(stage, dst); err != nil {
 		return origin, err
 	}
 	if err = Save(s.path, next); err != nil {
-		os.Rename(dst,stage)
- return origin, fmt.Errorf("配置保存失败，未启用新组件：%w", err)
+		os.Rename(dst, stage)
+		return origin, fmt.Errorf("配置保存失败，未启用新组件：%w", err)
 	}
 	s.cfg = next
 	return origin, nil
@@ -186,18 +198,30 @@ func (s *Server) handleLocalImport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) launchLocalEngine() error {
 	if runtime.GOOS != "windows" {
-		return errors.New("此增强引擎只支持 Windows")
+		return errors.New("无头V本机组件只支持 Windows")
 	}
-	dir, err := localEngineDir()
-	if err != nil {
-		return err
+	var dir, exe string
+	if localEnginePresent() {
+		var err error
+		dir, err = localEngineDir()
+		if err != nil {
+			return err
+		}
+		exe = filepath.Join(dir, "vertex-proxy.exe")
+		if _, err = inspectLocalEngine(exe); err != nil {
+			return err
+		}
+	} else {
+		root, err := s.binaryDir("aps")
+		if err != nil {
+			return err
+		}
+		exe, err = findManagedExe(root, binaryUpstreams["aps"].executable)
+		if err != nil {
+			return errors.New("请先完成第 1 步准备")
+		}
+		dir = filepath.Dir(exe)
 	}
-	exe := filepath.Join(dir, "vertex-proxy.exe")
-	if _, err = inspectLocalEngine(exe); err != nil {
-		return err
-	}
-	// An interactive window is intentional: only the user may accept upstream
-	// rules. No agreed-rules file, stdin "yes", or equivalent is synthesized.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, running := s.children[localEngineID]; running {
@@ -239,4 +263,14 @@ func (s *Server) launchLocalEngine() error {
 	return nil
 }
 
-func localEnginePresent() bool {dir,err:=localEngineDir();if err!=nil{return false};info,err:=os.Stat(filepath.Join(dir,"vertex-proxy.exe"));return err==nil&&info.Mode().IsRegular()}
+func localEnginePresent() bool {
+	dir, err := localEngineDir()
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, "vertex-proxy.exe"))
+	return err == nil && info.Mode().IsRegular()
+}
+
+// ImportEngine is a maintenance operation; component choice is not a user-facing setting.
+func (s *Server) ImportEngine(path string) error { _, err := s.importLocalEngine(path); return err }
