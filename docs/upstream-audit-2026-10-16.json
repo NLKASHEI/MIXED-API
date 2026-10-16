@@ -1,0 +1,167 @@
+{
+  "checked_on": "2026-10-16",
+  "sources": [
+    {
+      "repo": "bad-woman/vertex2openai",
+      "branch": "main",
+      "head": "53a45b63bfef39e783edf8ea9c1e06800fc17496",
+      "committed_at": "2026-10-13T17:56:08Z",
+      "summary": "模型更新 2026-10：加 nano-banana-2.1 支持、生图 thinking 默认 HIGH、删 2.5、摘 priority 头（4/4，test 已测）",
+      "license": "MIT",
+      "release": null
+    },
+    {
+      "repo": "openai/codex",
+      "branch": "main",
+      "head": "b5115cdd669d37a8635a9742851e97ba4fb1d42c",
+      "committed_at": "2026-10-16T14:49:23Z",
+      "summary": "Resolve stable releases dynamically for exec-server compatibility tests (#54623)",
+      "license": "Apache-2.0",
+      "release": {
+        "tag_name": "rust-v0.163.0",
+        "published_at": "2026-10-15T21:30:38Z",
+        "html_url": "https://github.com/openai/codex/releases/tag/rust-v0.163.0",
+        "assets": [
+          {
+            "name": "argument-comment-lint-x86_64-pc-windows-msvc.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/argument-comment-lint-x86_64-pc-windows-msvc.zip",
+            "digest": "sha256:118f7862638c7197e7fa75f141931a0d5c5e47215b5a594721d274649862a402"
+          },
+          {
+            "name": "codex-app-server-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-app-server-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:665c5c1abaac37198ede3e76416e9f2949cea5bdb3633a9bde21b7bcbdb8f088"
+          },
+          {
+            "name": "codex-app-server-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-app-server-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:c12aef2643b5e8b93b8626e4fe81df7fd6793ed597e60790fdd4837a6d45122c"
+          },
+          {
+            "name": "codex-code-mode-host-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-code-mode-host-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:8699935885056cf9b0e01dd167ad8214918c92d54bca49ff8b35292b8afaa17e"
+          },
+          {
+            "name": "codex-code-mode-host-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-code-mode-host-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:bc82fa6d8f449c818292eac35bd7400c4f7dae08908fc9bc67bfbad8c4a3de68"
+          },
+          {
+            "name": "codex-command-runner-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-command-runner-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:c674ac91165542ff0e01062d489893ca1a304396d287eeb852543b7aa9b65bc7"
+          },
+          {
+            "name": "codex-command-runner-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-command-runner-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:e1ad67cd2e4e0b24a4c74e3c3fe5729f3ffdcf48a253af35053ea7684c783396"
+          },
+          {
+            "name": "codex-responses-api-proxy-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-responses-api-proxy-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:714b1408e64d2175a5813ff17fe20bb6d6e3e0555f0de63e0363b85bd2278c96"
+          },
+          {
+            "name": "codex-responses-api-proxy-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-responses-api-proxy-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:db7b1d334dea8148a137881bb0797980ffd2eeb93a0c5610dc1c5ab6206d4d6a"
+          },
+          {
+            "name": "codex-windows-sandbox-service-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-windows-sandbox-service-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:66f9fccd386d3b85ac0ca1112a0c2ff70f85e856df669005fef9bdb35feda84c"
+          },
+          {
+            "name": "codex-windows-sandbox-service-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-windows-sandbox-service-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:9d1d13976b33c835097b3734f3f7250b7fe256c7e96c2faf30b4a8af06f6aa54"
+          },
+          {
+            "name": "codex-windows-sandbox-setup-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-windows-sandbox-setup-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:a46c2c4d7eb08c60b1018bfaf689cb886dfc5e08ff1df823483e8c8335687b77"
+          },
+          {
+            "name": "codex-windows-sandbox-setup-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-windows-sandbox-setup-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:47a1db354385dd5f4de9ab57452cf717db8029f8491eb84bb391fe2fbfa4a6da"
+          },
+          {
+            "name": "codex-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-x86_64-pc-windows-msvc-bazel.exe.zip",
+            "digest": "sha256:0310a7d8339d48e5055598c3a63d39bca39d25767bf133311d2bc70e507e8b61"
+          },
+          {
+            "name": "codex-x86_64-pc-windows-msvc.exe.zip",
+            "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-x86_64-pc-windows-msvc.exe.zip",
+            "digest": "sha256:dabdb4d16aaf10fea40b74811c96efddcd9138f122163b69ed604fcb3eb704c3"
+          }
+        ]
+      }
+    },
+    {
+      "repo": "jasonxu114514/opencode2api",
+      "branch": "main",
+      "head": "a6601da673c03832bf78ce04b100dee8c8a92385",
+      "committed_at": "2026-10-15T12:40:50Z",
+      "summary": "fix: report a proxy error when every proxy is down",
+      "license": "GPL-3.0",
+      "release": {
+        "tag_name": "v1.4.0",
+        "published_at": "2026-10-15T00:28:31Z",
+        "html_url": "https://github.com/jasonxu114514/opencode2api/releases/tag/v1.4.0",
+        "assets": [
+          {
+            "name": "opencode2api_v1.4.0_windows_amd64.zip",
+            "browser_download_url": "https://github.com/jasonxu114514/opencode2api/releases/download/v1.4.0/opencode2api_v1.4.0_windows_amd64.zip",
+            "digest": "sha256:f63e1049aa9aa489c5032cdd5f007088c192e4ed5d08afca0122ebdc0de41bab"
+          }
+        ]
+      }
+    },
+    {
+      "repo": "sitingge/workboddy-proxy",
+      "branch": "save",
+      "head": "676b64d21a1ff7ea7ca6b4def5850ee61e97a06f",
+      "committed_at": "2026-09-30T16:36:40Z",
+      "summary": "Create LICENSE",
+      "license": "MIT",
+      "release": null
+    },
+    {
+      "repo": "DeconstructedCube/APS2api",
+      "branch": "master",
+      "head": "01328896c435b4b172b1d25f9fc04ff86b40df31",
+      "committed_at": "2026-10-15T13:37:27Z",
+      "summary": "feat: 完善 Responses 兼容、滑动竞速、节点治理与管理控制台 (#29)",
+      "license": "NOASSERTION",
+      "release": {
+        "tag_name": "v1.2.0",
+        "published_at": "2026-07-20T18:46:17Z",
+        "html_url": "https://github.com/DeconstructedCube/APS2api/releases/tag/v1.2.0",
+        "assets": [
+          {
+            "name": "vertex-proxy-windows-amd64.zip",
+            "browser_download_url": "https://github.com/DeconstructedCube/APS2api/releases/download/v1.2.0/vertex-proxy-windows-amd64.zip",
+            "digest": "sha256:ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e"
+          }
+        ]
+      }
+    },
+    {
+      "repo": "iBUHub/AIStudioToAPI",
+      "branch": "main",
+      "head": "fec035bcaa1f99df967abd2f3e0ed93d07369f50",
+      "committed_at": "2026-10-09T15:34:39Z",
+      "summary": "docs: remove discontinued Claw Cloud Run deployment section",
+      "license": "NOASSERTION",
+      "release": {
+        "tag_name": "v1.4.0",
+        "published_at": "2026-10-06T13:18:29Z",
+        "html_url": "https://github.com/iBUHub/AIStudioToAPI/releases/tag/v1.4.0",
+        "assets": []
+      }
+    }
+  ]
+}

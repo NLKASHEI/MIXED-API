@@ -16,27 +16,6 @@ import (
 	"time"
 )
 
-type upstreamPackage struct {
-	repository, revision, entry, port string
-	npm                               bool
-}
-
-var upstreamPackages = map[string]upstreamPackage{
-	"workbuddy": {"https://github.com/sitingge/workboddy-proxy.git", "676b64d21a1ff7ea7ca6b4def5850ee61e97a06f", "wb-relay.js", "8790", false},
-	"aistudio":  {"https://github.com/iBUHub/AIStudioToAPI.git", "fec035bcaa1f99df967abd2f3e0ed93d07369f50", "main.js", "7860", true},
-}
-
-func (s *Server) upstreamDir(id string) (string, error) {
-	p, ok := upstreamPackages[id]
-	if !ok || p.repository == "" {
-		return "", errors.New("此上游不支持一键安装；请按配置向导使用官方安装包")
-	}
-	home, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "MIXED-API", "upstreams", id), nil
-}
 func (s *Server) backendState(id, value string) {
 	s.mu.Lock()
 	s.status["setup:"+id] = value
@@ -78,6 +57,9 @@ func (s *Server) installedCommand(id string) (*exec.Cmd, error) {
 	return nil, errors.New("不支持一键启动")
 }
 func (s *Server) launchInstalled(id string) error {
+	if id == localEngineID {
+		return s.launchLocalEngine()
+	}
 	if runtime.GOOS != "windows" {
 		return errors.New("桌面上游的一键启动只支持 Windows")
 	}
@@ -142,22 +124,13 @@ func (s *Server) loginInstalled(id string) error {
 	if id != "aistudio" {
 		return errors.New("该后端请在原始桌面软件中完成账号登录")
 	}
-	// The managed source installer uses sourceDir, not the historical
-	// upstreamDir. Prefer the managed package so the built-in Login button
-	// works immediately after one-click deployment.
+	// Authorization uses the same managed directory prepared in step 1.
 	dir, err := s.sourceDir(id)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
-		legacy, oldErr := s.upstreamDir(id)
-		if oldErr != nil {
-			return errors.New("请先点击一键接入准备 AIStudioToAPI")
-		}
-		if _, oldErr = os.Stat(filepath.Join(legacy, "package.json")); oldErr != nil {
-			return errors.New("请先点击一键接入准备 AIStudioToAPI")
-		}
-		dir = legacy
+		return errors.New("请先点击一键接入准备 AIStudioToAPI")
 	}
 	// Interactive terminal: only the upstream login wizard sees Google credentials.
 	cmd := exec.Command("cmd.exe", "/d", "/c", "start", "\"AI Studio Login\"", "cmd.exe", "/k", "npm run setup-auth")
@@ -205,7 +178,7 @@ func (s *Server) installCodex() error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "npm install -g @openai/codex@latest")
+		cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/c", "npm install -g @openai/codex@"+reviewedCodexVersion())
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			s.backendState("codex", "failed: "+briefOutput(output, err))

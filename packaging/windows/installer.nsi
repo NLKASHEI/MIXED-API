@@ -4,7 +4,7 @@ Unicode true
 !include "MUI2.nsh"
 !define PRODUCT_NAME "MIXED-API"
 !ifndef PRODUCT_VERSION
-  !define PRODUCT_VERSION "0.2.0"
+  !define PRODUCT_VERSION "0.3.0"
 !endif
 
 Name "${PRODUCT_NAME}"

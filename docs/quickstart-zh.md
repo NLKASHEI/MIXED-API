@@ -1,49 +1,36 @@
-# MIXED-API · 零基础一步到位指南
+# MIXED-API 使用指引
 
-你不需要自己去六个项目里下载程序、解压 ZIP、改 JSON、填写自己刚生成的本地 Key。**基础配置由 MIXED-API 执行，账号授权才需要你自己操作。**
+先按 [逐步配置指引](quickstart-guided.md) 操作。新版启动后打开统一工作台，不再使用旧 Win32 窗口。
 
-## 第一次启动
+## Key 不要混用
 
-1. 打开 [最新正式版（永久地址）](https://github.com/NLKASHEI/MIXED-API/releases/latest)，Windows 用户下载 `MIXED-API-Windows-x64-Setup.exe`；不想安装的下载免安装 ZIP。Android 下载 APK。
-2. Windows 双击打开软件，**直接进入原生管理窗口**，不必打开浏览器、输入管理密码或进多级菜单。点击「复制地址」「复制 Key」便能获取客户端配置。
-3. 在原生窗口中找到六个来源各自的 **「一键接入」**，想用哪个点哪个。MIXED-API 负责自动下载、生成本地 Key、配置文件、启用及启动；**Vertex Express / OpenCode Zen 官方 Key** 需要时可在主窗口的「仅需官方 Key 时填写」区域粘贴，然后点「保存并接入」。
-4. 如果提示需要 ChatGPT、Google 或 WorkBuddy 官方登录，按照页面提示在官方授权窗口**本人确认一次**。已有效登录可直接复用；账号限制、模型权限与上游计费仍生效。
-5. 用任意 OpenAI 兼容客户端请求 `GET /v1/models` 获取可用的完整模型 ID，例如 `codex/gpt-...`。主窗口底部实时显示请求状态码和错误详情。客户端只需填写 **Base URL `http://127.0.0.1:8765/v1` + MIXED-API 客户端 Key + 这个完整模型 ID**。
+- **客户端 Key**：工作台复制，填到 Cherry Studio、SillyTavern 等 AI 客户端。
+- **Admin Key**：只用于本机后台管理；EXE 启动会自动连接，手动访问可从私密的 mixed-api.json 查找。
+- **快速V Express Key / OpenCode Zen Key**：来自各自官方账号，只填到相应来源第 2 步。不是 MIXED 的客户端 Key。
+- **组件间通信 Key**：软件自动处理，普通用户无需复制或编辑。
 
-### 六个来源各自还需要什么
+## Android → 电脑
 
-| 来源 | 自动完成 | 需要本人提供 |
-| --- | --- | --- |
-| Codex | 安装 CLI、直连 app-server，无须 SillyTavern | 官方 ChatGPT 首次登录 |
-| Vertex2OpenAI | Python 运行环境中的虚拟环境、启动、网关随机 Key | Google Express API Key 或上游合法认证 |
-| OpenCode | 安装官方已编译版、配置本地 Key、启动 | 可选 Zen API Key；匿名访问不能保证 |
-| WorkBuddy | 下载中转并自动发现桌面客户端 | 官方 WorkBuddy 桌面客户端及登录 |
-| APS2api | 下载已编译版、配置本地 Key、启动 | 首次阅读并同意相关规则（非商业授权） |
-| AIStudioToAPI | 安装 Node 依赖、配置随机 Key/本地端口、启动 | 在官方网页一次 Google 登录，已保存的有效会话可复用 |
+1. 电脑使用 `Start-MIXED-API-LAN.cmd`，接好所需来源。
+2. 在电脑用 `ipconfig` 查看实际局域网 IPv4。手机电脑连同一可信 Wi-Fi。
+3. 手机点击「电脑 MIXED-API」，按步骤填写 `http://实际电脑IP:8766/v1` 和电脑客户端 Key；这是手机网关连接电脑的内部设置。
+4. 手机 AI 客户端填 `http://127.0.0.1:8765/v1` 和手机自己的客户端 Key；模型从手机模型页复制。
 
-如果缺 Node.js/Python，按 **「一键接入」** 会尝试调用 Windows winget 安装官方运行时。Windows 已运行进程可能不能立即发现新 PATH，**安装完重启 MIXED-API，再点同一个按钮**，无需自己输入命令。
+电脑掉线或关闭后，对应模型也会不可用。局域网端口不提供后台管理，不要映射到公网。
 
-**上游项目页面仅用于查看开源许可证/高级配置，不是基本安装流程。** 不会收集或自动导出你的 Google Cookie、ChatGPT OAuth Token、账号密码。无法保证非公开接口和第三方反代长期可用。
+## 常见问题
 
-## 永久更新
+- **快速V没有 Express Key**：在第 2 步点击申请入口，按 Google 官方要求获取；MIXED 无法代替你创建账号权限。
+- **安装完成却没有模型**：安装、授权、模型目录和实际推理是不同的事情。按第 2、3 步检查，不会自动改用别的来源。
+- **无头V打开后退出**：首次规则需在组件窗口本人确认；后台查看进程状态与诊断。若网络策略限制其服务，不能通过 MIXED 绕过。
+- **Key/地址填错**：在配置窗口点「返回上一步」进入已有服务高级设置；普通自动接入不需要改内部端口。
+- **模型检查曾成功、现在失败**：本次读取失败不会使用上次目录冒充验证通过；排除网络/授权问题后重新检查。
+- **工作台关闭后服务还在**：浏览器页面与后台网关进程是分开的。要退出网关，在任务管理器关闭 MIXED-API；再次双击 EXE 会打开已有工作台。
 
-Windows 原生窗口顶部 **「检查更新」** 始终存在；还可以直接访问 **https://github.com/NLKASHEI/MIXED-API/releases/latest**，不会因新版本改 tag 而失效。Windows 原生窗口点「检查更新」会查询 GitHub 最新版并打开永久官方 Release 下载页；高级网页管理入口还保留可选择的下载安装向导功能，用户需自行确认安装并关闭运行中的旧进程。已有 `mixed-api.json` 默认不会被删除。Android APP 首页及管理页面有 **「检查更新 / 下载最新版 APK」**，系统要求本人确认安装。
+## 签名、升级与备份
 
-**Android 当前使用调试签名：** 如果新版 APK 与旧版签名不同，系统将拒绝覆盖安装；此时不要直接卸载以免丢数据。维护者应配置 GitHub Secrets 中的 `MIXED_API_ANDROID_DEBUG_KEYSTORE_B64`，让以后的 Android 构建共用私有签名密钥。你看到按钮不代表我们已经解决了旧版跨签名升级问题。
+Windows 安装包会保留配置；脚本升级还会在安装目录备份 `mixed-api.json`。上游私密数据在 `%APPDATA%\MIXED-API`，备份时一并保管。不要把配置备份或会话文件提交到仓库。
 
-## Android 使用电脑的模型
+Android 云端默认 Debug 签名。维护者可将含 `androiddebugkey` 别名、标准 `android` 密码的私有 debug.keystore 用 base64 保存为 GitHub Secret `MIXED_API_ANDROID_DEBUG_KEYSTORE_B64`，以后始终使用同一密钥。不要公开 keystore；若已安装包签名不同，第一次切换可能仍需备份后重新安装。未设置持久密钥时不能承诺覆盖升级。
 
-Windows 在开始菜单打开「MIXED-API → 局域网模式」（绿色版运行 `Start-MIXED-API-LAN.cmd`）。从电脑运行 `ipconfig` 读取真实局域网 IPv4，并只在可信专用网络开放 8766。手机和电脑连接同一 Wi-Fi；在 Android APP 原生控制页选择 **「电脑 MIXED-API」**，输入电脑地址和客户端 Key 后勾选启用保存（例如 `http://电脑IPv4:8766/v1`）即可。手机上的其他 AI 客户端仍使用 **手机本地** `http://127.0.0.1:8765/v1` + **手机自己的客户端 Key**，模型名保持 `codex/...` 等不额外加前缀。
-
-手机 APK 不能原生运行桌面 Codex CLI、WorkBuddy 客户端和 Camoufox。电脑关机或断网，其模型就不可用。禁止把未加密的 8766 直接映射公网。
-
-## 如果一键接入仍然失败
-
-请直接查看 Windows 原生窗口的来源状态、下方 HTTP 请求日志及错误原因；Android 则查看原生日志面板。配置及运行时都由 MIXED-API 保存到当前用户自己的配置目录；如网络阻断了 GitHub 下载或官方登录不可用，软件不能绕过这些限制。为保护凭证，上游许可证和各平台服务条款始终有效。
-
-
-## 为什么保留 HTTP 接口但不要求使用网页后台？
-
-HTTP 服务是为了让任意 AI 客户端使用 `/v1`，不是要求用户浏览器管理。Windows 版本默认使用原生 Win32 GUI，Android 使用原生 Activity；网关在同一个 EXE 或 APK 的后台服务中运行。原网页管理页仅是可选的兼容/高级入口。
-
-Windows 原生主窗口可直接管理六个后端的快速接入，并在需要时保存 Vertex Express 或 OpenCode Zen 官方 Key。`GET /api/logs` 则是仅限 Admin Key 的诊断接口，不对局域网开放；成功请求不持久化对话正文和响应内容。
+实际个人账号推理、Android 真机安装及保活未全面验证；请以真实设备和账号的测试结果为准。

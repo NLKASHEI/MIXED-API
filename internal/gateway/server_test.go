@@ -154,7 +154,7 @@ func TestEmbeddedDesktopUIAndImage(t *testing.T) {
 		path, contentType string
 		contains          string
 	}{
-		{"/", "text/html", "总览首页"},
+		{"/", "text/html", "把模型，连在一起。"},
 		{"/assets/hero.webp", "image/webp", ""},
 	} {
 		r := httptest.NewRequest(http.MethodGet, tc.path, nil)

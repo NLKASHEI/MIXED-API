@@ -2,13 +2,15 @@ plugins { id 'com.android.application' }
 
 android {
     namespace 'com.mixedapi.local'
+    buildFeatures { buildConfig true }
+    testOptions { unitTests.includeAndroidResources = true }
     compileSdk 35
     defaultConfig {
         applicationId 'com.mixedapi.local'
         minSdk 26
         targetSdk 33
-        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
-        versionName ('0.2.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0') + '-android')
+        versionCode (1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1'))
+        versionName (System.getenv('MIXED_API_VERSION') ?: new File(rootDir, '../VERSION').text.trim())
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -17,4 +19,10 @@ android {
     packaging {
         resources { excludes += ['/META-INF/{AL2.0,LGPL2.1}'] }
     }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
 }

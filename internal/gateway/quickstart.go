@@ -43,6 +43,7 @@ func (s *Server) enableBackend(id string) error {
 }
 
 func (s *Server) managedPresent(id string) bool {
+ if id==localEngineID && localEnginePresent() {return true}
 	if id == "codex" {
 		return toolAvailable("codex")
 	}
@@ -66,6 +67,12 @@ func (s *Server) managedPresent(id string) bool {
 }
 
 func (s *Server) quickstartBackend(id string) error {
+	if id == localEngineID && localEnginePresent() {
+		if err := s.enableBackend(id); err != nil {
+			return err
+		}
+		return s.launchLocalEngine()
+	}
 	if runtime.GOOS != "windows" {
 		return errors.New("此版本的本机托管仅支持 Windows，Android 请连接电脑 MIXED-API")
 	}

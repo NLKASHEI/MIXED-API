@@ -1,114 +1,118 @@
-name: Build Windows and Android Release
+name: Verify and release MIXED-API
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  windows:
-    name: Test + Windows x64
+  version:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    outputs:
+      number: ${{ steps.version.outputs.number }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Tests, race detector and go vet
-        run: |
-          go test -race ./...
-          go vet ./...
-      - name: Build self-contained EXE
+      - id: version
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p windows
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.${GITHUB_RUN_NUMBER}' -o windows/MIXED-API.exe ./cmd/mixed-api
-          cp Start-MIXED-API.cmd Start-MIXED-API-LAN.cmd README.md windows/
-          cp windows/MIXED-API.exe MIXED-API-Windows-x64.exe
-          python3 - <<'PY'
-          import zipfile
-          from pathlib import Path
-          with zipfile.ZipFile('MIXED-API-Windows-x64.zip','w',zipfile.ZIP_DEFLATED) as z:
-              for file in Path('windows').iterdir():
-                  z.write(file,file.name)
-          PY
-          sha256sum MIXED-API-Windows-x64.exe MIXED-API-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64
-          path: |
-            MIXED-API-Windows-x64.zip
-            MIXED-API-Windows-x64.exe
-          if-no-files-found: error
+          version="$(tr -d '\r\n' < VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$version"; fi
+          echo "number=$version" >> "$GITHUB_OUTPUT"
 
-  windows-native-tests:
-    name: Windows native smoke tests
-    runs-on: windows-latest
+  verify:
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Windows go tests and compilation
-        shell: pwsh
-        run: |
-          go test ./...
-          if ($LASTEXITCODE -ne 0) { throw "Windows Go unit tests failed" }
-          New-Item -ItemType Directory -Path windows -Force | Out-Null
-          go build -trimpath -ldflags="-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v0.2.$env:GITHUB_RUN_NUMBER" -o "windows/MIXED-API.exe" ./cmd/mixed-api
-          if ($LASTEXITCODE -ne 0) { throw "Windows native Go build failed" }
-      - name: Build NSIS one-click installer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:ui
+      - run: npx playwright install --with-deps chromium
+      - run: go build -o .ui-gateway ./cmd/mixed-api
+      - run: npm run test:ui
+        env:
+          MIXED_TEST_BINARY: .ui-gateway
+          MIXED_UI_OUTPUT: .ui-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-evidence
+          path: .ui-evidence/*.png
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      MIXED_API_VERSION: ${{ needs.version.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test and build Windows
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          if (!(Test-Path $nsis)) {
-            choco install nsis -y --no-progress
-            if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed" }
-          }
-          if (!(Test-Path $nsis)) { throw "makensis.exe unavailable" }
-          & $nsis /V3 "/DPRODUCT_VERSION=0.2.$env:GITHUB_RUN_NUMBER" "packaging/windows/installer.nsi"
-          if ($LASTEXITCODE -ne 0) { throw "NSIS installer compile failed" }
-          if (!(Test-Path "MIXED-API-Windows-x64-Setup.exe")) { throw "Installer output missing" }
-          if ((Get-Item "MIXED-API-Windows-x64-Setup.exe").Length -lt 1000000) { throw "Installer unexpectedly small" }
-          Get-FileHash "MIXED-API-Windows-x64-Setup.exe" -Algorithm SHA256
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Windows tests failed' }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Windows vet failed' }
+          New-Item -ItemType Directory -Path windows -Force | Out-Null
+          go build -trimpath -ldflags="-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v$env:MIXED_API_VERSION" -o windows/MIXED-API.exe ./cmd/mixed-api
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          Copy-Item Start-MIXED-API.cmd,Start-MIXED-API-LAN.cmd,README.md,Install-MIXED-API.ps1 -Destination windows/
+          Copy-Item windows/MIXED-API.exe MIXED-API-Windows-x64.exe
+          Compress-Archive -Path windows/* -DestinationPath MIXED-API-Windows-x64.zip
+          $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'Install-MIXED-API.ps1'),[ref]$null,[ref]$null)
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nsis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (!(Test-Path -LiteralPath $nsis)) { choco install nsis -y --no-progress }
+          & $nsis /V3 "/DPRODUCT_VERSION=$env:MIXED_API_VERSION" packaging/windows/installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS build failed' }
+          if ((Get-Item MIXED-API-Windows-x64-Setup.exe).Length -lt 1000000) { throw 'Installer unexpectedly small' }
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: MIXED-API-Windows-x64-Setup.exe
+          name: windows-release
+          path: MIXED-API-Windows-x64*
           if-no-files-found: error
 
   android:
-    name: Android APK (debug signed)
+    needs: version
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      MIXED_API_VERSION: ${{ needs.version.outputs.number }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Verify Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
-          fi
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-          test -d "$ANDROID_HOME/build-tools/35.0.0"
+      - name: Use runner Android SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "platforms;android-35" "build-tools;35.0.0"'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Restore optional persistent Android signing key
+      - name: Restore persistent signing key if configured
         shell: bash
         env:
           APK_DEBUG_KEYSTORE_B64: ${{ secrets.MIXED_API_ANDROID_DEBUG_KEYSTORE_B64 }}
@@ -119,64 +123,48 @@ jobs:
             printf '%s' "$APK_DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
             chmod 600 "$HOME/.android/debug.keystore"
             keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
-            echo "Persistent Android signing key loaded; compatible upgrades require the same signing key as the installed version."
           else
-            echo "::warning::ANDROID SIGNING: no persistent keystore secret; APK debug signing may change between cloud builds, so upgrades can fail with signature mismatch. Configure the secret before promising in-place upgrades."
+            echo '::warning::No persistent APK signing key; in-place upgrades are not guaranteed.'
           fi
-      - name: Build APK
-        run: |
-          gradle -p android --no-daemon :app:assembleDebug --stacktrace
-          cp android/app/build/outputs/apk/debug/app-debug.apk MIXED-API-Android.apk
-          sha256sum MIXED-API-Android.apk
+      - name: Build, unit tests and lint
+        run: gradle -p android --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --stacktrace
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk MIXED-API-Android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
+          name: android-release
           path: MIXED-API-Android.apk
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-reports
+          path: android/app/build/reports/
 
   release:
-    name: Publish GitHub Release
-    needs: [windows, windows-native-tests, android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, verify, windows, android]
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: '*'
+          pattern: '*-release'
           merge-multiple: true
           path: dist
-      - name: Publish binaries
+      - name: Publish successful build artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          test -s dist/MIXED-API-Windows-x64-Setup.exe
           test -s dist/MIXED-API-Windows-x64.zip
           test -s dist/MIXED-API-Windows-x64.exe
-          test -s dist/MIXED-API-Windows-x64-Setup.exe
           test -s dist/MIXED-API-Android.apk
-          tag="v0.2.${GITHUB_RUN_NUMBER}"
-          cat > notes.md <<'NOTES'
-          MIXED-API 本地六上游 OpenAI 兼容网关，新增独立 Codex CLI、Windows 一键配置助手及 Android→PC 局域网桥接。
-
-          - Windows 一键安装：`MIXED-API-Windows-x64-Setup.exe`，中文安装向导、开始菜单/桌面快捷方式、卸载入口。安装目录为用户 LocalAppData，无需管理员权限；卸载保留 mixed-api.json。
-          - Windows 免安装：`MIXED-API-Windows-x64.zip`，解压后运行 `Start-MIXED-API.cmd`；分享给手机则改用 `Start-MIXED-API-LAN.cmd`。
-          - Windows 单文件：`MIXED-API-Windows-x64.exe`，不需要安装，独立运行网关。
-          - Android：下载 `MIXED-API-Android.apk`，安装并打开代理服务。
-          - 默认 API Base URL：`http://127.0.0.1:8765/v1`；第一次启动会在本地生成随机 API Key 和 Admin Key。
-          - 首次选择来源→「一键接入」：Windows 自动下载安装依赖、生成本地密钥、配置、启用及启动；仅用户本人完成必须的官方账号授权；安装运行时可能需要重启 MIXED-API。
-          - Windows 永久「检查更新」入口：从 GitHub 最新正式版检查版本；需要时校验 SHA-256 并启动 Setup.exe 安装向导；不会未经确认静默升级。Android 在 APP 首页和管理页均可打开永久 Latest 地址。
-          - Windows 原生 Codex：无需安装 SillyTavern，可一键安装 Codex CLI、弹出账号授权，直接通过 app-server 对话。
-          - Windows WorkBuddy：一键拉取并启动固定源码版本，自动识别已登录的 WorkBuddy 客户端。
-          - Windows AIStudioToAPI：一键拉取/安装依赖，弹出 Google 首次登录流程，自动设置 localhost 与随机 API Key。
-          - 网页账号授权必须由用户本人完成；绝不静默抓取 Cookie/密码/Token。
-          - APK 是独立网关，不内置桌面 Codex / WorkBuddy / Camoufox；新版「电脑 MIXED-API」可以连接 PC 的 LAN 8766，只共享 API 而不共享管理界面，完整模型 ID 保持 codex/gpt-* 等不变。
-          - 保姆级配置指南：https://github.com/NLKASHEI/MIXED-API/blob/main/docs/quickstart-zh.md
-          - 请遵守上游许可证和服务条款。
-
-          **注意：六路真实账号端到端尚未全面验证。Android 默认 Debug 签名；不同云端构建的签名可能变化，除非配置持久签名密钥（GitHub Secrets: MIXED_API_ANDROID_DEBUG_KEYSTORE_B64），否则可能无法覆盖安装旧版。Windows 安装器和 EXE 尚未代码签名。安装器只打包 MIXED-API 网关；首次使用时由软件按需下载独立上游，不捆绑第三方客户端。**
-          NOTES
-          gh release create "$tag" dist/MIXED-API-Windows-x64-Setup.exe dist/MIXED-API-Windows-x64.zip dist/MIXED-API-Windows-x64.exe dist/MIXED-API-Android.apk \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "MIXED-API $tag · Windows Setup / Portable / Android" --notes-file notes.md
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'
+          (cd dist && sha256sum MIXED-API-* > SHA256SUMS)
+          cp Install-MIXED-API.ps1 dist/
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "MIXED-API $GITHUB_REF_NAME" --notes-file "docs/release-notes-$GITHUB_REF_NAME.md"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'

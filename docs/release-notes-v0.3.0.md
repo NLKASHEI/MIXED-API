@@ -1,0 +1,14 @@
+MIXED-API 0.3：简约大字号工作台、独立后台与统一模型管理。
+
+- **新版 UI**：Windows EXE 默认打开浅色、响应式工作台并自动连接本机，不再默认打开旧 Win32 管理窗口。Android 使用同一份页面。
+- **融合能力**：模型搜索、明确绑定来源的模型别名、并发模型探测、来源诊断、授权后的人工确认流程和独立密钥管理均在 MIXED 内统一实现。
+- **本地增强引擎**：维护者可准备已有 Vertex Proxy / APS 同源 Windows 包，内部合入无头V，不让用户选择组件版本。原文件夹不变，生成独立配置与端口 2157，不复制数据库、账号会话或规则同意记录。仅在用户接入时启动，首次规则仍需本人确认。快速V明确要求填写自己的 Express API Key，每个来源在当前步骤中给出指引。该 EXE 不随本 Release 分发。
+- **上游核对**：六个原仓库的分支、HEAD、正式包和 SHA-256 留档于 docs/upstream-audit-2026-10-16.json。OpenCode / APS 有尚未发包的源码变动，保留正式包；Codex 新安装固定为 0.163.0，已有安装保持原样。
+- **部署与更新**：提供 Install-MIXED-API.ps1；发布 Windows Setup / ZIP / EXE、Android APK 与 SHA256SUMS。修复便携 EXE 内版本号不展开的问题，统一各资产版本。
+- **验证**：CI 运行 Go 测试、race、vet、真实浏览器交互、Windows 编译/安装器构建、Android Gradle 测试与 lint。
+
+首次使用：Windows 下载 Setup.exe 或解压 ZIP，启动后选择来源；完成自己的官方授权，检查模型，再将工作台里的 URL、客户端 Key 和完整模型 ID 填入客户端。
+
+说明：模型目录可读取不代表实际推理已授权。六路个人账号推理与 Android 真机尚未全面验证。APK 是 Debug 签名；持续覆盖升级要求仓库保留同一签名密钥。Windows 包未代码签名。第三方许可与授权条件继续适用。
+
+构建记录与资产属于本页对应 tag 的 GitHub Actions；SHA256SUMS 可用于检查下载完整性。

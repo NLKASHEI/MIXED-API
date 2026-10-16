@@ -65,6 +65,11 @@ public final class BridgeConfig {
             if(!auth.equals("none")&&!auth.equals("bearer")&&!auth.equals("x-api-key"))throw new Exception("Invalid backend auth");
             URI u=new URI(src);if(u.getHost()==null||(!"http".equals(u.getScheme())&&!"https".equals(u.getScheme()))||u.getUserInfo()!=null||u.getRawQuery()!=null||u.getRawFragment()!=null)throw new Exception("Invalid URL: "+src);
         }
+        JSONObject aliases=obj.optJSONObject("aliases");
+        if(aliases!=null){java.util.Iterator<String> names=aliases.keys();while(names.hasNext()){
+            String name=names.next(),target=aliases.getString(name);int slash=target.indexOf('/');
+            if(!name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")||slash<1||slash==target.length()-1||!ids.contains(target.substring(0,slash)))throw new Exception("Invalid model alias target");
+        }}
         if(!ctx.getSharedPreferences(PREF,Context.MODE_PRIVATE).edit().putString(ENTRY,obj.toString()).commit())throw new Exception("Cannot save settings");
     }
 }
