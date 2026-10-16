@@ -48,6 +48,7 @@ try {
   await page.unroute('**/v1/models');await page.keyboard.press('Escape');await page.locator('#refresh').click();
   // A fresh session exercises the normal managed 快速V path. Only the
   // installation/activation boundary is faked; config and discovery are real.
+  await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"windows","native_codex_supported":true,"tools":{}}'}));
   await page.reload();await page.locator('#app').waitFor({state:'visible'});
   await page.route('**/api/assist/vertex/prepare',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
   await page.route('**/api/assist/vertex/activate',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
