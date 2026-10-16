@@ -43,7 +43,9 @@ func (s *Server) enableBackend(id string) error {
 }
 
 func (s *Server) managedPresent(id string) bool {
- if id==localEngineID && localEnginePresent() {return true}
+	if id == localEngineID && localEnginePresent() {
+		return true
+	}
 	if id == "codex" {
 		return toolAvailable("codex")
 	}
@@ -68,6 +70,9 @@ func (s *Server) managedPresent(id string) bool {
 
 func (s *Server) quickstartBackend(id string) error {
 	if id == localEngineID && localEnginePresent() {
+		if err := s.restorePreparedConnection(id); err != nil {
+			return err
+		}
 		if err := s.enableBackend(id); err != nil {
 			return err
 		}
@@ -92,6 +97,10 @@ func (s *Server) quickstartBackend(id string) error {
 	s.status["setup:"+id] = "quickstart: preparing"
 	s.mu.Unlock()
 	if s.managedPresent(id) {
+		if err := s.restorePreparedConnection(id); err != nil {
+			s.backendState(id, "failed: "+err.Error())
+			return err
+		}
 		if err := s.enableBackend(id); err != nil {
 			s.backendState(id, "failed: "+err.Error())
 			return err
