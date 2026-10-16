@@ -142,12 +142,22 @@ func (s *Server) loginInstalled(id string) error {
 	if id != "aistudio" {
 		return errors.New("该后端请在原始桌面软件中完成账号登录")
 	}
-	dir, err := s.upstreamDir(id)
+	// The managed source installer uses sourceDir, not the historical
+	// upstreamDir. Prefer the managed package so the built-in Login button
+	// works immediately after one-click deployment.
+	dir, err := s.sourceDir(id)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
-		return errors.New("请先一键准备 AIStudioToAPI 环境")
+		legacy, oldErr := s.upstreamDir(id)
+		if oldErr != nil {
+			return errors.New("请先点击一键接入准备 AIStudioToAPI")
+		}
+		if _, oldErr = os.Stat(filepath.Join(legacy, "package.json")); oldErr != nil {
+			return errors.New("请先点击一键接入准备 AIStudioToAPI")
+		}
+		dir = legacy
 	}
 	// Interactive terminal: only the upstream login wizard sees Google credentials.
 	cmd := exec.Command("cmd.exe", "/d", "/c", "start", "\"AI Studio Login\"", "cmd.exe", "/k", "npm run setup-auth")
