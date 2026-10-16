@@ -1,7 +1,10 @@
 package com.mixedapi.local;
 
 import android.content.Context;
-import com.sun.net.httpserver.HttpServer;
+import okhttp3.mockwebserver.Dispatcher;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -12,7 +15,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -24,29 +27,28 @@ import static org.junit.Assert.*;
 @Config(sdk=28)
 public class BridgeHttpServerTest {
     private BridgeHttpServer gateway;
-    private HttpServer upstream;
+    private MockWebServer upstream;
     private final AtomicBoolean empty=new AtomicBoolean(false);
     private final AtomicReference<String> forwardedModel=new AtomicReference<>();
 
     @Before public void start()throws Exception {
         Context context=RuntimeEnvironment.getApplication();
         context.getSharedPreferences("mixed_config",Context.MODE_PRIVATE).edit().clear().commit();
-        upstream=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
-        upstream.createContext("/v1/models",exchange->{
-            byte[] body=(empty.get()?"{\"data\":[]}":"{\"data\":[{\"id\":\"example\"},{\"id\":\"example\"}]}").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();
-        });
-        upstream.createContext("/v1/chat/completions",exchange->{
-            try {JSONObject input=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));forwardedModel.set(input.getString("model"));}
-            catch(Exception ex){throw new RuntimeException(ex);}
-            byte[] body="{\"choices\":[]}".getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();
-        });upstream.start();
+        upstream=new MockWebServer();
+        upstream.setDispatcher(new Dispatcher(){@Override public MockResponse dispatch(RecordedRequest request){
+            if("/v1/models".equals(request.getPath()))return new MockResponse().setHeader("Content-Type","application/json").setBody(empty.get()?"{\"data\":[]}":"{\"data\":[{\"id\":\"example\"},{\"id\":\"example\"}]}");
+            if("/v1/chat/completions".equals(request.getPath())){
+                try{forwardedModel.set(new JSONObject(request.getBody().readUtf8()).getString("model"));}catch(Exception ex){throw new RuntimeException(ex);}
+                return new MockResponse().setHeader("Content-Type","application/json").setBody("{\"choices\":[]}");
+            }
+            return new MockResponse().setResponseCode(404);
+        }});upstream.start(InetAddress.getByName("127.0.0.1"),0);
         JSONObject config=BridgeConfig.load(context).put("api_key","android-client").put("admin_key","android-admin");
-        config.put("backends",new JSONArray().put(new JSONObject().put("id","mock").put("name","Test").put("url","http://127.0.0.1:"+upstream.getAddress().getPort()+"/v1").put("auth","none").put("enabled",true)));
+        config.put("backends",new JSONArray().put(new JSONObject().put("id","mock").put("name","Test").put("url","http://127.0.0.1:"+upstream.getPort()+"/v1").put("auth","none").put("enabled",true)));
         config.put("aliases",new JSONObject().put("daily-chat","mock/example"));BridgeConfig.save(context,config);
         gateway=new BridgeHttpServer(context);gateway.start();
     }
-    @After public void stop(){if(gateway!=null)gateway.close();if(upstream!=null)upstream.stop(0);}
+    @After public void stop()throws Exception{if(gateway!=null)gateway.close();if(upstream!=null)upstream.shutdown();}
     private HttpURLConnection request(String method,String path,String key,String body)throws Exception{
         HttpURLConnection connection=(HttpURLConnection)new URL("http://127.0.0.1:8765"+path).openConnection();connection.setRequestMethod(method);connection.setReadTimeout(5000);connection.setConnectTimeout(2000);connection.setRequestProperty("Authorization","Bearer "+key);
         if(body!=null){connection.setDoOutput(true);byte[] bytes=body.getBytes(StandardCharsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.length);connection.getOutputStream().write(bytes);connection.getOutputStream().close();}return connection;
