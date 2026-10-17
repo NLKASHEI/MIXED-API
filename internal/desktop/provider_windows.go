@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,12 @@ type providerPage struct {
 	completed   *comHandler
 }
 
+var providerWindowSequence atomic.Uint64
+
+func providerWindowClass(id string) string {
+	return "MIXED-API.Provider." + id + "." + strconv.FormatUint(providerWindowSequence.Add(1), 10)
+}
+
 func newProviderPage(ctx context.Context, id string) (*providerPage, error) {
 	p := &providerPage{id: id, ready: make(chan struct{}), done: make(chan struct{}), jobs: make(chan *evaluation, 16)}
 	initial := "https://aistudio.google.com/prompts/new_chat"
@@ -52,7 +59,7 @@ func newProviderPage(ctx context.Context, id string) (*providerPage, error) {
 	}
 	go func() {
 		defer close(p.done)
-		runHost(&host{initial: initial, provider: p}, "MIXED-API.Provider."+id, title, "provider-"+id)
+		runHost(&host{initial: initial, provider: p}, providerWindowClass(id), title, "provider-"+id)
 	}()
 	select {
 	case <-p.ready:

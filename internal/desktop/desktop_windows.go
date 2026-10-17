@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/NLKASHEI/MIXED-API/internal/googleweb"
@@ -18,11 +19,23 @@ import (
 )
 
 var (
-	user32   = windows.NewLazySystemDLL("user32.dll")
-	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
-	ole32    = windows.NewLazySystemDLL("ole32.dll")
-	shell32  = windows.NewLazySystemDLL("shell32.dll")
+	user32          = windows.NewLazySystemDLL("user32.dll")
+	kernel32        = windows.NewLazySystemDLL("kernel32.dll")
+	ole32           = windows.NewLazySystemDLL("ole32.dll")
+	shell32         = windows.NewLazySystemDLL("shell32.dll")
+	windowHosts     sync.Map
+	windowProcedure = windows.NewCallback(dispatchWindowMessage)
 )
+
+// A Go callback cannot be freed. Share one callback across replacement windows
+// instead of retaining a new closure (and its host) after every recovery.
+func dispatchWindowMessage(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
+	if h, ok := windowHosts.Load(hwnd); ok {
+		return h.(*host).proc(hwnd, msg, wp, lp)
+	}
+	r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, uintptr(msg), wp, lp)
+	return r
+}
 
 type windowClass struct {
 	Size, Style                        uint32
@@ -223,6 +236,8 @@ func (h *host) proc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	case 0x2:
 		user32.NewProc("PostQuitMessage").Call(0)
 		return 0
+	case 0x82: // WM_NCDESTROY: the HWND may be reused before COM cleanup finishes.
+		windowHosts.CompareAndDelete(hwnd, h)
 	}
 	r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, uintptr(msg), wparam, lparam)
 	return r
@@ -268,7 +283,7 @@ func runHost(h *host, class, caption, profileName string) error {
 	className, _ := windows.UTF16PtrFromString(class)
 	instance, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	cursor, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512)
-	wc := windowClass{Proc: windows.NewCallback(h.proc), Instance: instance, Cursor: cursor, Name: className, Background: 6}
+	wc := windowClass{Proc: windowProcedure, Instance: instance, Cursor: cursor, Name: className, Background: 6}
 	wc.Size = uint32(unsafe.Sizeof(wc))
 	if atom, _, e := user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return e
@@ -280,6 +295,8 @@ func runHost(h *host, class, caption, profileName string) error {
 		return err
 	}
 	h.window = hwnd
+	windowHosts.Store(hwnd, h)
+	defer windowHosts.CompareAndDelete(hwnd, h)
 	if h.provider != nil {
 		h.provider.window.Store(hwnd)
 		if h.provider.closed.Load() {

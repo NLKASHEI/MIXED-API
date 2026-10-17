@@ -5,7 +5,9 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.ViewGroup;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -40,6 +42,24 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
   private static final class Page {
     WebView view;
     final Semaphore gate = new Semaphore(1, true);
+    final AtomicBoolean broken = new AtomicBoolean();
+  }
+
+  // UI-thread only. Remove the exact page before releasing any old lease;
+  // a later callback must never remove a replacement opened by the user.
+  private void discard(String id, Page p) {
+    p.broken.set(true);
+    pages.remove(id, p);
+    if (p.view.getParent() instanceof ViewGroup)
+      ((ViewGroup) p.view.getParent()).removeView(p.view);
+    try {
+      p.view.stopLoading();
+    } catch (RuntimeException ignored) {
+    }
+    try {
+      p.view.destroy();
+    } catch (RuntimeException ignored) {
+    }
   }
 
   public static boolean supported() {
@@ -122,12 +142,19 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
             settings.setAllowContentAccess(false);
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
             settings.setSupportMultipleWindows(false);
+            final Page owner = p;
             p.view.setWebViewClient(
                 new WebViewClient() {
                   @Override
                   public boolean shouldOverrideUrlLoading(
                       WebView view, WebResourceRequest request) {
                     return !navigation(id, request.getUrl().toString(), !request.isForMainFrame());
+                  }
+
+                  @Override
+                  public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                    discard(id, owner);
+                    return true;
                   }
                 });
             p.view.setWebChromeClient(
@@ -184,6 +211,7 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
         () -> {
           if (expired.get()) return;
           try {
+            if (p.broken.get()) throw new IllegalStateException("Source page closed");
             p.view.evaluateJavascript(
                 "location.origin === "
                     + JSONObject.quote(origin(id))
@@ -249,6 +277,10 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     if (!p.gate.tryAcquire(
         Math.max(1, deadline - System.currentTimeMillis()), TimeUnit.MILLISECONDS))
       throw new IOException("来源请求排队超时");
+    if (p.broken.get()) {
+      p.gate.release();
+      throw new IOException("来源窗口已失效，请重新打开授权窗口");
+    }
     String key =
         UUID.randomUUID().toString().replace("-", "")
             + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
@@ -360,20 +392,40 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     @Override
     public void close() {
       if (!closed.compareAndSet(false, true)) return;
-      // Keep the lease until cancellation has reached the UI queue. A busy UI
-      // must not let a timed-out close admit another request ahead of its abort.
+      // Hold the lease until abort is acknowledged. A hung renderer is removed
+      // and destroyed before releasing it; an old waiter cannot reuse that page.
       ui.post(
           () -> {
+            AtomicBoolean finished = new AtomicBoolean();
+            Runnable expired =
+                () -> {
+                  if (!finished.compareAndSet(false, true)) return;
+                  try {
+                    discard(id, page);
+                  } finally {
+                    page.gate.release();
+                  }
+                };
+            ui.postDelayed(expired, 1000);
             try {
+              if (page.broken.get()) {
+                expired.run();
+                return;
+              }
               page.view.evaluateJavascript(
                   "location.origin === "
                       + JSONObject.quote(origin(id))
                       + " ? window.__mixedGoogleWeb?.cancel('"
                       + key
                       + "') : null",
-                  ignored -> page.gate.release());
+                  ignored -> {
+                    if (!finished.compareAndSet(false, true)) return;
+                    ui.removeCallbacks(expired);
+                    page.gate.release();
+                  });
             } catch (RuntimeException e) {
-              page.gate.release();
+              ui.removeCallbacks(expired);
+              expired.run();
             }
           });
     }
@@ -383,8 +435,8 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
   public void close() {
     ui.post(
         () -> {
-          for (Page p : pages.values()) p.view.destroy();
-          pages.clear();
+          for (var entry : new HashMap<>(pages).entrySet())
+            discard(entry.getKey(), entry.getValue());
         });
   }
 }
