@@ -18,8 +18,11 @@ def adb(*args, binary=False):
     return result.stdout if binary else result.stdout.decode("utf-8")
 
 
-def http(path, key=""):
-    request = urllib.request.Request("http://127.0.0.1:18765" + path)
+def http(path, key="", method="GET", payload=None):
+    request = urllib.request.Request("http://127.0.0.1:18765" + path, method=method)
+    if payload is not None:
+        request.data = json.dumps(payload).encode("utf-8")
+        request.add_header("Content-Type", "application/json")
     if key:
         request.add_header("Authorization", "Bearer " + key)
     try:
@@ -70,6 +73,14 @@ try:
     assert all(not source["enabled"] for source in json.loads(data)["backends"])
     wait_for(lambda: any(node.attrib.get("text") == "工作台" for node in tree().iter("node")), 45)
     screenshot("console.png")
+    # Synthetic credential exercises the real Android Keystore implementation;
+    # the source remains disabled and no provider request/login is performed.
+    fixture = "emulator-keystore-fixture"
+    assert http("/api/accounts/codex/import", config["admin_key"], "POST", {
+        "auth_mode": "chatgpt", "tokens": {"access_token": fixture,
+        "refresh_token": "", "account_id": "emulator-account"}})[0] == 200
+    sealed = adb("exec-out", "run-as", PACKAGE, "cat", "no_backup/accounts/codex.dat", binary=True)
+    assert len(sealed) > 29 and fixture.encode() not in sealed
     # The provider page must never open during ordinary installation/startup.
     activities = adb("shell", "dumpsys", "activity", "activities")
     assert "/.MainActivity" in activities and "/.GoogleSourceActivity" not in activities
@@ -114,9 +125,13 @@ try:
     adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
     wait_for(lambda: http("/health")[0] == 200)
     assert http("/api/config", config["admin_key"])[0] == 200
+    code, data = http("/api/accounts/codex", config["admin_key"])
+    assert code == 200 and json.loads(data)["status"] == "authorized"
+    assert http("/api/accounts/codex", config["admin_key"], "DELETE")[0] == 200
+    assert json.loads(http("/api/accounts/codex", config["admin_key"])[1])["status"] == "none"
     crash = adb("logcat", "-d", "-s", "AndroidRuntime:E")
     assert "FATAL EXCEPTION" not in crash
-    (OUTPUT / "acceptance.json").write_text(json.dumps({"platform": "Android 15 emulator", "apk": "CI artifact", "checks": ["install", "console rendered", "sources disabled", "admin isolation", "notification stop", "restart preserves configuration"], "provider_login": "not performed", "physical_device": "not tested"}, ensure_ascii=False, indent=2), encoding="utf-8")
+    (OUTPUT / "acceptance.json").write_text(json.dumps({"platform": "Android 15 emulator", "apk": "CI artifact", "checks": ["install", "console rendered", "sources disabled", "admin isolation", "notification stop", "restart preserves configuration", "Android Keystore encryption and restart read", "account logout"], "provider_login": "not performed", "physical_device": "not tested"}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("ANDROID_DEVICE_SMOKE_PASS")
 finally:
     try:
