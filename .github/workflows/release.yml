@@ -54,6 +54,8 @@ jobs:
         with:
           name: ui-evidence
           path: .ui-evidence/*.png
+          include-hidden-files: true
+          if-no-files-found: error
 
   windows:
     needs: version
