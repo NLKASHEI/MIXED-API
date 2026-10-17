@@ -86,6 +86,58 @@ public class NativeAccountsTest {
   }
 
   @Test
+  public void expiredUnrefreshableAccountIsNotShownAuthorized() throws Exception {
+    JSONObject value = auth("expired", "");
+    value.getJSONObject("tokens").put("expires", 1);
+    call("POST", "/api/accounts/codex/import", "admin", value, 200);
+    assertEquals(
+        "expired", call("GET", "/api/accounts/codex", "admin", null, 200).getString("status"));
+  }
+
+  @Test
+  public void refreshCannotChangeCodexAccount() throws Exception {
+    JSONObject value = auth("expired", "refresh");
+    value.getJSONObject("tokens").put("expires", 1);
+    call("POST", "/api/accounts/codex/import", "admin", value, 200);
+    call("POST", "/api/assist/codex/activate", "admin", new JSONObject(), 200);
+    transport =
+        (method, url, headers, body, deadline) -> {
+          assertTrue("Mismatched account reached generation", url.endsWith("/oauth/token"));
+          String token =
+              "header."
+                  + java.util.Base64.getUrlEncoder()
+                      .withoutPadding()
+                      .encodeToString(
+                          "{\"https://api.openai.com/auth\":{\"chatgpt_account_id\":\"other-account\"}}"
+                              .getBytes(StandardCharsets.UTF_8))
+                  + ".signature";
+          return new GoogleSessions.Response(
+              200,
+              new java.io.ByteArrayInputStream(
+                  GoogleProtocol.obj(
+                          "access_token",
+                          "new-access",
+                          "id_token",
+                          token,
+                          "refresh_token",
+                          "new-refresh",
+                          "expires_in",
+                          3600)
+                      .toString()
+                      .getBytes(StandardCharsets.UTF_8)));
+        };
+    JSONObject result =
+        call(
+            "POST",
+            "/v1/responses",
+            "client",
+            GoogleProtocol.obj("model", "codex/test", "input", "hi"),
+            401);
+    assertFalse(result.toString().contains("other-account"));
+    assertFalse(result.toString().contains("new-access"));
+  }
+
+  @Test
   public void codexNativeResponsesPreserveOpaqueItemsAndCollectStreamingResult() throws Exception {
     call(
         "POST",

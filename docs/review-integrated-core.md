@@ -52,3 +52,6 @@ Android CI [39014151486](https://github.com/NLKASHEI/MIXED-API/actions/runs/3901
 2026-10-17 授权与网络检查点：Android Codex / WorkBuddy 授权、单次请求取消及六来源准备/启停入口的本机回归完成。AGP 8.13.2 + Gradle 8.13 修正 OkHttp Kotlin 元数据与旧 lint 的不兼容；assembleDebug、32 项 HTTP/平台测试、lintDebug 通过，lint 0 错误、13 警告（平台特性检查、备份策略和目标 API 等继续审查）。Go test ./...、go vet ./...、共享资源校验通过。此为开发检查点，真实账号和设备验收仍未通过，未发布。
 
 2026-10-17 协议/配置检查点：Android 新增原生 Responses / Messages SSE，Codex 原生 Responses 完整结果收集，及 Responses / Messages 到指定 Chat 来源的双向完整与增量转换；覆盖 AIS Build、Playground、无头V，无跨来源回退。工具名称分片、签名、用量、长度截断、缺少完成帧均有公共 HTTP 回归；三个客户端协议在真实 HTTP 挂起读取中均可先收到增量，再断开取消。跨协议不支持的状态/缓存选项先报错。配置 UI 增加可点击授权链接、本人 Codex 文件导入，修复电脑别名重复前缀；Android 系统文件选择与销毁取消经平台测试。Go test/vet、共享资源、真实浏览器桌面/390px 布局回归通过；Android assembleDebug + 38 项测试 + lintDebug 通过（0 错误、13 警告）。高级媒体、深层参数、系统服务/备份策略及本人账号/设备验收仍需完成，此记录不是 release 验收。
+
+
+2026-10-17 平台与账号检查点：Android targetSdk 35，新增系统栏/刘海/键盘避让、用户可停止的 specialUse 本机监听通知、配置及会话的备份/迁移排除。电脑共享与外部 HTTP 改用同一可取消传输；独立 Standards 复核发现停止监听器未关闭已接受连接，已用 18 个并发/排队客户端复现并修复。三处协议复核问题（Responses 输出回传、多个签名思考块、原生 Messages 完成工具校验）在 023b177 修复。Go/Android 拒绝刷新后的账号身份变化，过期且不可刷新的凭证显示过期；Go 导入拒绝 CR/LF/NUL 且不替换原账号。Go 全量 tests/vet、Android assembleDebug、47 项公共接口/平台回归和 lintDebug 通过（0 错误、11 警告）。API 35 模拟平台测试不是真机测试；ADB 当前未连接设备。Spec 轴仍由主代理审查，未宣称真实账号、干净系统或最终 Release 验收。

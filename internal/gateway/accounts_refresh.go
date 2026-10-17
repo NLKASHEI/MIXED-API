@@ -61,6 +61,26 @@ func accessExpiry(token string) int64 {
 	return claims.Exp
 }
 
+func tokenAccountID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Auth struct {
+			Account string `json:"chatgpt_account_id"`
+		} `json:"https://api.openai.com/auth"`
+	}
+	if json.Unmarshal(raw, &claims) != nil {
+		return ""
+	}
+	return claims.Auth.Account
+}
+
 func (s *Server) freshCredential(ctx context.Context, id, rejected string) (accountCredential, error) {
 	s.accountMu.Lock()
 	c, err := s.credential(id)
@@ -77,6 +97,11 @@ func (s *Server) freshCredential(ctx context.Context, id, rejected string) (acco
 		return c, nil
 	}
 	if c.RefreshToken == "" {
+		c.NeedsLogin = true
+		if s.storeCredential(id, c) != nil {
+			s.accountMu.Unlock()
+			return c, &accountRequestError{500, "无法保存账号状态"}
+		}
 		s.accountMu.Unlock()
 		return c, &accountRequestError{401, "账号授权已过期，请重新授权"}
 	}
@@ -184,10 +209,16 @@ func (s *Server) exchangeRefresh(ctx context.Context, id string, old accountCred
 		var token struct {
 			Access  string `json:"access_token"`
 			Refresh string `json:"refresh_token"`
+			ID      string `json:"id_token"`
 			Expiry  int64  `json:"expires_in"`
 		}
 		if json.Unmarshal(data, &token) != nil {
 			return accountCredential{}, false, failure
+		}
+		for _, issued := range []string{token.ID, token.Access} {
+			if account := tokenAccountID(issued); account != "" && account != old.AccountID {
+				return accountCredential{}, true, &accountRequestError{401, "账号身份已更改，请重新授权"}
+			}
 		}
 		next.AccessToken = token.Access
 		if token.Refresh != "" {
@@ -197,7 +228,7 @@ func (s *Server) exchangeRefresh(ctx context.Context, id string, old accountCred
 			next.Expires = time.Now().Unix() + token.Expiry
 		}
 	}
-	if next.AccessToken == "" {
+	if !validCredential(next) {
 		return accountCredential{}, false, failure
 	}
 	return next, false, nil

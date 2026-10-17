@@ -141,6 +141,14 @@ final class AccountTokens {
             permanent ? 401 : 503, permanent ? "账号授权已失效，请重新授权" : "账号刷新暂时失败，请稍后重试");
       }
       if (id.equals("workbuddy")) return workbuddy(unwrap(data), old);
+      for (String field : new String[] {"id_token", "access_token"}) {
+        JSONObject auth =
+            claims(data.optString(field)).optJSONObject("https://api.openai.com/auth");
+        if (auth != null
+            && !auth.optString("chatgpt_account_id").isEmpty()
+            && !auth.getString("chatgpt_account_id").equals(old.optString("account_id")))
+          throw new NativeAccounts.Failure(401, "账号身份已更改，请重新授权");
+      }
       JSONObject value =
           new JSONObject(old.toString())
               .put("access_token", data.getString("access_token"))

@@ -100,7 +100,11 @@ final class NativeHttp {
             }
           };
       String retry = response.header("Retry-After");
-      return new GoogleSessions.Response(response.code(), stream, retry == null ? "" : retry);
+      return new GoogleSessions.Response(
+          response.code(),
+          stream,
+          retry == null ? "" : retry,
+          response.header("Content-Type", "application/json"));
     } catch (Exception e) {
       watch.cancel(false);
       call.cancel();

@@ -13,6 +13,7 @@ public final class GoogleSourceActivity extends Activity {
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
+    WindowLayout.install(this);
     try {
       page = GoogleSessions.shared().view(getIntent().getStringExtra("source"));
       if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);

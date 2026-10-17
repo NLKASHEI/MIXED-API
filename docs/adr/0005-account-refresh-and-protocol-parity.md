@@ -13,3 +13,7 @@
 Android 继续纯 Java：六个来源逐项内置，复用同一份协议样例、模型协议目录、配置和 HTML；电脑桥接为用户显式选择的可选来源。系统 WebView、通知与服务生命周期须单独测试。源码/模拟协议通过、CI 构建通过、设备验收通过和本人账号推理通过是不同结论。
 
 Android 网络取消的真实 HTTP 回归证明 HttpURLConnection 在挂起读取中调用 disconnect 可能仍等待读取锁。原生来源传输改用随 APK 打包的 OkHttp Java API，应用协议和账号实现仍为 Java；该依赖含 Kotlin 标准库，不引入 Kotlin 应用源码或外部程序。Call.cancel 中止网络交换；总时限覆盖响应读取，取消监测使用 fixed-delay 调度。禁止跟随重定向和连接自动重试，生成请求体标记 one-shot，避免 HTTP 状态跟进重复提交。凭证和响应原文不进入网络日志。
+
+电脑共享和显式外部 HTTP 来源共用该传输。停止监听器同时关闭全部已接受客户端连接（含线程池排队连接），解除阻塞读写；注销和关闭分别撤销账号刷新任务。Codex 刷新若返回不匹配的账号声明，要求重新授权，不带旧账号标识继续生成。
+
+Android targetSdk 35。持续本机 API 监听使用 specialUse 前台服务，manifest 说明用户启动的本机监听用途，通知提供停止按钮；它不是有完成时点的数据同步任务。上架商店仍需对应前台服务审核，本仓库构建不代表审核通过。两类窗口共享系统栏/刘海/软键盘 inset 处理，敏感配置与页面会话排除云端备份及设备迁移。依据 [前台服务类型](https://developer.android.com/develop/background-work/services/fgs/service-types)、[边到边窗口](https://developer.android.com/develop/ui/views/layout/edge-to-edge)、[备份规则](https://developer.android.com/identity/data/autobackup)。

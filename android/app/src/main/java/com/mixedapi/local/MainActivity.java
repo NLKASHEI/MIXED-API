@@ -2,7 +2,6 @@ package com.mixedapi.local;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -25,13 +24,7 @@ public final class MainActivity extends Activity {
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
-    getWindow().setStatusBarColor(Color.rgb(247, 248, 245));
-    getWindow().setNavigationBarColor(Color.rgb(247, 248, 245));
-    getWindow()
-        .getDecorView()
-        .setSystemUiVisibility(
-            android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    WindowLayout.install(this);
     TextView loading = new TextView(this);
     loading.setText("MIXED\n正在连接本机工作台…");
     loading.setTextSize(20);
@@ -40,8 +33,15 @@ public final class MainActivity extends Activity {
     try {
       startForegroundService(new Intent(this, BridgeService.class));
       awaitService(0);
+      if (android.os.Build.VERSION.SDK_INT >= 33
+          && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+              != android.content.pm.PackageManager.PERMISSION_GRANTED
+          && !getPreferences(MODE_PRIVATE).getBoolean("notification_requested", false)) {
+        getPreferences(MODE_PRIVATE).edit().putBoolean("notification_requested", true).apply();
+        requestPermissions(new String[] {android.Manifest.permission.POST_NOTIFICATIONS}, 411);
+      }
     } catch (Exception e) {
-      loading.setText("服务未启动，请重新打开应用。\n" + e.getClass().getSimpleName());
+      loading.setText("服务未启动，请重新打开应用。");
     }
   }
 

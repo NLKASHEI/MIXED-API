@@ -8,12 +8,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -41,6 +39,8 @@ public final class BridgeHttpServer implements AutoCloseable {
       new java.util.concurrent.ConcurrentHashMap<>();
   private ServerSocket socket;
   private Thread acceptor;
+  // Guarded by this, including peers waiting in the executor queue.
+  private final java.util.Set<Socket> peers = new java.util.HashSet<>();
   private static final int MAX_BODY = 32 * 1024 * 1024;
 
   public BridgeHttpServer(Context ctx) {
@@ -85,9 +85,15 @@ public final class BridgeHttpServer implements AutoCloseable {
               while (open.get()) {
                 try {
                   Socket connection = socket.accept();
-                  pool.execute(() -> process(connection));
+                  synchronized (BridgeHttpServer.this) {
+                    if (!open.get()) connection.close();
+                    else {
+                      peers.add(connection);
+                      pool.execute(() -> process(connection));
+                    }
+                  }
                 } catch (Exception ex) {
-                  if (open.get()) Log.e("MIXED-API", "Accept failed", ex);
+                  if (open.get()) Log.e("MIXED-API", "Accept failed");
                 }
               }
             },
@@ -103,6 +109,13 @@ public final class BridgeHttpServer implements AutoCloseable {
       if (socket != null) socket.close();
     } catch (Exception ignored) {
     }
+    for (Socket peer : peers) {
+      try {
+        peer.close();
+      } catch (IOException ignored) {
+      }
+    }
+    peers.clear();
     pool.shutdownNow();
     discoveryPool.shutdownNow();
     accounts.close();
@@ -268,7 +281,13 @@ public final class BridgeHttpServer implements AutoCloseable {
             value.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
   }
 
-  private static HttpURLConnection connection(JSONObject b, String path, String method)
+  private static GoogleSessions.Response connection(
+      JSONObject b,
+      String path,
+      String method,
+      byte[] body,
+      Map<String, String> additionalHeaders,
+      long timeout)
       throws Exception {
     URI base = new URI(b.getString("url"));
     URI dst =
@@ -280,18 +299,15 @@ public final class BridgeHttpServer implements AutoCloseable {
             base.getPath().replaceAll("/+$", "") + path,
             null,
             null);
-    HttpURLConnection c = (HttpURLConnection) new URL(dst.toString()).openConnection();
-    c.setConnectTimeout(6000);
-    c.setReadTimeout(240000);
-    c.setRequestMethod(method);
-    c.setInstanceFollowRedirects(false);
+    Map<String, String> headers = new LinkedHashMap<>(additionalHeaders);
     String key = b.optString("key"), auth = b.optString("auth");
     if (!key.isEmpty()) {
-      if ("bearer".equals(auth)) c.setRequestProperty("Authorization", "Bearer " + key);
-      else if ("x-api-key".equals(auth)) c.setRequestProperty("x-api-key", key);
+      if ("bearer".equals(auth)) headers.put("Authorization", "Bearer " + key);
+      else if ("x-api-key".equals(auth)) headers.put("x-api-key", key);
     }
-    c.setRequestProperty("Accept", "application/json, text/event-stream");
-    return c;
+    headers.put("Accept", "application/json, text/event-stream");
+    return NativeHttp.send(
+        method, dst.toString(), headers, body, System.currentTimeMillis() + timeout);
   }
 
   private static JSONArray enabled(JSONObject config) throws Exception {
@@ -431,6 +447,10 @@ public final class BridgeHttpServer implements AutoCloseable {
       fail(out, 404, "Unsupported endpoint");
     } catch (Exception ex) {
       Log.e("MIXED-API", "Request failed: " + ex.getClass().getSimpleName());
+    } finally {
+      synchronized (this) {
+        peers.remove(peer);
+      }
     }
   }
 
@@ -689,7 +709,7 @@ public final class BridgeHttpServer implements AutoCloseable {
         .put("next", "在接入步骤中配置账号并启用来源，再检查模型。");
     if (!b.optBoolean("enabled")) return result;
     String code = "", next = "";
-    HttpURLConnection c = null;
+    GoogleSessions.Response c = null;
     try {
       if ("builtin".equals(b.optString("kind"))) {
         JSONArray nativeModels =
@@ -713,9 +733,8 @@ public final class BridgeHttpServer implements AutoCloseable {
         }
         return result;
       }
-      c = connection(b, "/models", "GET");
-      c.setReadTimeout(8000);
-      int status = c.getResponseCode();
+      c = connection(b, "/models", "GET", null, java.util.Collections.emptyMap(), 8000);
+      int status = c.status;
       if (status != 200) {
         code =
             status == 401 || status == 403
@@ -727,9 +746,7 @@ public final class BridgeHttpServer implements AutoCloseable {
         next = "检查账号授权、上游通信 Key、额度与最终 API 地址。";
       } else {
         JSONArray rows =
-            new JSONObject(
-                    new String(
-                        bounded(c.getInputStream(), 5 * 1024 * 1024), StandardCharsets.UTF_8))
+            new JSONObject(new String(bounded(c.body, 5 * 1024 * 1024), StandardCharsets.UTF_8))
                 .getJSONArray("data");
         java.util.HashSet<String> seen = new java.util.HashSet<>();
         for (int i = 0; i < rows.length(); i++) {
@@ -754,7 +771,7 @@ public final class BridgeHttpServer implements AutoCloseable {
       result.error = "无法连接上游或模型列表无效";
       next = "确认上游已启动、地址正确且手机可以访问。";
     } finally {
-      if (c != null) c.disconnect();
+      if (c != null) c.close();
     }
     result
         .diagnostic
@@ -870,19 +887,15 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
     input.put("model", upstreamModel);
     byte[] packet = input.toString().getBytes(StandardCharsets.UTF_8);
-    HttpURLConnection c = null;
+    GoogleSessions.Response c = null;
     boolean started = false;
     try {
-      c = connection(b, path.substring(3), "POST");
-      c.setDoOutput(true);
-      c.setRequestProperty("Content-Type", "application/json");
+      Map<String, String> upstreamHeaders = new LinkedHashMap<>();
+      upstreamHeaders.put("Content-Type", "application/json");
       for (String field : new String[] {"anthropic-version", "anthropic-beta", "openai-beta"})
-        if (headers.containsKey(field)) c.setRequestProperty(field, headers.get(field));
-      c.setFixedLengthStreamingMode(packet.length);
-      try (OutputStream upload = c.getOutputStream()) {
-        upload.write(packet);
-      }
-      int status = c.getResponseCode();
+        if (headers.containsKey(field)) upstreamHeaders.put(field, headers.get(field));
+      c = connection(b, path.substring(3), "POST", packet, upstreamHeaders, 240000);
+      int status = c.status;
       BridgeLogs.add(
           status,
           id,
@@ -890,7 +903,7 @@ public final class BridgeHttpServer implements AutoCloseable {
           status == 401
               ? "上游认证失败，请检查 Key / 登录状态"
               : status == 429 ? "上游返回限流或额度限制" : status >= 400 ? "上游返回 HTTP " + status : "");
-      String content = c.getContentType();
+      String content = c.contentType;
       if (content == null || content.contains("\r") || content.contains("\n"))
         content = "application/json";
       String header =
@@ -910,7 +923,7 @@ public final class BridgeHttpServer implements AutoCloseable {
       out.write(header.getBytes(StandardCharsets.UTF_8));
       out.flush();
       started = true;
-      try (InputStream resp = status >= 400 ? c.getErrorStream() : c.getInputStream()) {
+      try (InputStream resp = c.body) {
         if (resp != null) {
           byte[] buf = new byte[16384];
           int n;
@@ -927,7 +940,7 @@ public final class BridgeHttpServer implements AutoCloseable {
       out.flush();
     } catch (Exception e) {
       BridgeLogs.add(502, id, path, "无法连接上游：" + e.getClass().getSimpleName());
-      Log.e("MIXED-API", "Upstream error: " + id, e);
+      Log.e("MIXED-API", "Upstream error: " + id);
       if (!started) {
         try {
           fail(out, 502, "Backend unavailable: " + id);
@@ -935,7 +948,7 @@ public final class BridgeHttpServer implements AutoCloseable {
         }
       }
     } finally {
-      if (c != null) c.disconnect();
+      if (c != null) c.close();
     }
   }
 }

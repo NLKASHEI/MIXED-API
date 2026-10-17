@@ -128,7 +128,8 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     final String origin = origin(id);
     onUI(
         () -> {
-          if (!supported())
+          if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+              || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
             throw new IOException("当前 Android System WebView 不支持隔离来源会话，请更新系统 WebView 后重试");
           Page p = pages.get(id);
           if (p == null) {
@@ -249,15 +250,21 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     public final int status;
     public final InputStream body;
     public final String retryAfter;
+    public final String contentType;
 
     Response(int code, InputStream stream) {
       this(code, stream, "");
     }
 
     Response(int code, InputStream stream, String retryAfter) {
+      this(code, stream, retryAfter, "application/json");
+    }
+
+    Response(int code, InputStream stream, String retryAfter, String contentType) {
       status = code;
       body = stream;
       this.retryAfter = retryAfter;
+      this.contentType = contentType;
     }
 
     @Override

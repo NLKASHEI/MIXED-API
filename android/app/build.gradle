@@ -9,7 +9,7 @@ android {
     defaultConfig {
         applicationId 'com.mixedapi.local'
         minSdk 26
-        targetSdk 33
+        targetSdk 35
         versionCode (1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1'))
         versionName (System.getenv('MIXED_API_VERSION') ?: new File(rootDir, '../VERSION').text.trim())
     }

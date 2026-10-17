@@ -222,8 +222,14 @@ final class NativeAccounts {
     if (logins.containsKey(id)) return new JSONObject(logins.get(id).visible.toString());
     try {
       JSONObject value = store.read(id);
-      if (!value.optString("access_token").isEmpty() && !value.optBoolean("needs_login"))
-        return GoogleProtocol.obj("status", "authorized");
+      AccountTokens.validate(value);
+      long expiry = AccountTokens.expiry(value);
+      if (!value.optBoolean("needs_login")
+          && value.optString("refresh_token").isEmpty()
+          && expiry > 0
+          && expiry <= System.currentTimeMillis() / 1000)
+        return GoogleProtocol.obj("status", "expired", "message", "账号授权已过期，请重新授权");
+      if (!value.optBoolean("needs_login")) return GoogleProtocol.obj("status", "authorized");
     } catch (Exception ignored) {
     }
     return GoogleProtocol.obj("status", "none");

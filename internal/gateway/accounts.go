@@ -33,6 +33,25 @@ type loginAttempt struct {
 }
 
 func accountProvider(id string) bool { return id == "workbuddy" || id == "codex" }
+func validCredential(c accountCredential) bool {
+	if strings.TrimSpace(c.AccessToken) == "" {
+		return false
+	}
+	for _, value := range []string{c.AccessToken, c.RefreshToken, c.AccountID, c.Domain, c.UserID, c.EnterpriseID, c.Department} {
+		if strings.ContainsAny(value, "\r\n\x00") {
+			return false
+		}
+	}
+	return true
+}
+
+func credentialNeedsLogin(c accountCredential) bool {
+	expires := c.Expires
+	if expires == 0 {
+		expires = accessExpiry(c.AccessToken)
+	}
+	return c.NeedsLogin || c.RefreshToken == "" && expires > 0 && expires <= time.Now().Unix()
+}
 func (s *Server) accountFile(id string) string {
 	return filepath.Join(filepath.Dir(s.path), ".mixed-accounts", id+".dat")
 }
@@ -49,12 +68,15 @@ func (s *Server) credential(id string) (accountCredential, error) {
 		return accountCredential{}, err
 	}
 	var c accountCredential
-	if json.Unmarshal(raw, &c) != nil || c.AccessToken == "" || c.NeedsLogin {
+	if json.Unmarshal(raw, &c) != nil || !validCredential(c) || c.NeedsLogin {
 		return c, errors.New("账号凭证无效，请重新授权")
 	}
 	return c, nil
 }
 func (s *Server) storeCredential(id string, c accountCredential) error {
+	if !accountProvider(id) || !validCredential(c) {
+		return errors.New("账号凭证无效")
+	}
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return err
@@ -93,7 +115,10 @@ func (s *Server) accountState(id string) loginAttempt {
 	if state := s.logins[id]; state != nil {
 		return loginAttempt{Status: state.Status, URL: state.URL, Code: state.Code, Message: state.Message}
 	}
-	if _, err := s.credential(id); err == nil {
+	if c, err := s.credential(id); err == nil {
+		if credentialNeedsLogin(c) {
+			return loginAttempt{Status: "expired", Message: "账号授权已过期，请重新授权"}
+		}
 		return loginAttempt{Status: "authorized"}
 	}
 	return loginAttempt{Status: "none"}
@@ -128,7 +153,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 			Mode   string             `json:"auth_mode"`
 			Tokens *accountCredential `json:"tokens"`
 		}
-		if json.NewDecoder(r.Body).Decode(&source) != nil || source.Mode != "chatgpt" || source.Tokens == nil || source.Tokens.AccessToken == "" || source.Tokens.AccountID == "" {
+		if json.NewDecoder(r.Body).Decode(&source) != nil || source.Mode != "chatgpt" || source.Tokens == nil || !validCredential(*source.Tokens) || strings.TrimSpace(source.Tokens.AccountID) == "" {
 			jsonError(w, 400, "请选择本人的 ChatGPT 授权文件，需包含账号标识与访问凭证")
 			return
 		}
