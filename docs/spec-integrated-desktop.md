@@ -1,8 +1,10 @@
 # 后续规格：一体化桌面应用
 
-状态：2026-10-17 确认的后续要求，**尚未实现，不属于 v0.3.1 已交付功能**。架构依据：[ADR-0003](adr/0003-integrated-desktop-core.md)。
+状态：2026-10-17 确认的要求，**尚未完成全部验收**。用户随后明确要求先发布电脑版，再补 APK；v0.4.0 按已验证范围发布 Windows 内置核心版与 Android 测试版，保留真实账号、干净 Windows 和实体设备等未验收事项，不表示本规格全部完成。具体进度见[内置重构进度](integration-progress.md)。架构依据：[ADR-0003](adr/0003-integrated-desktop-core.md)。
 
 跟踪：[GitHub Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)。
+
+2026-10-17 后续范围调整：用户要求暂停 Android，优先修复 Windows。当前 Android 发布目标为 `none`，保留共享代码的 Gradle 构建、单元测试与 lint；模拟器问题暂不修复、不计为通过、不阻塞只含 Windows 的交付。Android 真机与账号验收仍保留。
 
 ## 用户最终拿到什么
 

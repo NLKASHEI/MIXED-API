@@ -5,16 +5,35 @@ android {
     buildFeatures { buildConfig true }
     testOptions { unitTests.includeAndroidResources = true }
     compileSdk 35
+    buildToolsVersion '35.0.0'
     defaultConfig {
         applicationId 'com.mixedapi.local'
         minSdk 26
-        targetSdk 33
-        versionCode (1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1'))
+        targetSdk 35
+        versionCode Integer.parseInt(System.getenv('MIXED_ANDROID_VERSION_CODE') ?: "${1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')}")
         versionName (System.getenv('MIXED_API_VERSION') ?: new File(rootDir, '../VERSION').text.trim())
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('MIXED_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('MIXED_ANDROID_KEYSTORE'))
+                storePassword System.getenv('MIXED_ANDROID_KEY_PASSWORD')
+                keyAlias 'mixed-api'
+                keyPassword System.getenv('MIXED_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('ANDROID_RELEASE_MODE') != 'none') {
+                signingConfig signingConfigs.release
+            }
+            debuggable false
+        }
     }
     packaging {
         resources { excludes += ['/META-INF/{AL2.0,LGPL2.1}'] }
@@ -22,7 +41,9 @@ android {
 }
 
 dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'com.squareup.okhttp3:okhttp:5.3.2'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
-    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:5.3.2'
 }

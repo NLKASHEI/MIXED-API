@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -11,13 +12,16 @@ import (
 // RequestLog contains only routing metadata and a short diagnostic; never prompts,
 // user messages, cookies, authentication headers, or response bodies on success.
 type RequestLog struct {
-	Time       string `json:"time"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
-	Backend    string `json:"backend,omitempty"`
-	Status     int    `json:"status"`
-	DurationMs int64  `json:"duration_ms"`
-	Error      string `json:"error,omitempty"`
+	RequestID  string          `json:"request_id,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Details    *RequestDetails `json:"details,omitempty"`
+	Time       string          `json:"time"`
+	Method     string          `json:"method"`
+	Path       string          `json:"path"`
+	Backend    string          `json:"backend,omitempty"`
+	Status     int             `json:"status"`
+	DurationMs int64           `json:"duration_ms"`
+	Error      string          `json:"error,omitempty"`
 }
 
 // Remove likely credentials even if a malicious upstream reflects secrets in an error.
@@ -54,6 +58,7 @@ type observedResponse struct {
 	code      int
 	errorBody []byte
 	backend   string
+	model     string
 }
 
 func (w *observedResponse) WriteHeader(code int) {
@@ -89,6 +94,10 @@ func (s *Server) tracked(w http.ResponseWriter, r *http.Request) (http.ResponseW
 		return w, func() {}
 	}
 	begin := time.Now()
+	detail := &requestDiagnostic{}
+	*r = *r.WithContext(context.WithValue(r.Context(), diagnosticKey{}, detail))
+	requestID := newKey("req-")
+	w.Header().Set("X-Mixed-Request-ID", requestID)
 	observed := &observedResponse{ResponseWriter: w}
 	return observed, func() {
 		code := observed.code
@@ -96,13 +105,43 @@ func (s *Server) tracked(w http.ResponseWriter, r *http.Request) (http.ResponseW
 			code = 200
 		}
 		entry := RequestLog{Time: begin.Format(time.RFC3339), Method: r.Method, Path: r.URL.Path, Backend: observed.backend, Status: code, DurationMs: time.Since(begin).Milliseconds()}
+		entry.RequestID, entry.Model = requestID, observed.model
+		detail.mu.Lock()
+		snapshot := detail.details
+		detail.mu.Unlock()
+		if snapshot.Target != "" {
+			entry.Details = &snapshot
+		}
+		if snapshot.ErrorType != "" && code < 400 {
+			entry.Error = snapshot.Cause
+		}
 		if code >= 400 {
 			entry.Error = safeDiagnostic(observed.errorBody)
 		}
+
 		s.addLog(entry)
 	}
 }
 func (s *Server) addLog(entry RequestLog) {
+	cfg := s.config()
+	secrets := []string{cfg.APIKey, cfg.AdminKey}
+	for _, b := range cfg.Backends {
+		secrets = append(secrets, b.Key, b.ProviderKey)
+	}
+	fields := []*string{&entry.Error, &entry.Model}
+	if entry.Details != nil {
+		cloned := *entry.Details
+		entry.Details = &cloned
+		fields = append(fields, &cloned.Target, &cloned.Proxy, &cloned.Address, &cloned.Cause, &cloned.Hint, &cloned.UpstreamCode, &cloned.ResolvedLocation)
+	}
+	for _, field := range fields {
+		for _, secret := range secrets {
+			if secret != "" {
+				*field = strings.ReplaceAll(*field, secret, "[redacted]")
+			}
+		}
+	}
+
 	s.logsMu.Lock()
 	defer s.logsMu.Unlock()
 	if len(s.logs) >= 200 {

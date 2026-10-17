@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -154,7 +154,7 @@ func TestEmbeddedDesktopUIAndImage(t *testing.T) {
 		path, contentType string
 		contains          string
 	}{
-		{"/", "text/html", "把模型，连在一起。"},
+		{"/", "text/html", "工作台"},
 		{"/assets/hero.webp", "image/webp", ""},
 	} {
 		r := httptest.NewRequest(http.MethodGet, tc.path, nil)

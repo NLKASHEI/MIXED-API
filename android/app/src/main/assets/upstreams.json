@@ -1,11 +1,69 @@
 {
-  "checked_on": "2026-10-16",
+  "checked_on": "2026-10-17",
   "sources": [
-    {"id":"codex","repo":"openai/codex","revision":"rust-v0.163.0","version":"0.163.0","license":"Apache-2.0","note":"安装固定 npm 正式版；已有 CLI 保留。模型目录不代表推理权限。"},
-    {"id":"vertex","repo":"bad-woman/vertex2openai","revision":"53a45b63bfef39e783edf8ea9c1e06800fc17496","entry":"app/main.py","license":"MIT","note":"源码固定到最新 HEAD；使用自己的 Google Express Key。"},
-    {"id":"opencode","repo":"jasonxu114514/opencode2api","revision":"v1.4.0","url":"https://github.com/jasonxu114514/opencode2api/releases/download/v1.4.0/opencode2api_v1.4.0_windows_amd64.zip","sha256":"f63e1049aa9aa489c5032cdd5f007088c192e4ed5d08afca0122ebdc0de41bab","entry":"opencode2api.exe","license":"GPL-3.0","note":"最新正式版；main 有未发布的代理错误处理修复，暂不替换稳定安装包。"},
-    {"id":"workbuddy","repo":"sitingge/workboddy-proxy","revision":"676b64d21a1ff7ea7ca6b4def5850ee61e97a06f","entry":"wb-relay.js","license":"MIT","note":"原仓库默认分支为 save；需已登录的官方桌面客户端。"},
-    {"id":"aps","repo":"DeconstructedCube/APS2api","revision":"v1.2.0","url":"https://github.com/DeconstructedCube/APS2api/releases/download/v1.2.0/vertex-proxy-windows-amd64.zip","sha256":"ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e","entry":"vertex-proxy.exe","license":"PolyForm-Noncommercial-1.0.0","note":"最新正式包仍为 v1.2.0；master 新增 Responses 等功能，未正式发包，不能宣称旧包已支持。原服务可能监听所有网卡。"},
-    {"id":"aistudio","repo":"iBUHub/AIStudioToAPI","revision":"fec035bcaa1f99df967abd2f3e0ed93d07369f50","entry":"main.js","npm":true,"license":"CC-BY-NC-4.0","note":"源码最新 HEAD，晚于 v1.4.0；首次需本人在 Camoufox 中登录。"}
+    {
+      "id": "codex",
+      "repo": "openai/codex",
+      "revision": "rust-v0.163.0",
+      "version": "0.163.0",
+      "license": "Apache-2.0",
+      "note": "授权与 Responses 协议已在 Go 核心实现；设备码由本人在官方页面确认。"
+    },
+    {
+      "id": "vertex",
+      "repo": "bad-woman/vertex2openai",
+      "revision": "53a45b63bfef39e783edf8ea9c1e06800fc17496",
+      "license": "MIT",
+      "note": "Express REST 已内置；默认跟随系统代理，可手动指定 HTTP / SOCKS5。使用本人 Express API Key；保存时探测项目并默认选择 global，可手动修改。"
+    },
+    {
+      "id": "opencode",
+      "repo": "zkygwxf-bot/opencode-proxy",
+      "revision": "27626a9d192b988938bb3d5f0e4fa241af7ae309",
+      "license": "MIT",
+      "note": "模型列表只显示当前目录与上游免费清单的交集。免费层仍可能限流、下线或限制客户端；FreeTierError 会直接说明原因。",
+      "free_models": [
+        "muse-spark-1.2-contributor-free",
+        "mimo-v2.6-flash-free",
+        "longcat-2.5-preview-free",
+        "space-bunny-free",
+        "big-pickle",
+        "nemotron-3.5-lightning-free",
+        "nemotron-3.5-super-vl-free",
+        "deepseek-v4.1-flash-free",
+        "glm-5.3-flash-free",
+        "beam-free"
+      ],
+      "retired_models": [
+        "muse-spark-1.3-contributor-free",
+        "nemotron-3-ultra-free",
+        "step-5-preview-free",
+        "jev-1.13-free"
+      ]
+    },
+    {
+      "id": "workbuddy",
+      "repo": "hawklithm/workbuddy2api",
+      "revision": "4354f83bd95d6995ef944ef342f95668ac1290b8",
+      "license": "MIT",
+      "note": "采用直接 HTTP 协议与本人授权流程；不再启动原有 Node relay 或官方 CLI。"
+    },
+    {
+      "id": "aps",
+      "repo": "DeconstructedCube/APS2api",
+      "revision": "01328896c435b4b172b1d25f9fc04ff86b40df31",
+      "url": "https://github.com/DeconstructedCube/APS2api/releases/download/v1.2.0/vertex-proxy-windows-amd64.zip",
+      "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
+      "entry": "vertex-proxy.exe",
+      "license": "PolyForm-Noncommercial-1.0.0",
+      "note": "Windows 一键进入当前 Edge / Chrome 的官方页面，等待本人登录或验证后自动连接。首次需加载随 EXE 提供的连接扩展；真实生成仍待本人验收。"
+    },
+    {
+      "id": "aistudio",
+      "repo": "Mag1cFall/AIStudio2API",
+      "revision": "2cbe310ce6ebab093bf83e5078de8296f03770a9",
+      "license": "MIT",
+      "note": "Windows 一键进入当前 Edge / Chrome 的官方页面，等待本人登录或验证后自动连接。首次需加载随 EXE 提供的连接扩展；真实生成仍待本人验收。"
+    }
   ]
 }
