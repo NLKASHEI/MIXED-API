@@ -31,6 +31,8 @@
 
 Windows 安装包会保留配置；脚本升级还会在安装目录备份 `mixed-api.json`。原生令牌在配置旁 `.mixed-accounts`，Windows 官方会话在 `%LOCALAPPDATA%\MIXED-API\provider-*`，备份时一并保管。不要把配置备份或会话文件提交到仓库。
 
-Android 云端默认 Debug 签名。维护者可将含 `androiddebugkey` 别名、标准 `android` 密码的私有 debug.keystore 用 base64 保存为 GitHub Secret `MIXED_API_ANDROID_DEBUG_KEYSTORE_B64`，以后始终使用同一密钥。不要公开 keystore；若已安装包签名不同，第一次切换可能仍需备份后重新安装。未设置持久密钥时不能承诺覆盖升级。
+Android 开发分支使用不可调试的 Release 构建。正式包必须沿用固定签名，CI 会核验证书指纹，并在模拟器中测试覆盖安装后配置和加密账号仍可读取。PR 产物仅用临时测试签名，不能作为稳定升级渠道；维护者配置见[Android 签名](android-signing.md)。
+
+旧 v0.3.1 使用随机 Debug 签名，和新固定签名不一致时 Android 会拒绝覆盖安装。不要先卸载旧包：卸载会删除本地配置、账号和 Keystore 密钥；先自行保存连接配置和来源设置，切换后重新完成本人授权。不能通过复制加密账号文件跨卸载恢复账号。新签名之间的升级测试不代表旧版数据迁移已经验收。
 
 实际个人账号推理、Android 真机安装及保活未全面验证；请以真实设备和账号的测试结果为准。

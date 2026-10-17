@@ -59,28 +59,43 @@ def tap(node):
 
 
 try:
-    adb("install", "-r", "MIXED-API-Android.apk")
+    installed = json.loads(pathlib.Path("android-package.json").read_text())
+    baseline = json.loads(pathlib.Path("android-update-baseline.json").read_text())
+    assert installed["signer_sha256"] == baseline["signer_sha256"]
+    assert installed["version_code"] > baseline["version_code"]
+    assert installed["debuggable"] is False and baseline["debuggable"] is False
+    adb("install", "MIXED-API-Android-update-baseline.apk")
     adb("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
     adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
     adb("forward", "tcp:18765", "tcp:8765")
     wait_for(lambda: http("/health")[0] == 200)
     # This is a new disposable emulator. Credentials stay in memory, never artifacts/logs.
-    prefs = ET.fromstring(adb("exec-out", "run-as", PACKAGE, "cat", "shared_prefs/mixed_config.xml"))
+    # Only the disposable, rootable CI emulator reads these files. The shipped
+    # application is not debuggable and does not require root on users' devices.
+    prefs = ET.fromstring(adb("exec-out", "cat", "/data/user/0/" + PACKAGE + "/shared_prefs/mixed_config.xml"))
     config = json.loads(next(node.text for node in prefs if node.attrib.get("name") == "state"))
     assert http("/api/config", config["api_key"])[0] == 401
     code, data = http("/api/config", config["admin_key"])
     assert code == 200
     assert all(not source["enabled"] for source in json.loads(data)["backends"])
-    wait_for(lambda: any(node.attrib.get("text") == "工作台" for node in tree().iter("node")), 45)
-    screenshot("console.png")
     # Synthetic credential exercises the real Android Keystore implementation;
     # the source remains disabled and no provider request/login is performed.
     fixture = "emulator-keystore-fixture"
     assert http("/api/accounts/codex/import", config["admin_key"], "POST", {
         "auth_mode": "chatgpt", "tokens": {"access_token": fixture,
         "refresh_token": "", "account_id": "emulator-account"}})[0] == 200
-    sealed = adb("exec-out", "run-as", PACKAGE, "cat", "no_backup/accounts/codex.dat", binary=True)
+    sealed = adb("exec-out", "cat", "/data/user/0/" + PACKAGE + "/no_backup/accounts/codex.dat", binary=True)
     assert len(sealed) > 29 and fixture.encode() not in sealed
+    # Upgrade in place, with a higher version code and the same signing identity.
+    # Android must retain both configuration and the app's existing Keystore key.
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("install", "-r", "MIXED-API-Android.apk")
+    adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+    wait_for(lambda: http("/health")[0] == 200)
+    assert http("/api/config", config["admin_key"])[0] == 200
+    assert json.loads(http("/api/accounts/codex", config["admin_key"])[1])["status"] == "authorized"
+    wait_for(lambda: any(node.attrib.get("text") == "工作台" for node in tree().iter("node")), 45)
+    screenshot("console.png")
     # The provider page must never open during ordinary installation/startup.
     activities = adb("shell", "dumpsys", "activity", "activities")
     assert "/.MainActivity" in activities and "/.GoogleSourceActivity" not in activities
@@ -140,7 +155,20 @@ try:
     assert json.loads(http("/api/accounts/codex", config["admin_key"])[1])["status"] == "none"
     crash = adb("logcat", "-d", "-s", "AndroidRuntime:E")
     assert "FATAL EXCEPTION" not in crash
-    (OUTPUT / "acceptance.json").write_text(json.dumps({"platform": "Android 15 emulator", "apk": "CI artifact", "checks": ["install", "console rendered", "sources disabled", "admin isolation", "notification stop", "restart preserves configuration", "Android Keystore encryption and restart read", "account logout"], "provider_login": "not performed", "physical_device": "not tested"}, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Also install the exact final APK with no preceding application or state.
+    adb("uninstall", PACKAGE)
+    adb("install", "MIXED-API-Android.apk")
+    adb("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
+    adb("shell", "cmd", "statusbar", "collapse")
+    adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+    wait_for(lambda: http("/health")[0] == 200)
+    assert http("/api/config", config["admin_key"])[0] == 401
+    prefs = ET.fromstring(adb("exec-out", "cat", "/data/user/0/" + PACKAGE + "/shared_prefs/mixed_config.xml"))
+    fresh = json.loads(next(node.text for node in prefs if node.attrib.get("name") == "state"))
+    assert all(not source["enabled"] for source in json.loads(http("/api/config", fresh["admin_key"])[1])["backends"])
+    assert json.loads(http("/api/accounts/codex", fresh["admin_key"])[1])["status"] == "none"
+    wait_for(lambda: any(node.attrib.get("text") == "工作台" for node in tree().iter("node")), 45)
+    (OUTPUT / "acceptance.json").write_text(json.dumps({"platform": "Android 15 emulator", "apk": installed, "upgrade_from_version_code": baseline["version_code"], "checks": ["clean release install", "signed in-place upgrade preserves configuration and Keystore account", "console rendered", "sources disabled", "admin isolation", "notification stop", "restart preserves configuration", "Android Keystore encryption and restart read", "account logout"], "provider_login": "not performed", "physical_device": "not tested"}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("ANDROID_DEVICE_SMOKE_PASS")
 finally:
     try:

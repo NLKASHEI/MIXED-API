@@ -10,12 +10,28 @@ android {
         applicationId 'com.mixedapi.local'
         minSdk 26
         targetSdk 35
-        versionCode (1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1'))
+        versionCode Integer.parseInt(System.getenv('MIXED_ANDROID_VERSION_CODE') ?: "${1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')}")
         versionName (System.getenv('MIXED_API_VERSION') ?: new File(rootDir, '../VERSION').text.trim())
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('MIXED_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('MIXED_ANDROID_KEYSTORE'))
+                storePassword System.getenv('MIXED_ANDROID_KEY_PASSWORD')
+                keyAlias 'mixed-api'
+                keyPassword System.getenv('MIXED_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            debuggable false
+        }
     }
     packaging {
         resources { excludes += ['/META-INF/{AL2.0,LGPL2.1}'] }

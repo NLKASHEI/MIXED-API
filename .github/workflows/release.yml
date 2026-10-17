@@ -105,6 +105,9 @@ jobs:
     timeout-minutes: 40
     env:
       MIXED_API_VERSION: ${{ needs.version.outputs.number }}
+      MIXED_ANDROID_KEYSTORE: ${{ runner.temp }}/mixed-release.p12
+      MIXED_ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.MIXED_API_ANDROID_KEY_PASSWORD || '' }}
+      MIXED_ANDROID_SIGNER_SHA256: ${{ vars.MIXED_API_ANDROID_CERT_SHA256 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -116,27 +119,54 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Restore persistent signing key if configured
+      - name: Prepare Android signing
         shell: bash
         env:
-          APK_DEBUG_KEYSTORE_B64: ${{ secrets.MIXED_API_ANDROID_DEBUG_KEYSTORE_B64 }}
+          APK_KEYSTORE_B64: ${{ github.event_name != 'pull_request' && secrets.MIXED_API_ANDROID_KEYSTORE_B64 || '' }}
         run: |
           set -euo pipefail
-          if [ -n "$APK_DEBUG_KEYSTORE_B64" ]; then
-            mkdir -p "$HOME/.android"
-            printf '%s' "$APK_DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
-            chmod 600 "$HOME/.android/debug.keystore"
-            keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          umask 077
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            # PR code never receives the production signing key, including same-repo PRs.
+            export MIXED_ANDROID_KEY_PASSWORD="$(openssl rand -hex 32)"
+            echo "::add-mask::$MIXED_ANDROID_KEY_PASSWORD"
+            echo "MIXED_ANDROID_KEY_PASSWORD=$MIXED_ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+            keytool -genkeypair -keystore "$MIXED_ANDROID_KEYSTORE" -storetype PKCS12 -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api -keyalg RSA -keysize 3072 -validity 3 -dname 'CN=MIXED-API CI only' >/dev/null
+            expected="$(keytool -exportcert -keystore "$MIXED_ANDROID_KEYSTORE" -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api | openssl dgst -sha256 -r | cut -d' ' -f1)"
+            echo "MIXED_ANDROID_SIGNER_SHA256=$expected" >> "$GITHUB_ENV"
           else
-            echo '::warning::No persistent APK signing key; in-place upgrades are not guaranteed.'
+            test -n "$APK_KEYSTORE_B64" && test -n "$MIXED_ANDROID_KEY_PASSWORD" || { echo '::error::Persistent Android release signing credentials are required.'; exit 1; }
+            printf '%s' "$APK_KEYSTORE_B64" | base64 -d > "$MIXED_ANDROID_KEYSTORE"
+            [[ "$MIXED_ANDROID_SIGNER_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo '::error::Expected release certificate SHA-256 is required.'; exit 1; }
           fi
+          chmod 600 "$MIXED_ANDROID_KEYSTORE"
+          keytool -list -keystore "$MIXED_ANDROID_KEYSTORE" -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api >/dev/null
+      - name: Build preceding version for update acceptance
+        run: |
+          set -euo pipefail
+          export MIXED_ANDROID_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER - 1))
+          gradle -p android --no-daemon :app:assembleRelease
+          cp android/app/build/outputs/apk/release/app-release.apk MIXED-API-Android-update-baseline.apk
+          python3 scripts/check-android-apk.py MIXED-API-Android-update-baseline.apk --signer-sha256 "$MIXED_ANDROID_SIGNER_SHA256" --version-code "$MIXED_ANDROID_VERSION_CODE" > android-update-baseline.json
       - name: Build, unit tests and lint
-        run: gradle -p android --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --stacktrace
-      - run: cp android/app/build/outputs/apk/debug/app-debug.apk MIXED-API-Android.apk
+        run: |
+          set -euo pipefail
+          gradle -p android --no-daemon :app:assembleRelease :app:testDebugUnitTest :app:lintRelease --stacktrace
+          cp android/app/build/outputs/apk/release/app-release.apk MIXED-API-Android.apk
+          python3 scripts/check-android-apk.py MIXED-API-Android.apk --signer-sha256 "$MIXED_ANDROID_SIGNER_SHA256" --version-code "$((1000 + GITHUB_RUN_NUMBER))" > android-package.json
       - uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: MIXED-API-Android.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-update-test
+          path: |
+            MIXED-API-Android-update-baseline.apk
+            android-update-baseline.json
+            android-package.json
+          retention-days: 3
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
@@ -153,6 +183,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: android-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-update-test
       - name: Start clean Android 15 emulator
         shell: bash
         run: |
@@ -178,6 +211,10 @@ jobs:
             sleep 2
           done
           test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1
+          # Root is confined to the disposable test emulator; release APK stays non-debuggable.
+          adb root
+          adb wait-for-device
+          test "$(adb shell id -u | tr -d '\r')" = 0
           adb shell input keyevent 82
       - name: Verify installed APK and notification lifecycle
         run: python3 scripts/smoke-android.py

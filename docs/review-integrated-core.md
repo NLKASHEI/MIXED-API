@@ -72,3 +72,7 @@ CI 环境修正：Android 模拟器首次找不到 adb，随后日志明确报 U
 独立 Standards 定向复核媒体校验、工具约束、reasoning.item 往返和监听关闭修复后，未发现新增可行动缺陷；4 个 Go 定向 HTTP 测试独立通过。Spec 由主代理核对：账号真实生成、干净 Windows、实体 Android 与完整专有能力仍不可写成通过。当前本机 Go tests/vet、Android 54 项测试及构建/lint 通过；端口修复需新的 Linux CI 验证。
 
 Gemini 文字思考签名补充：公开 HTTP 两轮回归先复现 thoughtSignature 丢失，Go/Java 同步保留 google-gemini-v1 reasoning.text，并在回传其他协议签名时生成前报错。本机全量 Go tests/vet、Android assembleDebug/55 项测试/lintDebug 通过。909037e 的 Linux Android CI 已通过含100次重绑回归；模拟器验收仍单列。
+
+`100ef39` 的 [Actions 39020922946](https://github.com/NLKASHEI/MIXED-API/actions/runs/39020922946) 全部通过，Android 15 模拟器实际完成安装、界面、默认关闭来源、管理隔离、通知停止、重启、Keystore 和注销检查。通知失败经截图/系统状态确认是脚本滚动离开通知栏及系统延迟显示；修改定位和等待，没有改变正常通知策略。
+
+发布链另有实质问题：Debug APK 和临时签名影响发布与覆盖升级。新的实际 APK 检查先拒绝现有 Debug 包，改用不可调试 Release 后通过，错误证书指纹仍被拒绝。PR 使用临时测试密钥，非 PR 缺固定密钥/密码/预期指纹时失败；升级验收使用不同 versionCode、同签名包验证配置和 Keystore 保留，再全新安装目标包。独立 Standards 审查未发现可行动缺陷；Spec 自查明确该基线为同源码较低版本，不代表旧 v0.3.1 数据迁移、实体设备或真实账号已经通过。正式密钥尚未配置，不发布临时签名包。

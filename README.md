@@ -49,7 +49,7 @@ APK 使用纯 Java 本地服务，六个来源均有内置请求模块，配置�
 
 配置在 `mixed-api.json`，原生账号数据在同目录 `.mixed-accounts`；Windows 使用 DPAPI 保护账号令牌。官方页面会话在 `%LOCALAPPDATA%\MIXED-API\provider-*`，主窗口数据在 `desktop-profile`，可重新展开的渲染资源在 `renderer`。备份配置与私密会话时自行保管，不能提交或上传到仓库。
 
-Windows 产物尚无代码签名。Android 当前使用 Debug 签名；只有 CI 配置持久签名密钥后才能保证覆盖升级。详细说明见[使用指引](docs/quickstart-zh.md)。
+Windows 产物尚无代码签名。Android 开发分支改为不可调试的 Release 构建，校验 APK 签名并测试覆盖升级；PR 使用临时测试签名，正式构建必须配置固定密钥。旧 v0.3.1 的随机 Debug 签名无法保证与新包兼容。详细说明见[使用指引](docs/quickstart-zh.md)和[维护者签名配置](docs/android-signing.md)。
 
 ## 开发验证
 
