@@ -30,12 +30,8 @@ func chatToAnthropic(chat map[string]any) (map[string]any, error) {
 	if n, ok := chat["n"].(float64); ok && n != 1 {
 		return nil, errors.New("该模型只支持 n=1")
 	}
-	if effort, ok := chat["reasoning_effort"].(string); ok && effort != "none" {
-		if effort != "low" && effort != "medium" && effort != "high" && effort != "max" {
-			return nil, errors.New("该模型不支持此 reasoning_effort")
-		}
-		out["thinking"] = map[string]any{"type": "adaptive"}
-		out["output_config"] = map[string]any{"effort": effort}
+	if err := configureAnthropicThinking(chat, out); err != nil {
+		return nil, err
 	}
 	system := []string{}
 	messages := []any{}
@@ -58,6 +54,33 @@ func chatToAnthropic(chat map[string]any) (map[string]any, error) {
 			continue
 		}
 		parts := []any{}
+		if role == "assistant" {
+			if details, ok := m["reasoning_details"].([]any); ok {
+				for _, value := range details {
+					d, ok := value.(map[string]any)
+					if !ok || d["format"] != "anthropic-claude-v1" {
+						return nil, errors.New("思考续接数据无效")
+					}
+					switch d["type"] {
+					case "reasoning.text":
+						text, textOK := d["text"].(string)
+						signature, sigOK := d["signature"].(string)
+						if !textOK || !sigOK || signature == "" {
+							return nil, errors.New("思考续接缺少签名")
+						}
+						parts = append(parts, map[string]any{"type": "thinking", "thinking": text, "signature": signature})
+					case "reasoning.encrypted":
+						data, ok := d["data"].(string)
+						if !ok || data == "" {
+							return nil, errors.New("思考续接数据无效")
+						}
+						parts = append(parts, map[string]any{"type": "redacted_thinking", "data": data})
+					default:
+						return nil, errors.New("思考续接类型无效")
+					}
+				}
+			}
+		}
 		if role == "tool" {
 			id, _ := m["tool_call_id"].(string)
 			if id == "" {
@@ -209,7 +232,74 @@ func chatToAnthropic(chat map[string]any) (map[string]any, error) {
 	if format, ok := chat["response_format"].(map[string]any); ok && format["type"] != "text" {
 		return nil, errors.New("该转换暂不支持 response_format，请使用模型的原生接口")
 	}
+	if out["thinking"] != nil {
+		if choice, ok := out["tool_choice"].(map[string]any); ok && (choice["type"] == "any" || choice["type"] == "tool") {
+			return nil, errors.New("思考模式不支持强制工具选择，请使用 auto")
+		}
+	}
 	return out, nil
+}
+
+func configureAnthropicThinking(chat, out map[string]any) error {
+	effort, exists := chat["reasoning_effort"]
+	if !exists {
+		return nil
+	}
+	if effort == "none" {
+		out["thinking"] = map[string]any{"type": "disabled"}
+		return nil
+	}
+	budgets := map[string]int{"low": 1024, "medium": 4096, "high": 8192, "max": 16384}
+	level, ok := effort.(string)
+	if !ok {
+		return errors.New("reasoning_effort 需要字符串")
+	}
+	budget, ok := budgets[level]
+	if !ok {
+		return errors.New("该模型不支持此 reasoning_effort")
+	}
+	model, _ := chat["model"].(string)
+	adaptive := false
+	for _, prefix := range []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-sonnet-4-7", "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-5"} {
+		if model == prefix || strings.HasPrefix(model, prefix+"-") {
+			adaptive = true
+		}
+	}
+	if adaptive {
+		if level == "max" && !strings.HasPrefix(model, "claude-opus-") {
+			return errors.New("该模型不支持 max 思考强度")
+		}
+		out["thinking"] = map[string]any{"type": "adaptive"}
+		out["output_config"] = map[string]any{"effort": level}
+		return nil
+	}
+	manual := false
+	for _, prefix := range []string{"claude-3-7-sonnet", "claude-opus-4", "claude-sonnet-4", "claude-haiku-4-5"} {
+		if model == prefix || strings.HasPrefix(model, prefix+"-") {
+			manual = true
+		}
+	}
+	if !manual {
+		return errors.New("此模型尚无已核对的思考模式，请移除 reasoning_effort 或使用原生 Messages 接口")
+	}
+	limit := 4096
+	if n, ok := out["max_tokens"].(float64); ok {
+		limit = int(n)
+	}
+	if limit <= 1024 {
+		return errors.New("启用思考时 max_tokens 必须大于 1024")
+	}
+	if budget >= limit {
+		budget = limit - 1
+	}
+	out["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
+	if strings.HasPrefix(model, "claude-opus-4-5") {
+		if level == "max" {
+			level = "high"
+		}
+		out["output_config"] = map[string]any{"effort": level}
+	}
+	return nil
 }
 
 type anthropicUsage struct {
@@ -231,6 +321,7 @@ type anthropicBlock struct {
 	Text      string          `json:"text"`
 	Thinking  string          `json:"thinking"`
 	Signature string          `json:"signature"`
+	Data      string          `json:"data"`
 	Input     json.RawMessage `json:"input"`
 }
 type anthropicMessage struct {
@@ -256,7 +347,11 @@ func anthropicFinish(stop string) string {
 func anthropicToChat(m anthropicMessage, model string) map[string]any {
 	text, thought := "", ""
 	calls := []any{}
+	details := []any{}
 	for _, p := range m.Content {
+		if d := p.reasoningDetail(len(details)); d != nil {
+			details = append(details, d)
+		}
 		switch p.Type {
 		case "text":
 			text += p.Text
@@ -267,6 +362,9 @@ func anthropicToChat(m anthropicMessage, model string) map[string]any {
 		}
 	}
 	message := map[string]any{"role": "assistant", "content": text}
+	if len(details) > 0 {
+		message["reasoning_details"] = details
+	}
 	if thought != "" {
 		message["reasoning_content"] = thought
 	}
@@ -276,9 +374,23 @@ func anthropicToChat(m anthropicMessage, model string) map[string]any {
 	return map[string]any{"id": m.ID, "model": model, "created": time.Now().Unix(), "object": "chat.completion", "choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": anthropicFinish(m.Stop)}}, "usage": m.Usage.chat()}
 }
 
+// Keep opaque provider signatures intact; clients replay reasoning_details
+// with the assistant message when returning tool results.
+func (b anthropicBlock) reasoningDetail(index int) map[string]any {
+	if b.Type == "thinking" && b.Signature != "" {
+		return map[string]any{"type": "reasoning.text", "text": b.Thinking, "signature": b.Signature, "format": "anthropic-claude-v1", "index": index}
+	}
+	if b.Type == "redacted_thinking" && b.Data != "" {
+		return map[string]any{"type": "reasoning.encrypted", "data": b.Data, "format": "anthropic-claude-v1", "index": index}
+	}
+	return nil
+}
+
 func streamAnthropicAsChat(w http.ResponseWriter, r *http.Request, body io.Reader, model string, includeUsage bool) {
 	out := newSSEOutput(w, model)
 	indices := map[int]int{}
+	thinking := map[int]*anthropicBlock{}
+	detailIndex, thinkingBytes := 0, 0
 	usage := anthropicUsage{}
 	finish := ""
 	complete := false
@@ -290,11 +402,12 @@ func streamAnthropicAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 			Block   anthropicBlock   `json:"content_block"`
 			Usage   anthropicUsage   `json:"usage"`
 			Delta   struct {
-				Type     string `json:"type"`
-				Text     string `json:"text"`
-				Thinking string `json:"thinking"`
-				JSON     string `json:"partial_json"`
-				Stop     string `json:"stop_reason"`
+				Type      string `json:"type"`
+				Text      string `json:"text"`
+				Thinking  string `json:"thinking"`
+				Signature string `json:"signature"`
+				JSON      string `json:"partial_json"`
+				Stop      string `json:"stop_reason"`
 			} `json:"delta"`
 		}
 		if json.Unmarshal(data, &event) != nil {
@@ -308,6 +421,14 @@ func streamAnthropicAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 			usage = event.Message.Usage
 			return out.chunk(map[string]any{"role": "assistant", "content": ""}, nil, nil)
 		case "content_block_start":
+			if event.Block.Type == "thinking" || event.Block.Type == "redacted_thinking" {
+				b := event.Block
+				thinking[event.Index] = &b
+				thinkingBytes += len(b.Thinking) + len(b.Signature) + len(b.Data)
+				if thinkingBytes > 4<<20 {
+					return errors.New("thinking state too large")
+				}
+			}
 			switch b := event.Block; b.Type {
 			case "text":
 				if b.Text != "" {
@@ -323,6 +444,14 @@ func streamAnthropicAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 				return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "id": b.ID, "type": "function", "function": map[string]any{"name": b.Name, "arguments": ""}}}}, nil, nil)
 			}
 		case "content_block_delta":
+			if b := thinking[event.Index]; b != nil {
+				thinkingBytes += len(event.Delta.Thinking) + len(event.Delta.Signature)
+				if thinkingBytes > 4<<20 {
+					return errors.New("thinking state too large")
+				}
+				b.Thinking += event.Delta.Thinking
+				b.Signature += event.Delta.Signature
+			}
 			switch event.Delta.Type {
 			case "text_delta":
 				return out.chunk(map[string]any{"content": event.Delta.Text}, nil, nil)
@@ -334,6 +463,14 @@ func streamAnthropicAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 					return errors.New("tool delta without call")
 				}
 				return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "function": map[string]any{"arguments": event.Delta.JSON}}}}, nil, nil)
+			}
+		case "content_block_stop":
+			if b := thinking[event.Index]; b != nil {
+				delete(thinking, event.Index)
+				if d := b.reasoningDetail(detailIndex); d != nil {
+					detailIndex++
+					return out.chunk(map[string]any{"reasoning_details": []any{d}}, nil, nil)
+				}
 			}
 		case "message_delta":
 			usage.Output = event.Usage.Output

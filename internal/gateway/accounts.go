@@ -97,6 +97,10 @@ func (s *Server) accountState(id string) loginAttempt {
 func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	target := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
 	id, action, _ := strings.Cut(target, "/")
+	if id == "aistudio" || id == "aps" {
+		s.handleGoogleAccount(w, r, id, action)
+		return
+	}
 	if !accountProvider(id) {
 		jsonError(w, 404, "来源没有此账号接口")
 		return

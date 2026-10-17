@@ -92,6 +92,20 @@ try {
   await nativeRow.getByRole('button',{name:'启用',exact:true}).waitFor();
   const savedNative=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
   const savedOpenCode=savedNative.backends.find(b=>b.id==='opencode');assert.equal(savedOpenCode.kind,'builtin');assert.equal(savedOpenCode.enabled,false);
+  // Switching an existing-service setup to the integrated core in the same
+  // dialog must clear manual mode and keep the server's newly prepared URL.
+  await page.locator('[data-page="home"]').click();
+  await page.locator('#providers .card').filter({hasText:'OpenCode'}).getByRole('button').click();
+  await page.locator('#manual-settings').evaluate(n=>n.open=true);
+  await page.locator('#backend-url').fill('http://127.0.0.1:1/v1');
+  await page.locator('#save-provider').click();await page.locator('#next-provider').waitFor();
+  await page.locator('#back-provider').click();await page.locator('#prepare-provider').click();
+  await page.locator('#official-field').waitFor({state:'visible',timeout:10000});
+  await page.locator('#next-provider').click();await page.locator('#verify-provider').waitFor();
+  const switched=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
+  assert.equal(switched.backends.find(b=>b.id==='opencode').kind,'builtin');
+  assert.equal(switched.backends.find(b=>b.id==='opencode').url,'https://opencode.ai/inference/v1');
+  await page.keyboard.press('Escape');await page.locator('[data-page="admin"]').click();
   if(process.env.MIXED_LOCAL_ENGINE_PATH){await page.locator('#load-engine-settings').click();await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();}
   await page.screenshot({path:join(output,'console-admin.png'),fullPage:true});
   await page.locator('[data-page="home"]').click();

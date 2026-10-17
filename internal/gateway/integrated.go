@@ -18,6 +18,9 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 	if !isBuiltinURL(b) {
 		return nil, errors.New("内置来源端点无效")
 	}
+	if b.ID == "aps" || b.ID == "aistudio" {
+		return s.googleWebModels(ctx, b.ID)
+	}
 	if b.ID == "vertex" || b.ID == "workbuddy" {
 		if b.ID == "vertex" && b.ProviderKey == "" {
 			return nil, errors.New("请填写 Express API Key")
@@ -112,6 +115,9 @@ func (s *Server) prepareIntegrated(id string) error {
 			continue
 		}
 		found = true
+		if b.Kind != "builtin" {
+			b.Enabled = false
+		}
 		b.Kind = "builtin"
 		b.URL = builtinBase(id)
 		b.Auth = "none"
@@ -133,6 +139,10 @@ func (s *Server) prepareIntegrated(id string) error {
 // Provider protocol implementations live behind the same authenticated HTTP
 // seam as external services. They never start an upstream application.
 func (s *Server) serveIntegrated(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage) {
+	if b.ID == "aps" || b.ID == "aistudio" {
+		s.serveGoogleWeb(w, r, b, publicModel, model, payload)
+		return
+	}
 	if b.ID == "vertex" {
 		s.serveExpress(w, r, b, publicModel, model, payload)
 		return
@@ -209,6 +219,10 @@ func builtinBase(id string) string {
 		return "https://chatgpt.com/backend-api/codex"
 	case "workbuddy":
 		return "https://copilot.tencent.com/v2"
+	case "aps":
+		return "https://cloudconsole-pa.clients6.google.com"
+	case "aistudio":
+		return "https://alkalimakersuite-pa.clients6.google.com"
 	}
 	return ""
 }

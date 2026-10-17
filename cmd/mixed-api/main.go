@@ -21,7 +21,6 @@ func main() {
 	file := flag.String("config", "mixed-api.json", "local JSON config path")
 	noBrowser := flag.Bool("no-browser", false, "headless mode: run only the local gateway")
 	lan := flag.Bool("lan", false, "opt-in read-only LAN API listener at :8766; never exposes admin panel")
-	importEngine := flag.String("import-engine", "", "maintenance: prepare a local APS-family runtime without starting it")
 	flag.Parse()
 	// Double-clicking the EXE should work regardless of the Explorer or shortcut
 	// working directory. Keep the local config next to the portable Windows EXE.
@@ -35,13 +34,12 @@ func main() {
 		log.Fatal(err)
 	}
 	server := gateway.NewServer(*file, cfg)
-	if *importEngine != "" {
-		if err := server.ImportEngine(*importEngine); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("无头V组件已准备，统一客户端地址不变。")
-		return
+	if runtime.GOOS == "windows" && !*noBrowser {
+		sessions := desktop.NewGoogleSessions()
+		server.SetGoogleSessions(sessions)
+		defer sessions.Close()
 	}
+
 	url := "http://" + cfg.Listen
 	fmt.Println("MIXED-API running at", url)
 	fmt.Println("API base URL: ", url+"/v1")

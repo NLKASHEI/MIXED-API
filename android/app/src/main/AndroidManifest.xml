@@ -16,6 +16,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".GoogleSourceActivity" android:exported="false" android:label="MIXED 来源授权" />
         <service android:name=".BridgeService" android:exported="false" android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

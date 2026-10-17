@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"unsafe"
 
+	"github.com/NLKASHEI/MIXED-API/internal/googleweb"
 	"github.com/wailsapp/go-webview2/webviewloader"
 	"golang.org/x/sys/windows"
 )
@@ -46,6 +48,7 @@ type host struct {
 	controller, view *comObject
 	err              error
 	handlers         []*comHandler
+	provider         *providerPage
 }
 
 func (h *host) EnvironmentCompleted(code webviewloader.HRESULT, env *webviewloader.ICoreWebView2Environment) webviewloader.HRESULT {
@@ -101,8 +104,16 @@ func (h *host) controllerReady(code uintptr, c *comObject) uintptr {
 		}
 	}
 	h.resize()
+	if h.provider != nil {
+		if err := h.provider.install(h); err != nil {
+			h.fail(err)
+			return 0
+		}
+	}
 	if err = c.call(4, 1); err == nil {
-		err = v.navigate(h.initial)
+		if h.provider == nil {
+			err = v.navigate(h.initial)
+		}
 	}
 	if err != nil {
 		h.fail(err)
@@ -111,6 +122,12 @@ func (h *host) controllerReady(code uintptr, c *comObject) uintptr {
 }
 func (h *host) navigation(_ uintptr, args *comObject) uintptr {
 	target, err := args.uri()
+	if h.provider != nil {
+		if err != nil || !providerNavigation(h.provider.id, target, false) {
+			_ = args.call(8, 1)
+		}
+		return 0
+	}
 	if err == nil && localNavigation(h.base, target) {
 		return 0
 	}
@@ -122,6 +139,12 @@ func (h *host) navigation(_ uintptr, args *comObject) uintptr {
 }
 func (h *host) frameNavigation(_ uintptr, args *comObject) uintptr {
 	target, err := args.uri()
+	if h.provider != nil {
+		if err != nil || !providerNavigation(h.provider.id, target, true) {
+			_ = args.call(8, 1)
+		}
+		return 0
+	}
 	if err != nil || !localNavigation(h.base, target) {
 		_ = args.call(8, 1)
 	}
@@ -131,6 +154,12 @@ func (h *host) popup(_ uintptr, args *comObject) uintptr {
 	_ = args.call(6, 1) // put_Handled
 	target, err := args.uri()
 	if err != nil || !args.boolean(8) {
+		return 0
+	}
+	if h.provider != nil {
+		if providerNavigation(h.provider.id, target, false) {
+			_ = h.view.navigate(target)
+		}
 		return 0
 	}
 	if localNavigation(h.base, target) {
@@ -166,6 +195,18 @@ func (h *host) resize() {
 }
 func (h *host) proc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	switch msg {
+	case providerEvalMessage:
+		if h.provider != nil {
+			h.provider.executeNext(h)
+		}
+		return 0
+	case providerShowMessage:
+		user32.NewProc("ShowWindow").Call(hwnd, 1)
+		user32.NewProc("SetForegroundWindow").Call(hwnd)
+		return 0
+	case providerCloseMessage:
+		user32.NewProc("DestroyWindow").Call(hwnd)
+		return 0
 	case 0x5:
 		h.resize()
 	case 0x7:
@@ -173,6 +214,10 @@ func (h *host) proc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			_ = h.controller.call(12, 0)
 		}
 	case 0x10:
+		if h.provider != nil && h.err == nil {
+			user32.NewProc("ShowWindow").Call(hwnd, 0)
+			return 0
+		}
 		user32.NewProc("DestroyWindow").Call(hwnd)
 		return 0
 	case 0x2:
@@ -194,6 +239,10 @@ func Run(base, admin string) error {
 	if admin == "" {
 		return errors.New("missing admin credential")
 	}
+	return runHost(&host{base: base, initial: base + "/#admin=" + url.QueryEscape(admin)}, "MIXED-API.Desktop", "MIXED · 模型工作台", "desktop-profile")
+}
+
+func runHost(h *host, class, caption, profileName string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	renderer, err := rendererPath()
@@ -204,7 +253,7 @@ func Run(base, admin string) error {
 	if err != nil {
 		return err
 	}
-	profile = filepath.Join(profile, "MIXED-API", "desktop-profile")
+	profile = filepath.Join(profile, "MIXED-API", profileName)
 	if err = os.MkdirAll(profile, 0700); err != nil {
 		return err
 	}
@@ -216,8 +265,7 @@ func Run(base, admin string) error {
 	if p := user32.NewProc("SetProcessDpiAwarenessContext"); p.Find() == nil {
 		p.Call(^uintptr(3))
 	}
-	h := &host{base: base, initial: base + "/#admin=" + url.QueryEscape(admin)}
-	className, _ := windows.UTF16PtrFromString("MIXED-API.Desktop")
+	className, _ := windows.UTF16PtrFromString(class)
 	instance, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	cursor, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512)
 	wc := windowClass{Proc: windows.NewCallback(h.proc), Instance: instance, Cursor: cursor, Name: className, Background: 6}
@@ -226,12 +274,19 @@ func Run(base, admin string) error {
 		return e
 	}
 	defer user32.NewProc("UnregisterClassW").Call(uintptr(unsafe.Pointer(className)), instance)
-	title, _ := windows.UTF16PtrFromString("MIXED · 模型工作台")
+	title, _ := windows.UTF16PtrFromString(caption)
 	hwnd, _, err := user32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)), 0x00cf0000, 0x80000000, 0x80000000, 1220, 860, 0, 0, instance, 0)
 	if hwnd == 0 {
 		return err
 	}
 	h.window = hwnd
+	if h.provider != nil {
+		h.provider.window.Store(hwnd)
+		if h.provider.closed.Load() {
+			user32.NewProc("DestroyWindow").Call(hwnd)
+			return context.Canceled
+		}
+	}
 	defer user32.NewProc("DestroyWindow").Call(hwnd)
 	user32.NewProc("ShowWindow").Call(hwnd, 1)
 	user32.NewProc("UpdateWindow").Call(hwnd)
@@ -258,4 +313,10 @@ func Run(base, admin string) error {
 	h.view.release()
 	runtime.KeepAlive(h)
 	return h.err
+}
+
+// NewGoogleSessions creates provider windows lazily, only after the user opens
+// the corresponding authorization step. It never opens a terminal/process.
+func NewGoogleSessions() *googleweb.Browser {
+	return googleweb.New(func(ctx context.Context, id string) (googleweb.Page, error) { return newProviderPage(ctx, id) })
 }

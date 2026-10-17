@@ -42,6 +42,7 @@ jobs:
       - run: go vet ./...
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check:ui
+      - run: node scripts/test-google-session.mjs
       - run: npx playwright install --with-deps chromium
       - run: go build -o .ui-gateway ./cmd/mixed-api
       - run: npm run test:ui

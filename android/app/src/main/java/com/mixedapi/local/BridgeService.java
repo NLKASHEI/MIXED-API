@@ -28,6 +28,6 @@ public final class BridgeService extends Service {
         if(server==null){server=new BridgeHttpServer(this);try{server.start();running=true;BridgeLogs.add(200,"system","start","本地端口 8765 正在监听");}catch(Exception ex){running=false;BridgeLogs.add(500,"system","start","端口启动失败");Log.e("MIXED-API","Server failed",ex);stopSelf();}}
         return START_NOT_STICKY;
     }
-    @Override public void onDestroy(){running=false;if(server!=null){server.close();server=null;}super.onDestroy();}
+    @Override public void onDestroy(){running=false;if(server!=null){server.close();server=null;}GoogleSessions.shared().close();super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
 }

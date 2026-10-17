@@ -27,11 +27,12 @@ type Backend struct {
 	Workdir     string `json:"workdir,omitempty"`
 }
 type Config struct {
-	Listen   string            `json:"listen"`
-	APIKey   string            `json:"api_key"`
-	AdminKey string            `json:"admin_key"`
-	Backends []Backend         `json:"backends"`
-	Aliases  map[string]string `json:"aliases,omitempty"`
+	Listen         string                    `json:"listen"`
+	APIKey         string                    `json:"api_key"`
+	AdminKey       string                    `json:"admin_key"`
+	Backends       []Backend                 `json:"backends"`
+	Aliases        map[string]string         `json:"aliases,omitempty"`
+	EngineSettings map[string]engineSettings `json:"engine_settings,omitempty"`
 }
 
 var Guide = map[string]struct{ Repo, Note string }{
@@ -39,7 +40,7 @@ var Guide = map[string]struct{ Repo, Note string }{
 	"codex":     {"https://github.com/openai/codex", "Codex：在官方页面完成设备码授权；内置 HTTP 协议，无需安装 CLI。"},
 	"opencode":  {"https://github.com/zkygwxf-bot/opencode-proxy", "OpenCode：内置协议转换。服务方拒绝授权时直接报错，不伪造客户端身份。"},
 	"workbuddy": {"https://github.com/hawklithm/workbuddy2api", "WorkBuddy：本人账号授权，内置 HTTP 连接，无需启动官方 CLI。"},
-	"aps":       {"https://github.com/DeconstructedCube/APS2api", "无头V：内置核心重构中。"},
+	"aps":       {"https://github.com/DeconstructedCube/APS2api", "无头V：内置官方网页请求协议，在配置中完成本人验证。"},
 	"aistudio":  {"https://github.com/Mag1cFall/AIStudio2API", "AIS：Build 与 Playground；核对 DeconstructedCube/aistudio-api 的同源协议。"},
 }
 
@@ -49,8 +50,8 @@ func Defaults() Config {
 		{ID: "codex", Name: "Codex", Kind: "builtin", URL: builtinBase("codex"), Auth: "none"},
 		{ID: "opencode", Name: "OpenCode", Kind: "builtin", URL: builtinBase("opencode"), Auth: "none"},
 		{ID: "workbuddy", Name: "WorkBuddy", Kind: "builtin", URL: builtinBase("workbuddy"), Auth: "none"},
-		{ID: "aps", Name: "无头V", URL: "http://127.0.0.1:2156/v1", Auth: "bearer"},
-		{ID: "aistudio", Name: "AIS", URL: "http://127.0.0.1:7860/v1", Auth: "bearer"},
+		{ID: "aps", Name: "无头V", Kind: "builtin", URL: builtinBase("aps"), Auth: "none"},
+		{ID: "aistudio", Name: "AIS", Kind: "builtin", URL: builtinBase("aistudio"), Auth: "none"},
 	}}
 }
 func newKey(prefix string) string {
@@ -97,6 +98,11 @@ func Validate(c Config) error {
 		id, model, ok := strings.Cut(target, "/")
 		if !aliasName.MatchString(alias) || !ok || model == "" || !ids[id] {
 			return errors.New("aliases require a simple name and an existing backend/model target")
+		}
+	}
+	for id, settings := range c.EngineSettings {
+		if id != "aps" || !settings.valid() {
+			return errors.New("invalid native source settings")
 		}
 	}
 	return nil

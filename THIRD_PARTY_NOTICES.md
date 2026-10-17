@@ -6,10 +6,11 @@ The integrated gateway implements provider protocols inside the Go process. Thes
 - OpenCode conversion: zkygwxf-bot/opencode-proxy v58, tag object b517138c5e91f947263b73de81ffce6031673ccb (MIT). Release ZIP SHA256 e4b9192b5dbc1ec4004b7b55e27a8409e65dbbc210011d514520aa876ad7ea9f. Reasoning, usage and Responses conversion adapted as native Go logic; no session fabrication or injected facade tools are included.
 - WorkBuddy direct wire and login reference: hawklithm/workbuddy2api, commit 4354f83bd95d6995ef944ef342f95668ac1290b8 (MIT). The former sitingge/workboddy-proxy remains an audited historical reference.
 - Codex device authorization and Responses wire: openai/codex rust-v0.163.0 (Apache-2.0). MIXED is an independent client and does not execute the Codex agent, shell or MCP tools in the built-in path.
+- Android WebView compatibility: androidx.webkit:webkit:1.12.1 (Apache-2.0), used for separate source profiles and document-start script registration. Apache license text is included below.
 - Desktop loader: wailsapp/go-webview2 v1.0.23 (MIT), jchv/go-winloader, and golang.org/x/sys (BSD-3-Clause). The narrow COM binding follows Microsoft's WebView2 SDK ABI.
 - Embedded Microsoft WebView2 Fixed Runtime: proprietary Microsoft redistributable, version and hashes pinned in packaging/windows/webview2.json. Microsoft terms: https://developer.microsoft.com/en-us/microsoft-edge/webview2/ . Distribution instructions: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution . Runtime files and embedded third-party notices are preserved.
 
-Upstream programs and user credentials are not shipped as provider executables or account data. AIS and APS core migration is unfinished; their source references are tracked separately and do not imply their algorithms have already been incorporated.
+Upstream programs and user credentials are not shipped as provider executables or account data. AIS Build / Playground protocol fields and page proof discovery derive from Mag1cFall/AIStudio2API at ebb27d109dfa8bcea96d481846f3f0a7536d89f0 (MIT). The Google web session implementation and its validation limits are documented in docs/third-party/google-web.md.
 
 ## codex-Apache-2.0.txt
 
@@ -359,6 +360,30 @@ Only 128 model protocol/endpoint mappings are embedded. Model availability and a
 MIT License
 
 Copyright (c) 2025 models.dev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## AIStudio2API-MIT.txt
+
+MIT License
+
+Copyright (c) 2026 Mag1cFall
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

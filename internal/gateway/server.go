@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/NLKASHEI/MIXED-API/internal/googleweb"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-//go:embed index.html assets/hero.webp
+//go:embed index.html assets/hero.webp notices.txt
 var static embed.FS
 
 const maxBody = 32 << 20
@@ -31,7 +31,6 @@ type Server struct {
 	cfg               Config
 	path              string
 	client            *http.Client
-	children          map[string]*exec.Cmd
 	status            map[string]string
 	logsMu            sync.Mutex
 	logs              []RequestLog
@@ -40,18 +39,24 @@ type Server struct {
 	protocolsAt       time.Time
 	accountMu         sync.Mutex
 	logins            map[string]*loginAttempt
+	google            googleweb.Sessions
+	googleBuildUnary  map[string]bool
 }
 
 func NewServer(path string, cfg Config) *Server {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyFromEnvironment
-	return &Server{cfg: cfg, path: path, client: &http.Client{Transport: transport, Timeout: 0, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, children: make(map[string]*exec.Cmd), status: make(map[string]string)}
+	return &Server{cfg: cfg, path: path, client: &http.Client{Transport: transport, Timeout: 0, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, status: make(map[string]string)}
 }
 func (s *Server) config() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	c := s.cfg
 	c.Backends = append([]Backend(nil), c.Backends...)
+	c.EngineSettings = map[string]engineSettings{}
+	for k, v := range s.cfg.EngineSettings {
+		c.EngineSettings[k] = v
+	}
 	c.Aliases = make(map[string]string, len(s.cfg.Aliases))
 	for name, target := range s.cfg.Aliases {
 		c.Aliases[name] = target
@@ -99,6 +104,13 @@ func APIOnly(next http.Handler) http.Handler {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/licenses" && r.Method == "GET" {
+		data, _ := static.ReadFile("notices.txt")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Write(data)
+		return
+	}
 	// Only inference routes are logged; never record prompts or admin secrets.
 	w, finishLog := s.tracked(w, r)
 	defer finishLog()
@@ -304,7 +316,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 	case strings.HasPrefix(r.URL.Path, "/api/engine-settings/"):
 		s.handleEngineSettings(w, r)
 	case r.URL.Path == "/api/local/import" && r.Method == http.MethodPost:
-		s.handleLocalImport(w, r)
+		jsonError(w, 410, "内置来源无需导入或下载上游程序")
 	case r.URL.Path == "/api/diagnostics" && r.Method == http.MethodGet:
 		jsonResult(w, 200, map[string]any{"version": BuildVersion, "platform": runtime.GOOS, "backends": s.discover(r.Context(), c)})
 	case r.URL.Path == "/api/upstreams" && r.Method == http.MethodGet:
@@ -429,68 +441,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 			jsonResult(w, 200, map[string]bool{"ok": true})
 			return
 		}
-		if action == "start" {
-			if e := s.startProcess(*back); e != nil {
-				jsonError(w, 400, e.Error())
-				return
-			}
-		} else if action == "stop" {
-			s.stopProcess(id)
-		} else {
-			jsonError(w, 404, "Unknown action")
-			return
-		}
-		jsonResult(w, 200, map[string]bool{"ok": true})
+		jsonError(w, 410, "应用不再启动外部来源程序；请配置内置来源或已有服务连接")
 	default:
 		jsonError(w, 404, "Unknown admin API")
-	}
-}
-func (s *Server) startProcess(b Backend) error {
-	if strings.TrimSpace(b.Command) == "" {
-		return errors.New("No command configured for " + b.ID)
-	}
-	s.mu.Lock()
-	if _, ok := s.children[b.ID]; ok {
-		s.mu.Unlock()
-		return nil
-	}
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", b.Command)
-	} else {
-		cmd = exec.Command("sh", "-c", b.Command)
-	}
-	if b.Workdir != "" {
-		cmd.Dir = b.Workdir
-	}
-	s.bindBackendOutput(cmd, b.ID)
-	if e := cmd.Start(); e != nil {
-		s.mu.Unlock()
-		return e
-	}
-	s.children[b.ID] = cmd
-	s.status[b.ID] = "running"
-	s.mu.Unlock()
-	go func() {
-		err := cmd.Wait()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.children[b.ID] == cmd {
-			delete(s.children, b.ID)
-			s.status[b.ID] = "exited"
-			if err != nil {
-				s.status[b.ID] = "exited: " + err.Error()
-			}
-		}
-	}()
-	return nil
-}
-func (s *Server) stopProcess(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if c, ok := s.children[id]; ok {
-		_ = c.Process.Kill()
-		s.status[id] = "stopping"
 	}
 }
 func loopback(addr string) bool {

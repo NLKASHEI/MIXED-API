@@ -5,6 +5,7 @@ package desktop
 import (
 	"errors"
 	"golang.org/x/sys/windows"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -70,25 +71,35 @@ func newHandler(id string, callback func(uintptr, *comObject) uintptr) *comHandl
 	h := &comHandler{callback: callback}
 	h.iid, _ = windows.GUIDFromString(id)
 	h.refs.Store(1)
-	unknown, _ := windows.GUIDFromString("{00000000-0000-0000-C000-000000000046}")
-	h.table = &[4]uintptr{
-		windows.NewCallback(func(this *comHandler, iid *windows.GUID, out *unsafe.Pointer) uintptr {
-			if out == nil || iid == nil {
-				return 0x80004003
-			}
-			*out = nil
-			if *iid != unknown && *iid != this.iid {
-				return 0x80004002
-			}
-			*out = unsafe.Pointer(this)
-			this.refs.Add(1)
-			return 0
-		}),
-		windows.NewCallback(func(this *comHandler) uintptr { return uintptr(this.refs.Add(1)) }),
-		windows.NewCallback(func(this *comHandler) uintptr { return uintptr(this.refs.Add(^uint32(0))) }),
-		windows.NewCallback(func(_ *comHandler, a uintptr, b *comObject) uintptr { return h.callback(a, b) }),
-	}
+	h.table = handlerTable()
 	return h
+}
+
+var sharedHandlerTable *[4]uintptr
+var handlerTableOnce sync.Once
+
+func handlerTable() *[4]uintptr {
+	handlerTableOnce.Do(func() {
+		unknown, _ := windows.GUIDFromString("{00000000-0000-0000-C000-000000000046}")
+		sharedHandlerTable = &[4]uintptr{
+			windows.NewCallback(func(this *comHandler, iid *windows.GUID, out *unsafe.Pointer) uintptr {
+				if out == nil || iid == nil {
+					return 0x80004003
+				}
+				*out = nil
+				if *iid != unknown && *iid != this.iid {
+					return 0x80004002
+				}
+				*out = unsafe.Pointer(this)
+				this.refs.Add(1)
+				return 0
+			}),
+			windows.NewCallback(func(this *comHandler) uintptr { return uintptr(this.refs.Add(1)) }),
+			windows.NewCallback(func(this *comHandler) uintptr { return uintptr(this.refs.Add(^uint32(0))) }),
+			windows.NewCallback(func(h *comHandler, a uintptr, b *comObject) uintptr { return h.callback(a, b) }),
+		}
+	})
+	return sharedHandlerTable
 }
 
 func (v *comObject) on(slot int, h *comHandler) error {

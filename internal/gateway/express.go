@@ -47,7 +47,7 @@ type geminiResult struct {
 		Cached   int `json:"cachedContentTokenCount"`
 	} `json:"usageMetadata"`
 	Feedback json.RawMessage `json:"promptFeedback"`
-	Error    json.RawMessage `json:"error"`
+	Error    json.RawMessage `json:"error,omitempty"`
 }
 
 func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
@@ -192,8 +192,8 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 	}
 	if raw, ok := payload["n"]; ok {
 		var n int
-		if json.Unmarshal(raw, &n) != nil || n < 1 {
-			return nil, errors.New("n 必须是正整数")
+		if json.Unmarshal(raw, &n) != nil || n < 1 || n > 8 {
+			return nil, errors.New("n 必须是 1–8 的整数")
 		}
 	}
 	for input, output := range map[string]string{"temperature": "temperature", "top_p": "topP", "top_k": "topK", "max_tokens": "maxOutputTokens", "max_completion_tokens": "maxOutputTokens", "n": "candidateCount", "seed": "seed"} {

@@ -10,13 +10,13 @@ import (
 // upstream application. Existing-service mode remains an explicit alternative.
 func (s *Server) prepareBackend(id string) error {
 	switch id {
-	case "vertex", "opencode", "workbuddy", "codex":
+	case "vertex", "opencode", "workbuddy", "codex", "aps", "aistudio":
 		return s.prepareIntegrated(id)
 	}
 	return errors.New("该来源的内置核心尚未完成")
 }
 
-func (s *Server) activateBackend(_ context.Context, id string) error {
+func (s *Server) activateBackend(ctx context.Context, id string) error {
 	for _, b := range s.config().Backends {
 		if b.ID != id {
 			continue
@@ -30,6 +30,11 @@ func (s *Server) activateBackend(_ context.Context, id string) error {
 		if id == "workbuddy" || id == "codex" {
 			if _, err := s.credential(id); err != nil {
 				return err
+			}
+		}
+		if id == "aps" || id == "aistudio" {
+			if s.google == nil || s.google.State(ctx, id).Status != "ready" {
+				return errors.New("请在来源窗口完成本人授权，并发送一条测试消息")
 			}
 		}
 		return s.enableBackend(id)
