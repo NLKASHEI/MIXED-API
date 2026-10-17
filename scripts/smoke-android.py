@@ -1,5 +1,6 @@
 """Clean-emulator acceptance of the CI APK; does not sign in to any provider."""
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -9,7 +10,6 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 OUTPUT = pathlib.Path("android-device-evidence")
-OUTPUT.mkdir(exist_ok=True)
 PACKAGE = "com.mixedapi.local"
 
 
@@ -69,6 +69,11 @@ def tap(node):
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.attrib["bounds"]))
     adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
 
+
+assert os.environ.get("MIXED_ANDROID_DISPOSABLE_EMULATOR") == "1", "Acceptance requires an explicitly disposable emulator"
+assert re.fullmatch(r"emulator-\d+", adb("get-serialno").strip()), "Refusing to modify a physical device"
+assert adb("shell", "getprop", "ro.kernel.qemu").strip() == "1", "Expected Android emulator"
+OUTPUT.mkdir(exist_ok=True)
 
 try:
     installed = json.loads(pathlib.Path("android-package.json").read_text())

@@ -218,6 +218,8 @@ jobs:
           test "$(adb shell id -u | tr -d '\r')" = 0
           adb shell input keyevent 82
       - name: Verify installed APK and notification lifecycle
+        env:
+          MIXED_ANDROID_DISPOSABLE_EMULATOR: '1'
         run: python3 scripts/smoke-android.py
       - uses: actions/upload-artifact@v4
         if: always()
