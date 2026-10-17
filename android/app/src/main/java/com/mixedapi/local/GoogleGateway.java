@@ -223,7 +223,7 @@ final class GoogleGateway {
     }
   }
 
-  private static final class Output {
+  static final class Output {
     final OutputStream out;
     final String backend, model, id = "chatcmpl-" + UUID.randomUUID();
     final boolean incremental;

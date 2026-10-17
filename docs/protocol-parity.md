@@ -9,3 +9,5 @@ Windows 内置核心新增 Responses / Messages → Chat 的请求转换及完�
 本轮公共 HTTP 回归：Responses → 快速V工具和用量；Messages → OpenCode Chat 工具；Responses 实际 HTTP 断开取消；Messages 流正常/损坏参数；Gemini 签名工具两轮调用；分片工具名；完整与流式的长度截断及未知结束状态。
 
 尚待扩展：Android 同等转换；其他高级媒体与来源专有参数；完整客户端互操作、本人账号和设备验收。不能据此宣称全部协议或全部客户端均已通过。
+
+Android 检查点：快速V直接调用 Gemini；OpenCode 按内置共享目录分派 Chat、Responses、Messages、Gemini。Chat 客户端的完整/流式请求已覆盖工具调用、思考文本与签名、用量、缺失终止帧和损坏工具参数。新增本地账号加密存储、导入、重启读取和注销，生产密钥来自 Android Keystore；JVM 测试仅注入 JCE 密钥，不替代设备 Keystore 验收。当前本机 assembleDebug、全部单元测试、lintDebug 通过（lint 0 错误、10 警告）。账号刷新、反向协议桥接及设备验收继续开发，不能将此检查点当作正式 release。

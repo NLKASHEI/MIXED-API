@@ -32,6 +32,8 @@ import org.json.JSONObject;
 public final class BridgeHttpServer implements AutoCloseable {
   private final Context context;
   private final GoogleGateway google;
+  private final NativeGateway nativeGateway;
+  private final NativeAccounts accounts;
   private final ExecutorService pool = Executors.newFixedThreadPool(12);
   private final ExecutorService discoveryPool = Executors.newFixedThreadPool(6);
   private final AtomicBoolean open = new AtomicBoolean(false);
@@ -46,8 +48,23 @@ public final class BridgeHttpServer implements AutoCloseable {
   }
 
   BridgeHttpServer(Context ctx, GoogleGateway.Transport sessions) {
+    this(ctx, sessions, null);
+  }
+
+  BridgeHttpServer(
+      Context ctx, GoogleGateway.Transport sessions, NativeGateway.Transport transport) {
+    this(ctx, sessions, transport, null);
+  }
+
+  BridgeHttpServer(
+      Context ctx,
+      GoogleGateway.Transport sessions,
+      NativeGateway.Transport transport,
+      AccountStore.Keys keys) {
     context = ctx.getApplicationContext();
     google = new GoogleGateway(sessions);
+    accounts = new NativeAccounts(new AccountStore(context, keys));
+    nativeGateway = new NativeGateway(context, transport);
   }
 
   public synchronized void start() throws Exception {
@@ -83,7 +100,7 @@ public final class BridgeHttpServer implements AutoCloseable {
     discoveryPool.shutdownNow();
   }
 
-  private static byte[] bounded(InputStream in, int max) throws IOException {
+  static byte[] bounded(InputStream in, int max) throws IOException {
     ByteArrayOutputStream b = new ByteArrayOutputStream();
     byte[] tmp = new byte[8192];
     int n;
@@ -423,6 +440,10 @@ public final class BridgeHttpServer implements AutoCloseable {
     if (path.startsWith("/api/accounts/")) {
       String[] segments = path.substring("/api/accounts/".length()).split("/", -1);
       String id = segments[0];
+      if (NativeAccounts.source(id) && segments.length <= 2) {
+        accounts.admin(out, id, segments.length == 2 ? segments[1] : "", method, body);
+        return;
+      }
       if (!GoogleGateway.source(id)) {
         fail(out, 501, "此账号授权尚未在 Android 内置");
         return;
@@ -650,8 +671,8 @@ public final class BridgeHttpServer implements AutoCloseable {
     HttpURLConnection c = null;
     try {
       if ("builtin".equals(b.optString("kind"))) {
-        if (!GoogleGateway.source(id)) throw new IOException("此内置来源尚未适配 Android");
-        JSONArray nativeModels = google.models(id);
+        JSONArray nativeModels =
+            GoogleGateway.source(id) ? google.models(id) : nativeGateway.models(b);
         for (int n = 0; n < nativeModels.length(); n++) {
           String name = nativeModels.getString(n);
           result.models.put(
@@ -812,7 +833,7 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
     if ("builtin".equals(b.optString("kind"))) {
       if (!GoogleGateway.source(id)) {
-        fail(out, 501, "此内置来源尚未适配 Android");
+        nativeGateway.serve(out, path, b, requested, upstreamModel, input);
         return;
       }
       JSONObject allSettings = cfg.optJSONObject("engine_settings");

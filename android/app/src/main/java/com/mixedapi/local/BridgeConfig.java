@@ -51,11 +51,9 @@ public final class BridgeConfig {
           JSONObject b = backends.optJSONObject(i);
           if (b == null) continue;
           if ("pc".equals(b.optString("id"))) foundPC = true;
-          if ("codex".equals(b.optString("id"))) b.put("name", "Codex (通过电脑共享)");
         }
         if (!foundPC) {
-          backends.put(
-              backend("pc", "电脑 MIXED-API（优先推荐）", "http://192.168.1.100:8766/v1", "bearer"));
+          backends.put(backend("pc", "电脑共享", "http://192.168.1.100:8766/v1", "bearer"));
           save(ctx, existing);
         }
       }
@@ -66,14 +64,18 @@ public final class BridgeConfig {
     obj.put("api_key", key("sk-mix-"));
     obj.put("admin_key", key("admin-"));
     JSONArray a = new JSONArray();
-    a.put(backend("vertex", "快速V", "http://127.0.0.1:8050/v1", "bearer"));
-    a.put(backend("codex", "Codex (通过电脑共享)", "http://127.0.0.1:8901/codex/v1", "none"));
-    a.put(backend("opencode", "OpenCode", "http://127.0.0.1:8080/v1", "bearer"));
-    a.put(backend("workbuddy", "WorkBuddy", "http://127.0.0.1:8790/v1", "bearer"));
+    a.put(backend("vertex", "快速V", NativeGateway.base("vertex"), "none").put("kind", "builtin"));
+    a.put(backend("codex", "Codex", NativeGateway.base("codex"), "none").put("kind", "builtin"));
+    a.put(
+        backend("opencode", "OpenCode", NativeGateway.base("opencode"), "none")
+            .put("kind", "builtin"));
+    a.put(
+        backend("workbuddy", "WorkBuddy", NativeGateway.base("workbuddy"), "none")
+            .put("kind", "builtin"));
     a.put(backend("aps", "无头V", GoogleGateway.base("aps"), "none").put("kind", "builtin"));
     a.put(
         backend("aistudio", "AIS", GoogleGateway.base("aistudio"), "none").put("kind", "builtin"));
-    a.put(backend("pc", "电脑 MIXED-API（优先推荐）", "http://192.168.1.100:8766/v1", "bearer"));
+    a.put(backend("pc", "电脑共享", "http://192.168.1.100:8766/v1", "bearer"));
     obj.put("backends", a);
     save(ctx, obj);
     return obj;
@@ -102,7 +104,7 @@ public final class BridgeConfig {
       if (!kind.isEmpty() && !"http".equals(kind) && !"builtin".equals(kind))
         throw new Exception("Invalid source kind");
       if ("builtin".equals(kind)
-          && (!GoogleGateway.source(id) || !GoogleGateway.base(id).equals(src)))
+          && (NativeGateway.base(id) == null || !NativeGateway.base(id).equals(src)))
         throw new Exception("Unsupported native source or endpoint");
     }
     JSONObject settings = obj.optJSONObject("engine_settings");
