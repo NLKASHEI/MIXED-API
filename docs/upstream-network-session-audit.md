@@ -17,3 +17,13 @@ WorkBuddy 上游没有确定的积分耗尽专属错误码、统一恢复周期�
 验证：公开 HTTP 的普通/流式快速V请求经真实本机 CONNECT 代理和 TLS 测试服务成功；失败代理状态、DNS/超时、凭据不进日志、项目/区域路径有回归。浏览器桥 WebSocket 的来源/令牌校验、发送/取消/释放和扩展异步命令顺序有离线测试。个人 Google 登录及真实模型生成未代用户操作，不属于这些测试的结论。
 
 许可：协议来源许可沿用 `docs/third-party/`；新引入 go-ieproxy 的 MIT 与 x/net、x/text 的 BSD 许可包含在 THIRD_PARTY_NOTICES.md。扩展桥为本项目实现，移除不再使用的 chromedp 及其依赖。
+
+## v0.4.3 开发修复与实测边界
+
+用户指定的 `D:\vertex2openai` 位于同一 53a45b6 提交。逐项核对 `express_key_probe.py`、`upstreams/express_sdk.py`、`api_helpers.py` 与 `config.py`：项目探测通过不存在的模型识别 Key 绑定项目，不消耗真实生成；完整模型路径在固定 aiplatform.googleapis.com 域名使用项目与区域；上游默认 global。MIXED 保存新 Key 时探测，明确填写 global，换 Key 清空旧项目绑定；失败不保存假项目。已有手动项目/区域继续保留。
+
+快速V只有生成前明确 HTTP 429/503 才按同模型、同 Key 重试。MIXED 默认 2 次、总时限 300 秒，可在后台调整；不照搬上游 10 次默认值。遵守 Retry-After，取消立即停止，网络中断、404 和已经输出的流不重放。后台保留尝试次数、重试原因及从 Google 404 结构中提取的路由区域。移除未验证且本次实际返回 404 的 gemini-4-argon 候选，不擅自替换用户指定模型。
+
+本机真实证据：相同 Key、模型及本机 HTTP 代理，默认 publisher 路由的 gemini-3.8-flash 流式请求返回 429；显式 Key 项目/global 路径有一次 HTTP 200，输出 OK 并正常 STOP。之后经当前运行 EXE 再请求仍出现 429。结论是完整路径与重试需补齐，不能声称 global 必然修复额度/拥堵，也不能把 429 一律归因代理或错误模型名。项目编号、Key、完整请求及配置不进入仓库。
+
+AIS Build/Playground 与无头V：修复函数发现、页面加载时机与匿名请求壳；当前默认浏览器自动等待和连接见 ADR-0008。用户明确暂不刷新扩展或操作登录，这两路真实会话初始化和生成继续未验收。不会把旧版本 EXE 的运行结果当作本轮源码构建结果，不下载新的发布二进制到用户电脑。

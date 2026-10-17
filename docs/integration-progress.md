@@ -35,3 +35,11 @@ Android 为纯 Java 本地核心，共享管理 HTML 与配置。电脑共享只
 系统/手动出站代理、快速V项目区域、当前浏览器连接扩展、详细诊断与免费OpenCode列表已实现，WorkBuddy积分注意事项加入配置步骤。移除旧CDP独立profile启动。见ADR-0007和upstream-network-session-audit.md。
 
 本地 Go 全量测试/vet、会话JS、扩展命令顺序、共享资源检查通过；真实本机CONNECT+TLS夹具验证快速V流式/普通生成经过代理。真实Chromium加载扩展并通过公开HTTP完成合成Build生成，未登录本人Google账号。需求轴发现免费过滤与业务码丢失已修；标准轴发现取消抢跑、发送取消期限、系统代理快照和PAC直连已修复复核。实际Google生成仍不作已验收声明。
+
+## v0.4.3 开发修复
+
+按 D:\vertex2openai 补齐快速V项目自动探测/global 路径和生成前429/503有限重试，移除未验证的 Argon 候选。AIS补齐上游可观察 snapshot 包装变体，无头V构造经两份源码核对的匿名请求壳，解决已登录页面不产生匿名模板的问题。HTTP200中的GraphQL/RPC业务失败现在保留具体代码，不再在后台只显示运输成功。
+
+Windows 一次点击后在原浏览器标签页进入官方站点，后台等待本人操作并自动连接；首次扩展授权仍必要。输入草稿、页面弹窗与加载期间不触发初始化。Android 不发 APK，仅保持共享资源和 Gradle 检查。
+
+个人浏览器验收由用户暂缓：无头V官方 site key 初始化及 AIS Build/Playground 真实生成未通过。本轮没有创建发布标签或声称 v0.4.3 Release 资产可用。快速V真实测到 global 成功及后续429，不能把一次成功写成所有模型稳定可用。详见 upstream-network-session-audit.md。

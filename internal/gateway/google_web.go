@@ -343,8 +343,11 @@ func (s *Server) sendGoogle(ctx context.Context, id string, op googleweb.Operati
 func decodeGoogleWeb(ctx context.Context, kind string, source io.Reader, emit func(geminiResult) error) error {
 	emitJSON := func(raw []byte) error {
 		var frame geminiResult
-		if json.Unmarshal(raw, &frame) != nil || (len(frame.Error) > 0 && string(frame.Error) != "null") {
+		if json.Unmarshal(raw, &frame) != nil {
 			return errors.New("invalid generation frame")
+		}
+		if len(frame.Error) > 0 && string(frame.Error) != "null" {
+			return googleBusinessError(ctx, frame.Error)
 		}
 		for i := range frame.Candidates {
 			if frame.Candidates[i].Finish == "FINISH_REASON_UNSPECIFIED" {
@@ -370,11 +373,11 @@ func decodeGoogleWeb(ctx context.Context, kind string, source io.Reader, emit fu
 				return errors.New("invalid GraphQL frame")
 			}
 			if len(obj.Errors) > 0 {
-				return errors.New("GraphQL generation failed")
+				return googleBusinessError(ctx, obj.Errors[0])
 			}
 			for _, result := range obj.Results {
 				if len(result.Errors) > 0 {
-					return errors.New("GraphQL generation failed")
+					return googleBusinessError(ctx, result.Errors[0])
 				}
 				raw := result.Data.UI.Result
 				if len(raw) == 0 {
@@ -456,7 +459,8 @@ func decodeGoogleWeb(ctx context.Context, kind string, source io.Reader, emit fu
 			return errors.New("invalid RPC trailer")
 		}
 		if len(trailer) > 0 && trailer[0] != nil && trailer[0] != float64(0) {
-			return errors.New("RPC rejected generation")
+			raw, _ := json.Marshal(map[string]any{"code": trailer[0]})
+			return googleBusinessError(ctx, raw)
 		}
 	}
 	if token, err := dec.Token(); err != nil || token != json.Delim(']') {

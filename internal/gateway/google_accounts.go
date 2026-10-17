@@ -30,7 +30,7 @@ func (s *Server) handleGoogleAccount(w http.ResponseWriter, r *http.Request, id,
 			jsonError(w, 503, message)
 			return
 		}
-		jsonResult(w, 200, map[string]string{"status": "waiting", "message": "请在默认浏览器完成本人登录与页面提示，然后返回连接会话"})
+		jsonResult(w, 200, map[string]string{"status": "waiting", "message": "请在默认浏览器完成本人登录与页面提示，软件会自动连接会话"})
 		return
 	}
 	if r.Method == "POST" && action == "initialize" {

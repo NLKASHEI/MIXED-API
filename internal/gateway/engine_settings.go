@@ -22,11 +22,14 @@ func (s *Server) sourceSettings(id string) engineSettings {
 	if v, ok := s.cfg.EngineSettings[id]; ok {
 		return v
 	}
+	if id == "vertex" {
+		return engineSettings{MaxRetries: 2, RequestTimeoutSeconds: 300}
+	}
 	return engineSettings{RequestTimeoutSeconds: 300}
 }
 func (s *Server) handleEngineSettings(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/engine-settings/")
-	if id != "aps" {
+	if id != "aps" && id != "vertex" {
 		jsonError(w, 404, "来源没有这些请求设置")
 		return
 	}
@@ -42,7 +45,7 @@ func (s *Server) handleEngineSettings(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var value engineSettings
 	var extra any
-	if dec.Decode(&value) != nil || !value.valid() || dec.Decode(&extra) != io.EOF {
+	if dec.Decode(&value) != nil || !value.valid() || id == "vertex" && value.AggregateStream || dec.Decode(&extra) != io.EOF {
 		jsonError(w, 400, "重试需为 0–10，超时需为 10–600 秒")
 		return
 	}

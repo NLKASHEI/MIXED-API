@@ -46,3 +46,5 @@ Google Chat 可使用 `modalities:["text","audio"]` 和 `audio:{"voice":"Kore","
 AIS 请求准备阶段取消、输入框恢复仍通过共享脚本同步；Windows 取消确认必须为 true，否则先关闭失效页面。构建继续检查共享资源一致与 Android Gradle，设备验收暂停。具体 CI 及真实账号验收以[重构进度](integration-progress.md)和对应 Actions 为准。
 
 Windows v0.4.2 新增系统/手动代理、快速V项目区域、扩展连接当前浏览器、详细网络诊断、OpenCode免费清单过滤。Android Java尚未移植；共享HTML隐藏Windows代理与区域入口，APK不随本次发布。
+
+Windows v0.4.3 开发增量：Key 项目探测、快速V有限重试与超时、浏览器自动等待连接、GraphQL/RPC业务码日志仅在 Go 中实现。共享 HTML/会话脚本同步；Android 仍使用手动连接按钮，Java 不新增这些接口或请求策略，不发布 APK。

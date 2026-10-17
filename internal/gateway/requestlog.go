@@ -132,7 +132,7 @@ func (s *Server) addLog(entry RequestLog) {
 	if entry.Details != nil {
 		cloned := *entry.Details
 		entry.Details = &cloned
-		fields = append(fields, &cloned.Target, &cloned.Proxy, &cloned.Address, &cloned.Cause, &cloned.Hint, &cloned.UpstreamCode)
+		fields = append(fields, &cloned.Target, &cloned.Proxy, &cloned.Address, &cloned.Cause, &cloned.Hint, &cloned.UpstreamCode, &cloned.ResolvedLocation)
 	}
 	for _, field := range fields {
 		for _, secret := range secrets {

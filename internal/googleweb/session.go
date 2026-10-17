@@ -19,8 +19,11 @@ type Operation struct {
 	PageToken string          `json:"page_token,omitempty"`
 }
 type State struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Status        string          `json:"status"`
+	Message       string          `json:"message,omitempty"`
+	Checks        map[string]bool `json:"checks,omitempty"`
+	Version       string          `json:"version,omitempty"`
+	CanInitialize bool            `json:"can_initialize,omitempty"`
 }
 
 // SetupError contains a fixed user-facing message, never a browser log or token.

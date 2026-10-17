@@ -19,19 +19,22 @@ import (
 )
 
 type RequestDetails struct {
-	Stage          string `json:"stage,omitempty"`
-	Target         string `json:"target,omitempty"`
-	Proxy          string `json:"proxy,omitempty"`
-	ProxySource    string `json:"proxy_source,omitempty"`
-	ErrorType      string `json:"error_type,omitempty"`
-	Cause          string `json:"cause,omitempty"`
-	Hint           string `json:"hint,omitempty"`
-	UpstreamStatus int    `json:"upstream_status,omitempty"`
-	UpstreamCode   string `json:"upstream_code,omitempty"`
-	RetryAfter     string `json:"retry_after,omitempty"`
-	ProxyStatus    int    `json:"proxy_status,omitempty"`
-	Address        string `json:"address,omitempty"`
-	Attempt        int    `json:"attempt,omitempty"`
+	BusinessCode     int    `json:"business_code,omitempty"`
+	Stage            string `json:"stage,omitempty"`
+	Target           string `json:"target,omitempty"`
+	Proxy            string `json:"proxy,omitempty"`
+	ProxySource      string `json:"proxy_source,omitempty"`
+	ErrorType        string `json:"error_type,omitempty"`
+	Cause            string `json:"cause,omitempty"`
+	Hint             string `json:"hint,omitempty"`
+	UpstreamStatus   int    `json:"upstream_status,omitempty"`
+	UpstreamCode     string `json:"upstream_code,omitempty"`
+	RetryAfter       string `json:"retry_after,omitempty"`
+	ProxyStatus      int    `json:"proxy_status,omitempty"`
+	Address          string `json:"address,omitempty"`
+	Attempt          int    `json:"attempt,omitempty"`
+	RetryStatus      int    `json:"retry_status,omitempty"`
+	ResolvedLocation string `json:"resolved_location,omitempty"`
 }
 type diagnosticKey struct{}
 type requestDiagnostic struct {
@@ -79,7 +82,7 @@ func recordProxy(r *http.Request, p *url.URL, source string) {
 func providerDo(client *http.Client, req *http.Request) (*http.Response, error) {
 	d := diagnostic(req)
 	d.set(func(v *RequestDetails) {
-		*v = RequestDetails{Stage: "连接准备", Target: safeEndpoint(req.URL, true), Attempt: v.Attempt + 1}
+		*v = RequestDetails{Stage: "连接准备", Target: safeEndpoint(req.URL, true), Attempt: v.Attempt + 1, RetryStatus: v.RetryStatus}
 	})
 	stage := func(value string) { d.set(func(v *RequestDetails) { v.Stage = value }) }
 	trace := &httptrace.ClientTrace{
@@ -224,6 +227,18 @@ func recordProviderErrorBody(req *http.Request, raw []byte) {
 			d.Cause = "上游在响应正文中返回业务错误"
 		}
 		d.Hint = "根据服务方错误码检查模型、账号权限与用量；刷新登录不会补充积分。"
+		if req.URL != nil && req.URL.Hostname() == "aiplatform.googleapis.com" {
+			if d.UpstreamStatus == 404 {
+				var message string
+				json.Unmarshal(fields["message"], &message)
+				if match := expressResource.FindStringSubmatch(message); len(match) == 4 {
+					d.ResolvedLocation = match[2]
+				}
+				d.Hint = "Google 未找到该模型或当前项目无权访问。检查模型 ID；在快速V配置中探测 Key 项目，再选择 global 或模型支持的区域。404 不会自动重试，也不会替换模型。"
+			} else if d.UpstreamStatus == 429 {
+				d.Hint = "Google 返回资源不足或限流；单凭 429 无法判断是额度耗尽还是临时拥堵。已按快速V设置重试；查看尝试次数、等待时间及官方项目用量。换登录或刷新模型不会补额度。"
+			}
+		}
 	})
 }
 

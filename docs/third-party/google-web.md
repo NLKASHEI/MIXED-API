@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Mag1cFall/AIStudio2API | 2cbe310ce6ebab093bf83e5078de8296f03770a9 | MIT；MakerSuite JSON+protobuf 字段、Build 代理封装、WAA 函数发现、语音字段与显式工具调用约束。Windows 同时采用 `sendBuild` 的单次调用兼容分支和 `DecodeRPCError` 的状态数组解析。完整许可见 AIStudio2API-MIT.txt。 |
 | DeconstructedCube/aistudio-api | 9bd5a20f25bbfae60c84b59b6a9f167b85c7d1a3 | 只核对协议与依赖说明；没有可核验的 LICENSE 文件，因此不复制其实现。 |
-| DeconstructedCube/APS2api | 01328896c435b4b172b1d25f9fc04ff86b40df31 | PolyForm Noncommercial；`internal/transform/schema.go`、`request_config.go` 作为匿名 GraphQL 参数格式的核对输入。未复制其实现；MIXED Schema 转换器明确拒绝无法保留的约束，不采用静默删除、猜测类型或钳制参数。请求模板来自用户当前官方页面。 |
+| DeconstructedCube/APS2api | 01328896c435b4b172b1d25f9fc04ff86b40df31 | PolyForm Noncommercial；`internal/transform/schema.go`、`request_config.go` 作为匿名 GraphQL 参数格式的核对输入。未复制其实现；MIXED Schema 转换器明确拒绝无法保留的约束，不采用静默删除、猜测类型或钳制参数。匿名请求壳与 payload.go 固定版本及用户提供的 vertex-singbox 源码核对；验证令牌由当前官方页面生成，不依赖已登录项目页面发出匿名请求。 |
 
 相关模块：`internal/googleweb/`、`internal/gateway/google_*.go`、`internal/desktop/system_browser_windows.go` 与 `android/app/src/main/java/com/mixedapi/local/Google*.java`。
 
@@ -23,3 +23,7 @@ Windows 本轮接入的上游 Build 兼容规则：目录确认的免费模型�
 APS 参数转换对应 `google_aps.go`：大写类型、properties 的 key/value 数组、字符串长度约束及 responseSchema；外层 GraphQL errors 不能被当作成功完成。测试见 `google_aps_test.go`。本轮这些 Go 增量未移植至 Android Java，见协议差异记录。
 
 本机参考文件与上述 GitHub 固定提交的 Git blob SHA 已核对一致：AIStudio2API build.go `09dfe081fa62028c67238188450069b0fbe66317`、client.go `1c929acf306a35640b9f221b290ae7a284bf5816`；APS schema.go `feb10accff96051a4b933d7a899c7a0f476f396c`、request_config.go `8e6faa257c935cc276f33f51f0ce8f12ad70a46c`。
+
+本轮补充：核对 DeconstructedCube 的 `infrastructure/browser/js/install_hooks.js` 可观察函数形态，独立扩展已有发现器对 Promise、`.snapshot)`、e9b/Bcc 包装的识别；不复制无明确许可实现。APS 核对匿名 operationName、querySignature、clientVersion、pagePath 和公共 site key；不带本人项目 Cookie 调用匿名端点，不复制 anchor/reload 验证模拟。site key 能否由当前登录页面正常执行，仍需本人浏览器验收，离线夹具不证明此项。
+
+GraphQL 的 `extensions.status.code/status`、RPC 尾部状态与 Gemini 内层 error 均保留有界业务码及已知枚举。后台区分 HTTP 200 和正文错误，原始 message/请求/令牌不进入日志；响应中途失败不重发。

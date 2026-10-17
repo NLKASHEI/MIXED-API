@@ -58,7 +58,12 @@ func exportExtension(folder string) error {
 	extensionExportMu.Lock()
 	defer extensionExportMu.Unlock()
 	files, _ := extensionFiles.ReadDir("extension")
-	content := map[string][]byte{"google-session.js": []byte(RuntimeScript)}
+	content := map[string][]byte{
+		"google-session.js": []byte(RuntimeScript),
+		// The public fragment scopes early hooks to tabs opened by this extension.
+		// It is not the localhost capability and carries no credential.
+		"google-session-preload.js": []byte("if(location.hash === '#mixed-api-session'){\n" + RuntimeScript + "\n}"),
+	}
 	for _, file := range files {
 		data, err := extensionFiles.ReadFile("extension/" + file.Name())
 		if err != nil {
@@ -299,4 +304,4 @@ func (p *ExtensionPage) Close() error {
 	return p.server.Close()
 }
 
-var extensionSetup = template.Must(template.New("setup").Parse(`<!doctype html><meta charset="utf-8"><title>MIXED 浏览器连接</title><style>body{font:18px/1.7 system-ui;max-width:780px;margin:64px auto;padding:24px;color:#172b26;background:#f4f6f4}h1{font-size:30px}code{overflow-wrap:anywhere;background:white;padding:8px}li{margin:16px 0}#status{padding:16px;background:white;border-radius:12px}</style><h1>MIXED 浏览器连接</h1><p id="status">首次使用请加载内置扩展。已经加载过时，刷新此页。</p><ol><li>在当前 Edge 地址栏打开 <code>edge://extensions</code>（Chrome 使用 <code>chrome://extensions</code>）。</li><li>打开“开发人员模式”，选择“加载解压缩的扩展”，选择这个文件夹：<p><code>{{.}}</code></p></li><li>返回本页并刷新。扩展将打开 Google 官方页面，使用这个浏览器现有的账号。</li><li>本人完成官方页面的登录、条款或验证后，回到 MIXED 点击“连接会话”。</li></ol><p>扩展随 EXE 提供，不下载上游。请保持来源标签页打开；不要在该标签页同时输入聊天。无需手动发送测试消息。</p>`))
+var extensionSetup = template.Must(template.New("setup").Parse(`<!doctype html><meta charset="utf-8"><title>MIXED 浏览器连接</title><style>body{font:18px/1.7 system-ui;max-width:780px;margin:64px auto;padding:24px;color:#172b26;background:#f4f6f4}h1{font-size:30px}code{overflow-wrap:anywhere;background:white;padding:8px}li{margin:16px 0}#status{padding:16px;background:white;border-radius:12px}</style><h1>MIXED 浏览器连接</h1><p id="status">正在连接当前浏览器。首次使用需按下面步骤允许浏览器连接；已安装时会自动进入官方页面。</p><ol><li>在当前 Edge 地址栏打开 <code>edge://extensions</code>（Chrome 使用 <code>chrome://extensions</code>）。</li><li>打开“开发人员模式”，选择“加载解压缩的扩展”，选择这个文件夹：<p><code>{{.}}</code></p></li><li>返回本页并刷新。扩展将打开 Google 官方页面，使用这个浏览器现有的账号。</li><li>本人完成官方页面的登录、条款或验证后，MIXED 自动连接会话。</li></ol><p>扩展随 EXE 提供，不下载上游。请保持来源标签页打开；不要在该标签页同时输入聊天。无需手动发送测试消息。</p>`))

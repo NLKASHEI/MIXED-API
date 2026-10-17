@@ -105,7 +105,9 @@ func (b *Browser) Open(ctx context.Context, id string) error {
 			err = errors.New("browser closed")
 		}
 		if err == nil {
-			b.sessions[id] = &browserSession{page: page, gate: make(chan struct{}, 1)}
+			s := &browserSession{page: page, gate: make(chan struct{}, 1)}
+			b.sessions[id] = s
+			go b.connectWhenReady(id, s)
 		}
 		delete(b.starting, id)
 		close(pending)
@@ -114,6 +116,35 @@ func (b *Browser) Open(ctx context.Context, id string) error {
 			page.Close()
 		}
 		return err
+	}
+}
+
+// Opening a provider page authorizes preparing its session, not signing in or
+// generating a message. The page opts in only after its required UI is ready.
+// Readiness failures remain visible until the user refreshes that page.
+func (b *Browser) connectWhenReady(id string, s *browserSession) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if b.session(id) != s {
+			return
+		}
+		if live, ok := s.page.(interface{ Alive() bool }); ok && !live.Alive() {
+			return
+		}
+		ctx, cancel := context.WithTimeout(b.ctx, 3*time.Second)
+		state := b.State(ctx, id)
+		cancel()
+		if state.CanInitialize && state.Status == "waiting" {
+			ctx, cancel = context.WithTimeout(b.ctx, 35*time.Second)
+			b.Initialize(ctx, id)
+			cancel()
+		}
+		select {
+		case <-ticker.C:
+		case <-b.ctx.Done():
+			return
+		}
 	}
 }
 func (b *Browser) session(id string) *browserSession {

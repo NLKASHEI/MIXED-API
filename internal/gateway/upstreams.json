@@ -14,7 +14,7 @@
       "repo": "bad-woman/vertex2openai",
       "revision": "53a45b63bfef39e783edf8ea9c1e06800fc17496",
       "license": "MIT",
-      "note": "Express REST 已内置；默认跟随系统代理，可手动指定 HTTP / SOCKS5。使用本人 Express API Key，项目与区域可选。"
+      "note": "Express REST 已内置；默认跟随系统代理，可手动指定 HTTP / SOCKS5。使用本人 Express API Key；保存时探测项目并默认选择 global，可手动修改。"
     },
     {
       "id": "opencode",
@@ -56,14 +56,14 @@
       "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
       "entry": "vertex-proxy.exe",
       "license": "PolyForm-Noncommercial-1.0.0",
-      "note": "Windows 使用当前 Edge / Chrome 的内置连接扩展；首次按配置步骤加载。官方登录与验证由本人完成；实际生成需本人账号验收。"
+      "note": "Windows 一键进入当前 Edge / Chrome 的官方页面，等待本人登录或验证后自动连接。首次需加载随 EXE 提供的连接扩展；真实生成仍待本人验收。"
     },
     {
       "id": "aistudio",
       "repo": "Mag1cFall/AIStudio2API",
       "revision": "2cbe310ce6ebab093bf83e5078de8296f03770a9",
       "license": "MIT",
-      "note": "Windows 使用当前 Edge / Chrome 的内置连接扩展；首次按配置步骤加载。官方登录与验证由本人完成；实际生成需本人账号验收。"
+      "note": "Windows 一键进入当前 Edge / Chrome 的官方页面，等待本人登录或验证后自动连接。首次需加载随 EXE 提供的连接扩展；真实生成仍待本人验收。"
     }
   ]
 }

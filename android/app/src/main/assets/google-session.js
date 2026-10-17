@@ -10,11 +10,26 @@
   const rpcPath = '/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/';
   const graphHost = 'https://cloudconsole-pa.clients6.google.com';
   const graphPath = '/v3/entityServices/AiplatformEntityService/schemas/AIPLATFORM_GRAPHQL:batchGraphql';
+  // Public anonymous wire contract, cross-checked with APS2api payload.go and
+  // the supplied vertex-singbox source. No account/project credentials here.
+  const apsSiteKey='6LdCjtspAAAAAMcV4TGdWLJqRTEk1TfpdLqEnKdj';
+  const apsPublicKey='AIzaSyCI-zsRP85UVOi0DjtiCwWBwQ1djDy741g';
+  const apsQuery='2/l8eCsMMY49imcDQ/lwwXyL8cYtTjxZBF2dNqy69LodY=';
   const originalFetch = window.fetch.bind(window);
   let headers = {}, template = null, graphURL = '', snapshot = null, service = null, captcha = null, observedSuccess = false;
   const requests = new Map();
   let bootstrap=null, initialized=false, invalidated=false, initializationMessage='';
   const promptValue=e=>e.isContentEditable?e.textContent:e.value;
+  const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>e.getClientRects().length>0);
+  function promptFields(){
+    const primary=visible(ais?'ms-prompt-box textarea':'[contenteditable="true"][role="textbox"]');
+    return primary.length?primary:visible('textarea');
+  }
+  function runButtons(){
+    const primary=visible('ms-run-button button');if(primary.length)return primary;
+    return visible('button').filter(b=>/^(Run|Build|Send|运行|发送|构建)(\s|$)/i.test((b.getAttribute('aria-label')||b.textContent||'').trim())||b.classList.contains('ctrl-enter-submits')||b.classList.contains('build-button'));
+  }
+  function unavailable(message){return {...state(),status:'waiting',message,can_initialize:false}}
   function setPrompt(textarea,value) {
     if(textarea.isContentEditable)textarea.textContent=value;
     else Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,value);
@@ -25,7 +40,7 @@
     const pending=bootstrap;if(!pending)return true;
     bootstrap=null;clearTimeout(pending.timer);
     if(pending.triggered&&!completed){invalidated=true;initialized=false;observedSuccess=false;initializationMessage='初始化已中止，请刷新官方页面后重新连接会话';}
-    if(promptValue(pending.textarea)===pending.prompt)setPrompt(pending.textarea,'');
+    if(pending.textarea&&promptValue(pending.textarea)===pending.prompt)setPrompt(pending.textarea,'');
     return true;
   }
   function interceptBootstrap(kind,body) {
@@ -121,7 +136,7 @@
       if (maker) for (const key of Object.keys(maker)) {
         if (typeof maker[key] !== 'function') continue;
         const source=Function.prototype.toString.call(maker[key]);
-        if (!source.includes('.snapshot({') || !source.includes('content') || !source.includes('yield')) continue;
+        if (!/\.?snapshot\s*[()]/.test(source) || !/content|yield|Promise|e9b|Bcc/.test(source)) continue;
         snapshot=maker[key];
         maker[key]=function(...args){if(args[0] && ['object','function'].includes(typeof args[0]))service=args[0];return snapshot.apply(this,args)};
         break;
@@ -143,22 +158,46 @@
     if(bootstrap)return {status:'initializing',message:'正在连接来源会话'};
     const ready=(observedSuccess||initialized) && (ais ? Boolean(snapshot && service && headers['x-goog-api-key']) : Boolean(template && captcha));
     let message=ready?'会话已连接，尚未验证实际推理':initializationMessage;
-    if(!message)message=ais?(!snapshot?'AIS 页面未就绪，请完成本人登录后连接会话':'请点击连接会话，自动初始化官方页面'):
-      (!template?'无头V 官方页面请求模板未建立，当前页面兼容性未通过':!captcha?'无头V 官方页面验证接口未就绪':'无头V 官方请求未成功，尚不能使用');
-    return {status:ready?'ready':'waiting',message};
+    const fields=promptFields(),dialogs=visible('[role="dialog"],[aria-modal="true"]');
+    const empty=fields.length===1&&!(promptValue(fields[0])||'').trim();
+    const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&empty&&(ais?!!snapshot&&runButtons().length===1:!!window.grecaptcha?.enterprise?.execute);
+    if(!message)message=dialogs.length?'请本人处理官方页面的登录、条款或验证提示':fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?'正在等待 AIS 聊天页面和验证函数加载':'正在等待无头V聊天页面和官方验证接口加载';
+    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key']}:{template:!!template,verification:!!captcha},version:'0.4.3'};
+  }
+  function initializeAPS(){
+    const enterprise=window.grecaptcha?.enterprise;
+    if(!enterprise?.execute)return unavailable('无头V：官方验证脚本尚未加载，请检查浏览器代理能否访问 Google / reCAPTCHA，再刷新来源页面');
+    // The signed-in UI sends project operations. It does not need to send an
+    // anonymous generation just to construct the anonymous protocol envelope.
+    const execute=enterprise.execute.bind(enterprise);
+    const pending={timer:setTimeout(()=>{initializationMessage='无头V：官方验证接口超时，请检查来源页面及浏览器代理';cancelInitialize()},30000)};
+    bootstrap=pending;
+    Promise.resolve().then(()=>typeof enterprise.ready==='function'?new Promise(resolve=>enterprise.ready(resolve)):undefined).then(()=>{
+      if(bootstrap!==pending)throw Error('cancelled');return execute(apsSiteKey,{});
+    }).then(token=>{
+      if(bootstrap!==pending)return;
+      if(typeof token!=='string'||!token.length)throw Error('empty_verification');
+      captcha={execute,key:apsSiteKey,options:{}};
+      const entropy=crypto.getRandomValues(new Uint32Array(2));
+      const pageViewId=1000000000000000+Number((BigInt(entropy[0])<<32n|BigInt(entropy[1]))%8000000000000000n);
+      template={operationName:'StreamGenerateContentAnonymous',querySignature:apsQuery,requestContext:{clientVersion:'boq_cloud-boq-clientweb-vertexaistudio_20260630.00_p0',pagePath:'/agent-platform/studio/multimodal',pageViewId,trackingId:'d'+pageViewId,clientSessionId:crypto.randomUUID().toUpperCase(),backendOverrides:{},selectedPurview:{},jurisdiction:'global',localizationData:{locale:typeof navigator==='object'?navigator.language:'en',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}}};
+      graphURL=graphHost+graphPath+'?key='+apsPublicKey+'&prettyPrint=false';
+      initialized=true;initializationMessage='';cancelInitialize(true);
+    }).catch(error=>{if(bootstrap!==pending)return;cancelInitialize(true);initializationMessage=/invalid site key|not loaded|invalid.*client/i.test(String(error?.message))?'无头V：官方页面未注册匿名验证 site key，请重新打开来源页面；此错误发生在验证初始化，尚未发送生成请求':'无头V：官方验证接口未返回有效结果，请查看来源页面验证提示或浏览器代理；尚未发送生成请求'});
+    return state();
   }
   function initialize() {
     discover();
     if(invalidated || bootstrap || state().status==='ready')return state();
     initializationMessage='';
-    if(requests.size)return {status:'waiting',message:'有请求正在执行，请完成后再连接会话'};
-    const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>e.getClientRects().length>0);
-    if(visible('[role="dialog"],[aria-modal="true"]').length)return {status:'waiting',message:'请本人处理官方页面的条款、登录或验证提示后再连接会话'};
-    const fields=visible(ais?'ms-prompt-box textarea':'[contenteditable="true"][role="textbox"]');
-    const buttons=ais?visible('ms-run-button button'):[];
-    if((ais&&(!snapshot||buttons.length!==1)) || fields.length!==1)return {status:'waiting',message:'官方页面输入框未就绪，请完成本人登录与页面提示后重试'};
+    if(requests.size)return unavailable('有请求正在执行，请完成后再连接会话');
+    if(visible('[role="dialog"],[aria-modal="true"]').length)return unavailable('请本人处理官方页面的条款、登录或验证提示后再连接会话');
+    const fields=promptFields();
+    if(aps){if(fields.length!==1)return unavailable('无头V：未找到唯一的官方聊天输入框，请先进入 Agent Studio 聊天页面并处理页面提示');return initializeAPS()}
+    const buttons=runButtons();
+    if(!snapshot || buttons.length!==1 || fields.length!==1)return unavailable('AIS 初始化未完成：验证函数'+(snapshot?'已找到':'未找到')+'；输入框 '+fields.length+' 个；运行按钮 '+buttons.length+' 个。请进入 Playground 的新对话页，再连接会话');
     const textarea=fields[0],button=buttons[0];
-    if((promptValue(textarea)||'').trim())return {status:'waiting',message:'官方页面有未发送的内容，请先自行保存或清空，再连接会话'};
+    if((promptValue(textarea)||'').trim())return unavailable('官方页面有未发送的内容，请先自行保存或清空，再连接会话');
     const prompt='MIXED connection initialization';
     setPrompt(textarea,prompt);
     const pending={textarea,prompt,timer:setTimeout(()=>{initializationMessage='来源初始化超时，请检查官方页面的登录、验证或权限提示';cancelInitialize()},30000)};
@@ -168,6 +207,7 @@
       await new Promise(r=>setTimeout(r,100));
       while(bootstrap===pending && button && (button.disabled||button.closest('[aria-disabled="true"]')))await new Promise(r=>setTimeout(r,100));
       if(bootstrap!==pending)return;
+      if(promptValue(textarea)!==pending.prompt){cancelInitialize(true);initializationMessage='输入内容已变化，已停止连接；请保存草稿后刷新来源页面';return}
       try {
         pending.triggered=true;
         if(ais)button.click();
@@ -178,13 +218,13 @@
   }
   async function proof(binding,prompt) {
     if (!snapshot || !service) throw Error('authorization_required');
-    const textarea=[...document.querySelectorAll('ms-prompt-box textarea')].find(e=>e.getClientRects().length>0);
+    const textarea=promptFields()[0];
     if (!textarea) throw Error('authorization_required');
     const previous=promptValue(textarea);
     setPrompt(textarea,prompt);
     try {
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
-      return await snapshot(service,[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join(''));
+      return await snapshot.call(window.default_MakerSuite,service,[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join(''));
     } finally {if(promptValue(textarea)===prompt)setPrompt(textarea,previous)}
   }
   async function authHeaders() {
@@ -213,7 +253,7 @@
     if(op.kind!=='aps' || !template || !captcha) throw Error('authorization_required');
     const body=structuredClone(template);
     body.variables={...op.body,model:op.model,region:'global',recaptchaToken:await captcha.execute(captcha.key,captcha.options)};
-    return {url:graphURL,headers:{'content-type':'application/json'},body:JSON.stringify(body)};
+    return {url:graphURL,headers:{'content-type':'application/json'},credentials:'omit',body:JSON.stringify(body)};
   }
   window.__mixedGoogleWeb={
     state, initialize, cancelInitialize,
@@ -223,7 +263,7 @@
       const s={controller:new AbortController(),preparing:true,status:0,headers:{},chunks:[],done:false,error:''};requests.set(id,s);
       (async()=>{try{
         const q=await request(op);if(s.controller.signal.aborted)throw Error('cancelled');s.preparing=false;
-        const response=await originalFetch(q.url,{method:'POST',headers:q.headers,body:q.body,credentials:'include',redirect:'error',signal:s.controller.signal});
+        const response=await originalFetch(q.url,{method:'POST',headers:q.headers,body:q.body,credentials:q.credentials||'include',redirect:'error',signal:s.controller.signal});
         s.status=response.status;if(s.status===401||s.status===403){observedSuccess=false;initialized=false;initializationMessage="来源拒绝请求，请检查本人授权与权限";}for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
         if(!response.body)return;
         const reader=response.body.getReader();

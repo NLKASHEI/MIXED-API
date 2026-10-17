@@ -338,6 +338,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		s.writeLogs(w, r)
 	case r.URL.Path == "/api/network":
 		s.handleNetwork(w, r)
+	case r.URL.Path == "/api/express/project":
+		s.handleExpressProject(w, r)
 	case r.URL.Path == "/api/config" && r.Method == "GET":
 		jsonResult(w, 200, c)
 	case r.URL.Path == "/api/guides" && r.Method == "GET":

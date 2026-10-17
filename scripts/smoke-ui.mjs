@@ -51,7 +51,7 @@ try {
   assert(await page.locator('#manual-settings').isVisible(),'user cannot return to fix connection settings');
   await page.unroute('**/v1/models');await page.keyboard.press('Escape');await page.locator('#refresh').click();
   // A fresh session exercises the normal managed 快速V path. Only the
-  // installation/activation boundary is faked; config and discovery are real.
+  // preparation/activation and official project probe are faked; config and discovery are real.
   await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"windows","native_codex_supported":true,"tools":{}}'}));
   await page.reload();await page.locator('#app').waitFor({state:'visible'});
   await page.route('**/api/assist/vertex/prepare',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
@@ -64,6 +64,7 @@ try {
   await page.locator('#next-provider').click();await page.locator('#toast').filter({hasText:'Express API Key'}).waitFor();
   assert(await page.locator('#official-field').isVisible(),'快速V continued without Express API Key');
   await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:join(output,'onboarding-fast-v.png'),fullPage:true});
+  await page.route('**/api/express/project',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,project:'fixture-project',location:'us-central1',message:'fixture project'})}));
   await page.locator('#official-key').fill('fixture-express-key');await page.locator('#next-provider').click();
   await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
   assert.equal(await page.locator('.client-summary').textContent(),`所有来源共用这个客户端地址：\n${base}/v1`);

@@ -68,3 +68,45 @@ func TestAPSOuterGraphQLErrorCannotFinishSuccessfully(t *testing.T) {
 		}
 	}
 }
+
+func TestGoogleBusinessErrorsRemainVisibleBehindHTTP200(t *testing.T) {
+	for _, tc := range []struct {
+		model, wire, name string
+		code              int
+	}{
+		{"aps/gemini-test", `{"results":[{"errors":[{"errorType":"RESOURCE_EXHAUSTED","message":"PRIVATE_PROMPT PRIVATE_COOKIE","extensions":{"status":{"code":"8","message":"PRIVATE_TOKEN"}}}]}]}`, "RESOURCE_EXHAUSTED", 8},
+		{"aistudio/playground/gemini-test", `[[],[8,"PRIVATE_PROMPT PRIVATE_COOKIE PRIVATE_TOKEN"]]`, "RESOURCE_EXHAUSTED", 8},
+		{"aps/gemini-test", `{"results":[{"errors":[{"extensions":{"status":{"status":"PERMISSION_DENIED","message":"PRIVATE_TOKEN"}}}]}]}`, "PERMISSION_DENIED", 0},
+	} {
+		for _, stream := range []bool{false, true} {
+			cfg := Defaults()
+			cfg.APIKey = "client"
+			cfg.AdminKey = "admin"
+			id := strings.Split(tc.model, "/")[0]
+			cfg.Backends = []Backend{{ID: id, Kind: "builtin", URL: builtinBase(id), Enabled: true}}
+			app := NewServer("", cfg)
+			calls := 0
+			app.SetGoogleSessions(&fixtureGoogleBrowser{send: func(context.Context, string, googleweb.Operation) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.wire))}, nil
+			}})
+			body := `{"model":"` + tc.model + `","messages":[{"role":"user","content":"PRIVATE_PROMPT"}],"stream":` + fmtBool(stream) + `}`
+			w := accountTestCall(app, "POST", "/v1/chat/completions", "client", body)
+			if calls != 1 || strings.Contains(w.Body.String(), "[DONE]") {
+				t.Fatal("business error replayed or completed")
+			}
+			logs := accountTestCall(app, "GET", "/api/logs", "admin", "").Body.String()
+			for _, want := range []string{`"upstream_status":200`, tc.name} {
+				if !strings.Contains(logs, want) {
+					t.Errorf("missing %s: %s", want, logs)
+				}
+			}
+			if tc.code > 0 && !strings.Contains(logs, `"business_code":8`) {
+				t.Error("missing business code", logs)
+			}
+			if strings.Contains(logs, "PRIVATE_") || strings.Contains(w.Body.String(), "PRIVATE_") {
+				t.Fatal("provider contents leaked")
+			}
+		}
+	}
+}

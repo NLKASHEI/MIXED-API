@@ -11,7 +11,9 @@ const sent=[];let responseStatus=200,responseText=valid;
 class FakeXHR{open(){}setRequestHeader(){}send(){}addEventListener(){}}
 class Textarea{get value(){return this.text||''}set value(v){this.text=v}getClientRects(){return [1]}dispatchEvent(){}}
 const textarea=new Textarea();
-const window={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */return 'proof-'+hash}},fetch:async(url,options)=>{sent.push({url,options});return new Response(responseText,{status:responseStatus})}};
+// Current upstream also recognizes Promise-based snapshot wrappers, without
+// the old transpiler's literal `yield` spelling.
+const window={default_MakerSuite:{async native(service,hash){/* e9b .snapshot) */return 'proof-'+hash}},fetch:async(url,options)=>{sent.push({url,options});return new Response(responseText,{status:responseStatus})}};
 const globals={window,location:{origin:'https://aistudio.google.com',href:'https://aistudio.google.com/prompts/new_chat'},document:{cookie:'',querySelectorAll:selector=>selector==='ms-prompt-box textarea'?[textarea]:[]},XMLHttpRequest:FakeXHR,HTMLTextAreaElement:Textarea,InputEvent:class{},Event:class{},KeyboardEvent:class{constructor(type){this.type=type}},Headers,Request,URL,TextEncoder,TextDecoder,crypto:webcrypto,structuredClone,AbortController,Uint8Array,btoa,atob,setTimeout,clearTimeout,DOMException,setInterval:()=>1,clearInterval(){},addEventListener(){}};
 runInNewContext(script,globals);
 const session=window.__mixedGoogleWeb;
@@ -19,9 +21,12 @@ assert.equal(session.state().status,'waiting');
 let clicks=0;
 const runButton={disabled:false,closest:()=>null,getClientRects:()=>[1],click(){clicks++;window.default_MakerSuite.native(()=>{},'bootstrap').then(()=>window.fetch(rpc+'GenerateContent',{headers:{'x-goog-api-key':'fixture-page-key'},body:'[]'})).catch(()=>{});}};
 globals.document.querySelectorAll=selector=>selector==='ms-run-button button'?[runButton]:selector==='ms-prompt-box textarea'?[textarea]:[];
+assert.equal(session.state().can_initialize,true);
 textarea.text='unsent user draft';
+assert.equal(session.state().can_initialize,false,'automatic connection would overwrite a draft');
 assert.equal(session.initialize().status,'waiting');assert.equal(clicks,0,'initialization overwrote a user draft');
 textarea.text='';
+assert.equal(session.state().can_initialize,true,'cleared draft did not resume automatic connection');
 assert.equal(session.initialize().status,'initializing');
 await delay(150);
 assert.equal(clicks,1);
@@ -79,11 +84,27 @@ runInNewContext(script,{...globals,window:graphWindow2,XMLHttpRequest:class exte
 assert.equal(graphWindow2.__mixedGoogleWeb.initialize().status,'waiting');
 assert.equal(input.textContent,'','initializer touched input behind consent');
 consent=false;
+assert.equal(graphWindow2.__mixedGoogleWeb.state().can_initialize,true,'completed page dialog did not resume connection');
 assert.equal(graphWindow2.__mixedGoogleWeb.initialize().status,'initializing');
 await delay(150);
 assert.equal(graphWindow2.__mixedGoogleWeb.state().status,'ready');
 assert.equal(graphUpstreamCalls,0,'APS bootstrap escaped to upstream');
 assert.equal(input.textContent,'');
+// A signed-in Cloud Console need not emit the anonymous generation operation.
+// Connecting the anonymous adapter must work without submitting a UI prompt.
+let typed=0,anonSent;
+const signedInput={...input,dispatchEvent(){typed++}};
+const signedWindow={grecaptcha:{enterprise:{execute:async()=> 'official-session-proof'}},fetch:async(url,options)=>{anonSent={url,options};return new Response(graphText)}};
+runInNewContext(script,{...globals,window:signedWindow,XMLHttpRequest:class extends FakeXHR{},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal?project=example'},document:{cookie:'',querySelectorAll:s=>s==='[contenteditable="true"][role="textbox"]'?[signedInput]:[]}});
+const signedSession=signedWindow.__mixedGoogleWeb;
+signedSession.initialize();await delay(150);
+assert.equal(signedSession.state().status,'ready','signed-in page incorrectly requires an anonymous UI request');
+assert.equal(typed,0,'anonymous connection typed into the signed-in project');
+assert.equal(signedSession.start(id,{kind:'aps',model:'gemini-test',body:{contents:[{parts:[{text:'hello'}]}]}}),true);await delay(30);
+assert.equal(JSON.parse(anonSent.options.body).operationName,'StreamGenerateContentAnonymous');
+assert.equal(JSON.parse(anonSent.options.body).querySignature,'2/l8eCsMMY49imcDQ/lwwXyL8cYtTjxZBF2dNqy69LodY=');
+assert.equal(anonSent.options.credentials,'omit','anonymous generation inherited project login credentials');
+signedSession.cancel(id);
 let releaseProof,lateSent=0;
 const proofWait=new Promise(resolve=>releaseProof=resolve);
 const lateWindow={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */await proofWait;return 'proof'}},fetch:async()=>{lateSent++;return new Response(valid)}};

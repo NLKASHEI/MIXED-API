@@ -112,7 +112,7 @@ func Validate(c Config) error {
 		}
 	}
 	for id, settings := range c.EngineSettings {
-		if id != "aps" || !settings.valid() {
+		if id != "aps" && id != "vertex" || !settings.valid() || id == "vertex" && settings.AggregateStream {
 			return errors.New("invalid native source settings")
 		}
 	}

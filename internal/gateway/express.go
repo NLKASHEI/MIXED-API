@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -339,6 +340,9 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 }
 
 func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.sourceSettings("vertex").RequestTimeoutSeconds)*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if r.URL.Path != "/v1/chat/completions" {
 		jsonError(w, 501, "快速V内置核心当前提供 chat/completions")
 		return
@@ -391,7 +395,12 @@ func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backe
 		action = "streamGenerateContent?alt=sse"
 	}
 	endpoint := modelBase + url.PathEscape(baseModel) + ":" + action
-	resp, err := providerJSON(s.client, r, endpoint, body, headers)
+	var resp *http.Response
+	if b.ID == "vertex" {
+		resp, err = s.expressJSON(r, endpoint, body, headers)
+	} else {
+		resp, err = providerJSON(s.client, r, endpoint, body, headers)
+	}
 	if err != nil {
 		jsonError(w, 502, "无法连接模型服务")
 		return

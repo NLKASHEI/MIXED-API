@@ -150,6 +150,7 @@ func TestTransportDiagnosticsDistinguishDNSAndTimeout(t *testing.T) {
 
 func TestUpstreamStatusDetailsAreSafeAndUseful(t *testing.T) {
 	cfg := Defaults()
+	cfg.EngineSettings = map[string]engineSettings{"vertex": {MaxRetries: 0, RequestTimeoutSeconds: 300}}
 	cfg.APIKey = "client"
 	cfg.AdminKey = "admin"
 	cfg.Backends = []Backend{{ID: "vertex", Kind: "builtin", URL: builtinBase("vertex"), Auth: "none", ProviderKey: "private-key", Enabled: true}}

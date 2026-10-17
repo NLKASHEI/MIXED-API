@@ -6,8 +6,8 @@ import {runInNewContext} from 'node:vm';
 // browser profile, prompt, or provider request is used by this fixture.
 const manifest=JSON.parse(readFileSync('internal/googleweb/extension/manifest.json'));
 assert.deepEqual(manifest.permissions,['scripting']);
-const sockets=[],created=[],removed=[],executed=[];
-let receiver,tabURL='https://aistudio.google.com/prompts/new_chat',blockedGet;
+const sockets=[],navigated=[],removed=[],executed=[];
+let receiver,tabURL='http://127.0.0.1:12345/mixed-browser/connect#'+'a'.repeat(64),blockedGet;
 class Socket{
   static OPEN=1;
   readyState=1;sent=[];
@@ -16,11 +16,11 @@ class Socket{
   close(){if(this.readyState!==1)return;this.readyState=3;this.onclose?.()}
 }
 const chrome={runtime:{onMessage:{addListener:f=>receiver=f}},tabs:{
-  create:async options=>{created.push(options);return{id:42}},
+  create:async()=>{throw Error('must reuse the launched tab')},
   get:async()=>{if(blockedGet)await blockedGet;return{url:tabURL,status:'complete',windowId:7}},
-  remove:async id=>{removed.push(id)},update:async()=>{},onRemoved:{addListener:()=>{}}
+  remove:async id=>{removed.push(id)},update:async(id,options)=>{if(options.url){navigated.push({id,...options});tabURL=options.url}return{id}},onRemoved:{addListener:()=>{}}
 },windows:{update:async()=>{}},scripting:{executeScript:async options=>{
-  assert.equal(options.target.tabId,42);assert.equal(options.world,'MAIN');
+  assert.equal(options.target.tabId,1);assert.equal(options.world,'MAIN');
   if(options.files)return[{}];
   const [method]=options.args;executed.push(method);
   return[{result:method==='state'?{status:'ready'}:true}];
@@ -33,7 +33,8 @@ assert.equal(receiver({kind:'connect'},{tab:{id:1},url:'http://127.0.0.1:12345/m
 const socket=sockets[0];
 await socket.onmessage({data:JSON.stringify({kind:'hello',source:'aistudio'})});
 assert.equal((await ready).ok,true);
-assert.equal(created[0].url,'https://aistudio.google.com/prompts/new_chat');
+assert.equal(navigated[0].id,1);
+assert.equal(navigated[0].url,'https://aistudio.google.com/prompts/new_chat#mixed-api-session');
 const command=(id,method,args=[])=>socket.onmessage({data:JSON.stringify({id,method,args})});
 const settle=()=>new Promise(resolve=>setTimeout(resolve,10));
 await command(1,'state');await settle();assert.equal(socket.sent.find(m=>m.id===1).result.status,'ready');
@@ -51,5 +52,5 @@ await command(5,'initialize');await command(6,'cancelInitialize');await settle()
 unblockInit();blockedGet=null;await settle();assert.deepEqual(executed.slice(-2),['initialize','cancelInitialize']);
 tabURL='https://accounts.google.com/';const count=executed.length;
 await command(7,'state');await settle();assert.equal(socket.sent.find(m=>m.id===7).result.status,'waiting');assert.equal(executed.length,count);
-socket.close();await settle();assert.deepEqual(removed,[42]);
+socket.close();await settle();assert.deepEqual(removed,[1]);
 console.log('Browser extension pairing, official-origin restriction, command ordering and owned-tab cleanup passed.');
