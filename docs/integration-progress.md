@@ -42,4 +42,4 @@ Android 为纯 Java 本地核心，共享管理 HTML 与配置。电脑共享只
 
 Windows 一次点击后在原浏览器标签页进入官方站点，后台等待本人操作并自动连接；首次扩展授权仍必要。输入草稿、页面弹窗与加载期间不触发初始化。Android 不发 APK，仅保持共享资源和 Gradle 检查。
 
-个人浏览器验收由用户暂缓：无头V官方 site key 初始化及 AIS Build/Playground 真实生成未通过。本轮没有创建发布标签或声称 v0.4.3 Release 资产可用。快速V真实测到 global 成功及后续429，不能把一次成功写成所有模型稳定可用。详见 upstream-network-session-audit.md。
+个人浏览器验收由用户暂缓：无头V官方 site key 初始化及 AIS Build/Playground 真实生成未通过。用户随后明确要求发布现有改进，v0.4.3按Windows修复版走标签CI发布，保留上述真实生成验收缺口；最终附件以对应Release为准。快速V真实测到 global 成功及后续429，不能把一次成功写成所有模型稳定可用。详见 upstream-network-session-audit.md。
