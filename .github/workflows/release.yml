@@ -105,7 +105,6 @@ jobs:
     timeout-minutes: 40
     env:
       MIXED_API_VERSION: ${{ needs.version.outputs.number }}
-      MIXED_ANDROID_KEYSTORE: ${{ runner.temp }}/mixed-release.p12
       MIXED_ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.MIXED_API_ANDROID_KEY_PASSWORD || '' }}
       MIXED_ANDROID_SIGNER_SHA256: ${{ vars.MIXED_API_ANDROID_CERT_SHA256 }}
     steps:
@@ -126,6 +125,8 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          export MIXED_ANDROID_KEYSTORE="$RUNNER_TEMP/mixed-release.p12"
+          echo "MIXED_ANDROID_KEYSTORE=$MIXED_ANDROID_KEYSTORE" >> "$GITHUB_ENV"
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             # PR code never receives the production signing key, including same-repo PRs.
             export MIXED_ANDROID_KEY_PASSWORD="$(openssl rand -hex 32)"
