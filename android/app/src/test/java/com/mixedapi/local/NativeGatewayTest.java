@@ -22,6 +22,47 @@ public class NativeGatewayTest {
   private BridgeHttpServer server;
 
   @Test
+  public void googleSignedThoughtReplayRejectsOtherProtocols() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    startSource(
+        "vertex",
+        (method, url, headers, body, deadline) -> {
+          if (calls.incrementAndGet() == 2)
+            assertTrue(
+                new String(body, StandardCharsets.UTF_8)
+                    .contains("\"thoughtSignature\":\"signature-fixture\""));
+          return new GoogleSessions.Response(
+              200,
+              new ByteArrayInputStream(
+                  "{\"candidates\":[{\"index\":0,\"content\":{\"parts\":[{\"text\":\"plan\",\"thought\":true,\"thoughtSignature\":\"signature-fixture\"},{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}"
+                      .getBytes(StandardCharsets.UTF_8)));
+        });
+    Context ctx = RuntimeEnvironment.getApplication();
+    JSONObject config = BridgeConfig.load(ctx);
+    config.getJSONArray("backends").getJSONObject(0).put("provider_key", "fixture");
+    BridgeConfig.save(ctx, config);
+    JSONObject reply =
+        call(
+            "/v1/chat/completions",
+            "{\"model\":\"vertex/gemini-test\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
+    assertTrue(reply.toString().contains("signature-fixture"));
+    String input =
+        GoogleProtocol.obj(
+                "model",
+                "vertex/gemini-test",
+                "messages",
+                GoogleProtocol.arr(
+                    GoogleProtocol.obj("role", "user", "content", "hi"),
+                    reply.getJSONArray("choices").getJSONObject(0).getJSONObject("message"),
+                    GoogleProtocol.obj("role", "user", "content", "continue")))
+            .toString();
+    call("/v1/chat/completions", input);
+    rawCall("/v1/chat/completions", input.replace("google-gemini-v1", "anthropic-claude-v1"), 400);
+    assertEquals(2, calls.get());
+  }
+
+  @Test
   public void responsesStreamPreservesOpaqueReasoningOnce() throws Exception {
     startSource(
         "opencode",

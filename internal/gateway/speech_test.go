@@ -132,3 +132,35 @@ func TestGoogleAudioPreservesExplicitModalities(t *testing.T) {
 		t.Errorf("invalid modalities reached provider: %d calls", calls)
 	}
 }
+
+func TestGoogleSignedThoughtReplayRejectsOtherProtocols(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "vertex", Kind: "builtin", URL: builtinBase("vertex"), ProviderKey: "key", Enabled: true}}
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	calls := 0
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		raw, _ := io.ReadAll(r.Body)
+		if calls == 2 && !strings.Contains(string(raw), `"thoughtSignature":"signature-fixture"`) {
+			t.Error("signed thought lost")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"index":0,"content":{"parts":[{"text":"plan","thought":true,"thoughtSignature":"signature-fixture"},{"text":"ok"}]},"finishReason":"STOP"}]}`))}, nil
+	})
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-test","messages":[{"role":"user","content":"hi"}]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "signature-fixture") {
+		t.Fatal("thought signature lost", w.Body.String())
+	}
+	var reply map[string]any
+	json.Unmarshal(w.Body.Bytes(), &reply)
+	message := reply["choices"].([]any)[0].(map[string]any)["message"]
+	raw, _ := json.Marshal(map[string]any{"model": "vertex/gemini-test", "messages": []any{map[string]any{"role": "user", "content": "hi"}, message, map[string]any{"role": "user", "content": "continue"}}})
+	w = accountTestCall(app, "POST", "/v1/chat/completions", "client", string(raw))
+	if w.Code != 200 {
+		t.Fatal("replay failed", w.Code)
+	}
+	w = accountTestCall(app, "POST", "/v1/chat/completions", "client", strings.ReplaceAll(string(raw), "google-gemini-v1", "anthropic-claude-v1"))
+	if w.Code != 400 || calls != 2 {
+		t.Fatal("incompatible signed thought was silently dropped", w.Code, calls)
+	}
+}

@@ -70,3 +70,5 @@ CI 环境修正：Android 模拟器首次找不到 adb，随后日志明确报 U
 无需随本次业务改动处理：依赖存在新版、Gradle 9 弃用预告、第三方 Actions 的 Node 20/punycode 提示；当前实际构建成功。Android Lint 的 JavaScript 使用是本机管理页/官方会话的已审查设计，不因通用提示删除必要能力。未采用无复现路径的风格重构。
 
 独立 Standards 定向复核媒体校验、工具约束、reasoning.item 往返和监听关闭修复后，未发现新增可行动缺陷；4 个 Go 定向 HTTP 测试独立通过。Spec 由主代理核对：账号真实生成、干净 Windows、实体 Android 与完整专有能力仍不可写成通过。当前本机 Go tests/vet、Android 54 项测试及构建/lint 通过；端口修复需新的 Linux CI 验证。
+
+Gemini 文字思考签名补充：公开 HTTP 两轮回归先复现 thoughtSignature 丢失，Go/Java 同步保留 google-gemini-v1 reasoning.text，并在回传其他协议签名时生成前报错。本机全量 Go tests/vet、Android assembleDebug/55 项测试/lintDebug 通过。909037e 的 Linux Android CI 已通过含100次重绑回归；模拟器验收仍单列。

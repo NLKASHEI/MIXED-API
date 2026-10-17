@@ -104,6 +104,28 @@ final class GoogleProtocol {
       JSONObject m = messages.getJSONObject(i);
       String role = m.getString("role");
       JSONArray parts = parts(m.opt("content"));
+      JSONArray details = m.optJSONArray("reasoning_details");
+      if (details != null && details.length() > 0) {
+        JSONArray combined = new JSONArray();
+        for (int n = 0; n < details.length(); n++) {
+          JSONObject d = details.getJSONObject(n);
+          if (!role.equals("assistant")
+              || !d.optString("type").equals("reasoning.text")
+              || !d.optString("format").equals("google-gemini-v1")
+              || d.optString("signature").isEmpty())
+            throw new IOException("Incompatible reasoning signature");
+          combined.put(
+              obj(
+                  "text",
+                  d.getString("text"),
+                  "thought",
+                  true,
+                  "thoughtSignature",
+                  d.getString("signature")));
+        }
+        for (int n = 0; n < parts.length(); n++) combined.put(parts.get(n));
+        parts = combined;
+      }
       switch (role) {
         case "system":
         case "developer":
@@ -638,9 +660,21 @@ final class GoogleProtocol {
     StringBuilder text = new StringBuilder(), thoughts = new StringBuilder();
     JSONArray calls = new JSONArray();
     JSONArray mediaParts = new JSONArray();
+    JSONArray details = new JSONArray();
     JSONObject result = obj("role", "assistant");
     for (int i = 0; i < parts.length(); i++) {
       JSONObject p = parts.getJSONObject(i);
+      if (p.optBoolean("thought") && !p.optString("thoughtSignature").isEmpty())
+        details.put(
+            obj(
+                "type",
+                "reasoning.text",
+                "format",
+                "google-gemini-v1",
+                "text",
+                p.optString("text"),
+                "signature",
+                p.getString("thoughtSignature")));
       if (p.optBoolean("thought")) thoughts.append(p.optString("text"));
       else text.append(p.optString("text"));
       JSONObject media = p.optJSONObject("inlineData");
@@ -670,6 +704,7 @@ final class GoogleProtocol {
       }
     }
     result.put("content", text.toString());
+    if (details.length() > 0) result.put("reasoning_details", details);
     if (mediaParts.length() > 0) result.put("media", mediaParts);
     if (thoughts.length() > 0) result.put("reasoning_content", thoughts.toString());
     if (calls.length() > 0) result.put("tool_calls", calls);

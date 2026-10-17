@@ -1,6 +1,6 @@
 # 后续规格：一体化桌面应用
 
-状态：2026-10-17 确认的后续要求，**尚未实现，不属于 v0.3.1 已交付功能**。架构依据：[ADR-0003](adr/0003-integrated-desktop-core.md)。
+状态：2026-10-17 确认的要求，**开发中，尚未完成全部验收，不属于 v0.3.1 已交付功能**。具体进度见[内置重构进度](integration-progress.md)。架构依据：[ADR-0003](adr/0003-integrated-desktop-core.md)。
 
 跟踪：[GitHub Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)。
 

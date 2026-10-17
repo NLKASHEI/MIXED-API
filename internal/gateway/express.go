@@ -112,10 +112,16 @@ func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
 
 func expressPayload(payload map[string]json.RawMessage, model string) (map[string]any, error) {
 	var messages []struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-		ToolID  string          `json:"tool_call_id"`
-		Calls   []struct {
+		Role      string          `json:"role"`
+		Content   json.RawMessage `json:"content"`
+		Reasoning []struct {
+			Type      string `json:"type"`
+			Format    string `json:"format"`
+			Text      string `json:"text"`
+			Signature string `json:"signature"`
+		} `json:"reasoning_details"`
+		ToolID string `json:"tool_call_id"`
+		Calls  []struct {
 			ID       string `json:"id"`
 			Function struct {
 				Name      string `json:"name"`
@@ -134,6 +140,16 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 		parts, err := geminiParts(m.Content)
 		if err != nil {
 			return nil, err
+		}
+		if len(m.Reasoning) > 0 {
+			thoughts := []geminiPart{}
+			for _, d := range m.Reasoning {
+				if m.Role != "assistant" || d.Type != "reasoning.text" || d.Format != "google-gemini-v1" || d.Signature == "" {
+					return nil, errors.New("此来源无法回传其他协议的思考签名")
+				}
+				thoughts = append(thoughts, geminiPart{Text: d.Text, Thought: true, ThoughtSignature: d.Signature})
+			}
+			parts = append(thoughts, parts...)
 		}
 		switch m.Role {
 		case "system", "developer":
@@ -433,6 +449,7 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 	var text, thought strings.Builder
 	calls := []any{}
 	media := []any{}
+	details := []any{}
 	for _, p := range parts {
 		if p.InlineData != nil && strings.HasPrefix(p.InlineData.MIME, "image/") {
 			text.WriteString("\n\n![image](data:" + p.InlineData.MIME + ";base64," + p.InlineData.Data + ")")
@@ -442,6 +459,9 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 		}
 		if p.Thought {
 			thought.WriteString(p.Text)
+			if p.ThoughtSignature != "" {
+				details = append(details, map[string]any{"type": "reasoning.text", "format": "google-gemini-v1", "text": p.Text, "signature": p.ThoughtSignature})
+			}
 		} else {
 			text.WriteString(p.Text)
 		}
@@ -457,6 +477,9 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 		}
 	}
 	message["content"] = text.String()
+	if len(details) > 0 {
+		message["reasoning_details"] = details
+	}
 	if len(media) > 0 {
 		message["media"] = media
 	}

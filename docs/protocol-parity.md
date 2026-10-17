@@ -8,7 +8,7 @@
 | 客户端函数 | 声明、调用、结果、分片工具名、并行工具、参数完成校验 | 公共 HTTP 两轮往返，损坏参数不报成功 |
 | Google 工具选择 | auto / none / required / 指定函数 / parallel_tool_calls=false；Playground 限制声明并加入调用提示，结果必须满足约束 | 完整/流式 × 正确/错名/缺少/禁止/多次调用 |
 | 思考与引用 | 文本、Anthropic 签名/加密块、Responses 原始 reasoning 项目、URL 引用、拒绝内容 | 已覆盖的转换保留；无法表示的协议组合报错 |
-| Google 工具签名 | thought_signature 扩展字段随工具调用回传 | Gemini 两轮工具回归 |
+| Google 签名 | thought_signature 随工具调用回传；google-gemini-v1 的 reasoning.text 保留文本思考签名 | 两轮工具/思考回归，其他协议签名生成前拒绝 |
 | 输入媒体 | 文本、base64 图片；Google 新增 input_audio(wav/mp3) 与 file.file_data(data URL：PDF/图片/音视频) | 实际请求体核验；不代下载任意远程媒体 |
 | 输出媒体 | 图片保持 Markdown data URL；Google 音频放在 Chat message.media / delta.media 扩展数组 | 防止非文本输出被转换成空白成功 |
 | 语音 | /v1/audio/speech 返回 WAV 或 24 kHz 单声道 16-bit PCM；复用快速V/无头V/Build/Playground 的账号与取消 | 四能力 WAV/PCM、声音参数、损坏容器、声道与采样率校验 |
@@ -39,4 +39,4 @@ Google Chat 可使用 `modalities:["text","audio"]` 和 `audio:{"voice":"Kore","
 - Build 使用 unary 的模型会先收集响应再发送 SSE；SSE 格式不等于来源支持逐 token 生成。
 - API 35 / Robolectric、HTTP 夹具、CI 构建不能替代本人账号生成、Android 实体设备和干净 Windows 的实际产物验收。
 
-当前本地 54 项 Android 测试和 Go tests/vet 已通过；CI 及最终验收以[重构进度](integration-progress.md)和对应 Actions 为准。
+当前本地 55 项 Android 测试和 Go tests/vet 已通过；CI 及最终验收以[重构进度](integration-progress.md)和对应 Actions 为准。

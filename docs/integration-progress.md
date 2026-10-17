@@ -20,7 +20,7 @@ Windows 主窗口使用捆绑 WebView2；完整构建为单个 GUI EXE，首次�
 
 Android 为纯 Java 本地核心，共享管理 HTML 与配置。电脑共享只是可选功能，模型使用 `pc/电脑模型ID`。API 35 系统栏/刘海/键盘适配、前台服务停止通知、账号 Keystore、备份排除和文件选择已实现；系统 WebView 必须支持隔离 profile，配置步骤会报告能力缺失。JVM 模拟平台测试不等于系统 WebView、Keystore 或实体手机验收。
 
-本地已通过 Go tests/vet，以及 Android assembleDebug、54 项公共接口/平台测试、lintDebug（0 错误，11 警告）。CI 单独运行 Android 15 干净模拟器，必须检查安装、工作台、后台鉴权、通知停止和重启；模拟器启动失败单列为环境/验收链问题，不算产品验收通过。
+本地已通过 Go tests/vet，以及 Android assembleDebug、55 项公共接口/平台测试、lintDebug（0 错误，11 警告）。CI 单独运行 Android 15 干净模拟器，必须检查安装、工作台、后台鉴权、通知停止和重启；模拟器启动失败单列为环境/验收链问题，不算产品验收通过。
 
 用户明确暂不登录，实际本人账号生成继续保留为未验证。后续仍需完成兼容性收尾、干净系统/设备证据与最终资产核验；不关闭 [Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)，不将测试夹具当成全部上游能力已交付。
 
