@@ -19,7 +19,11 @@ node_modules/
 .ui-evidence/
 .ui-tools/
 dist/
-windows/
+/windows/
 MIXED-API-Windows-x64*
 MIXED-API-Android.apk
 mixed-api.backup-*.json
+internal/desktop/resources/webview2.cab
+internal/desktop/resources/manifest.json
+.build/
+**/.mixed-accounts/

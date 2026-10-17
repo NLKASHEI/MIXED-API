@@ -31,7 +31,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     try {
-        $allowed = @('MIXED-API.exe','Start-MIXED-API.cmd','Start-MIXED-API-LAN.cmd','README.md','Install-MIXED-API.ps1')
+        $allowed = @('MIXED-API.exe','Start-MIXED-API.cmd','Start-MIXED-API-LAN.cmd','README.md','Install-MIXED-API.ps1','THIRD_PARTY_NOTICES.md')
         if (@($zip.Entries | Where-Object { $_.FullName -eq 'MIXED-API.exe' }).Count -ne 1) { throw 'Release ZIP has no unique executable.' }
         foreach ($entry in $zip.Entries) { if ($allowed -cnotcontains $entry.FullName) { throw "Unexpected archive entry: $($entry.FullName)" } }
         $files = Join-Path $staging 'files'
@@ -49,7 +49,7 @@ try {
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $name) -Force }
     }
     Write-Host "Installed $($release.tag_name) at $Destination"
-    if (!$NoLaunch) { Start-Process -FilePath $exe -WorkingDirectory $Destination -WindowStyle Hidden }
+    if (!$NoLaunch) { Start-Process -FilePath $exe -WorkingDirectory $Destination -WindowStyle Normal }
 } finally {
     $resolvedStaging = [IO.Path]::GetFullPath($staging)
     if (!$resolvedStaging.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or (Split-Path $resolvedStaging -Leaf) -notlike 'mixed-api-install-*') { throw 'Refusing to clean an unexpected temporary path.' }

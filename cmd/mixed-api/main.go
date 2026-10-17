@@ -1,24 +1,25 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/NLKASHEI/MIXED-API/internal/desktop"
 	"github.com/NLKASHEI/MIXED-API/internal/gateway"
 )
 
 func main() {
 	file := flag.String("config", "mixed-api.json", "local JSON config path")
-	noBrowser := flag.Bool("no-browser", false, "don't open the browser automatically")
+	noBrowser := flag.Bool("no-browser", false, "headless mode: run only the local gateway")
 	lan := flag.Bool("lan", false, "opt-in read-only LAN API listener at :8766; never exposes admin panel")
 	importEngine := flag.String("import-engine", "", "maintenance: prepare a local APS-family runtime without starting it")
 	flag.Parse()
@@ -44,23 +45,21 @@ func main() {
 	url := "http://" + cfg.Listen
 	fmt.Println("MIXED-API running at", url)
 	fmt.Println("API base URL: ", url+"/v1")
-	fmt.Println("API key:      ", cfg.APIKey)
-	fmt.Println("Admin key:    ", cfg.AdminKey)
-	fmt.Println("Keys are also saved in", *file, "; keep this file private.")
+	fmt.Println("Keys are saved in", *file, "; keep this file private.")
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		// Reopening the EXE focuses the existing dashboard only after checking
 		// the saved admin key against that process, never an unrelated listener.
 		if runtime.GOOS == "windows" && !*noBrowser && existingGateway(url, cfg.AdminKey) {
-			openDashboard(url, cfg.AdminKey)
+			if err := desktop.Run(url, cfg.AdminKey); err != nil {
+				log.Print(err)
+			}
 			return
 		}
 		log.Fatalf("Cannot listen on %s: %v", cfg.Listen, err)
 	}
 	defer listener.Close()
-	if !*noBrowser && runtime.GOOS == "windows" {
-		openDashboard(url, cfg.AdminKey)
-	}
+	var lanServer *http.Server
 	if *lan {
 		const lanAddr = "0.0.0.0:8766"
 		listener, e := net.Listen("tcp4", lanAddr)
@@ -69,26 +68,38 @@ func main() {
 		}
 		// Only inference routes on the LAN port, no administration.
 		apiOnly := gateway.APIOnly(server)
+		lanServer = &http.Server{Handler: apiOnly, ReadHeaderTimeout: 12 * time.Second, IdleTimeout: 90 * time.Second}
 		go func() {
 			fmt.Println("LAN API enabled on port 8766; keep it within your trusted private network.")
 			fmt.Println("Phone Base URL: http://<YOUR-PC-LAN-IP>:8766/v1")
-			lanServer := &http.Server{Handler: apiOnly, ReadHeaderTimeout: 12 * time.Second, IdleTimeout: 90 * time.Second}
 			if e := lanServer.Serve(listener); e != nil && e != http.ErrServerClosed {
 				log.Printf("LAN API stopped: %v", e)
 			}
 		}()
 	}
 	h := &http.Server{Addr: cfg.Listen, Handler: server, ReadHeaderTimeout: 12 * time.Second, IdleTimeout: 90 * time.Second}
+	if !*noBrowser && runtime.GOOS == "windows" {
+		go func() {
+			if e := h.Serve(listener); e != nil && e != http.ErrServerClosed {
+				log.Print("Gateway stopped")
+			}
+		}()
+		err := desktop.Run(url, cfg.AdminKey)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = h.Shutdown(ctx)
+		if lanServer != nil {
+			_ = lanServer.Shutdown(ctx)
+		}
+		if err != nil {
+			log.Print(err)
+		}
+		return
+	}
 	if err := h.Serve(listener); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, "Server failed:", err)
 		os.Exit(1)
 	}
-}
-
-func openDashboard(base, admin string) {
-	// Fragments never travel in HTTP requests or access logs. The page removes
-	// this fragment immediately and keeps the credential in sessionStorage.
-	_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", base+"/#admin="+admin).Start()
 }
 
 func existingGateway(base, admin string) bool {

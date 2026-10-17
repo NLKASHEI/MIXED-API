@@ -36,13 +36,12 @@ Section "安装 MIXED-API" SecMain
     SetShellVarContext current
     SetOutPath "$INSTDIR"
     File "..\..\windows\MIXED-API.exe"
-    File "..\..\Start-MIXED-API.cmd"
-    File "..\..\Start-MIXED-API-LAN.cmd"
     File "..\..\README.md"
+    File "..\..\THIRD_PARTY_NOTICES.md"
 
     CreateDirectory "$SMPROGRAMS\MIXED-API"
     CreateShortCut "$SMPROGRAMS\MIXED-API\MIXED-API.lnk" "$INSTDIR\MIXED-API.exe"
-    CreateShortCut "$SMPROGRAMS\MIXED-API\局域网模式.lnk" "$INSTDIR\Start-MIXED-API-LAN.cmd"
+    CreateShortCut "$SMPROGRAMS\MIXED-API\局域网模式.lnk" "$INSTDIR\MIXED-API.exe" "--lan"
     CreateShortCut "$SMPROGRAMS\MIXED-API\卸载 MIXED-API.lnk" "$INSTDIR\Uninstall.exe"
     CreateShortCut "$DESKTOP\MIXED-API.lnk" "$INSTDIR\MIXED-API.exe"
 
@@ -68,6 +67,7 @@ Section "Uninstall"
     Delete "$INSTDIR\Start-MIXED-API.cmd"
     Delete "$INSTDIR\Start-MIXED-API-LAN.cmd"
     Delete "$INSTDIR\README.md"
+    Delete "$INSTDIR\THIRD_PARTY_NOTICES.md"
     Delete "$INSTDIR\Uninstall.exe"
     ; NEVER delete mixed-api.json: it contains API keys and the user's setup.
     RMDir "$INSTDIR"

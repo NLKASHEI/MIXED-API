@@ -27,14 +27,19 @@ var static embed.FS
 const maxBody = 32 << 20
 
 type Server struct {
-	mu       sync.RWMutex
-	cfg      Config
-	path     string
-	client   *http.Client
-	children map[string]*exec.Cmd
-	status   map[string]string
-	logsMu   sync.Mutex
-	logs     []RequestLog
+	mu                sync.RWMutex
+	cfg               Config
+	path              string
+	client            *http.Client
+	children          map[string]*exec.Cmd
+	status            map[string]string
+	logsMu            sync.Mutex
+	logs              []RequestLog
+	protocolMu        sync.Mutex
+	opencodeProtocols map[string]string
+	protocolsAt       time.Time
+	accountMu         sync.Mutex
+	logins            map[string]*loginAttempt
 }
 
 func NewServer(path string, cfg Config) *Server {
@@ -235,6 +240,10 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 	if observed, ok := w.(*observedResponse); ok {
 		observed.backend = id
 	}
+	if b.Kind == "builtin" {
+		s.serveIntegrated(w, r, *b, model, upstreamModel, payload)
+		return
+	}
 	if b.Kind == "codex_cli" {
 		if r.URL.Path != "/v1/chat/completions" {
 			jsonError(w, 501, "Codex CLI supports /v1/chat/completions only")
@@ -294,6 +303,8 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 }
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/accounts/"):
+		s.handleAccount(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/engine-settings/"):
 		s.handleEngineSettings(w, r)
 	case r.URL.Path == "/api/local/import" && r.Method == http.MethodPost:
@@ -363,14 +374,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 			err = s.prepareBackend(id)
 		case "activate":
 			err = s.activateBackend(r.Context(), id)
-		case "quickstart":
-			err = s.quickstartBackend(id)
-		case "install":
-			err = s.setupBackend(id)
+		case "quickstart", "install":
+			err = s.prepareBackend(id)
 		case "launch":
-			err = s.launchInstalled(id)
+			err = s.activateBackend(r.Context(), id)
 		case "login":
-			err = s.loginInstalled(id)
+			err = errors.New("请使用来源配置中的账号授权入口")
 		default:
 			jsonError(w, 404, "Unknown action")
 			return

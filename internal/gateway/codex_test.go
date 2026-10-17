@@ -100,11 +100,11 @@ func TestCodexInputSeparation(t *testing.T) {
 		t.Fatalf("wrong parsed content: %s %s %v", system, body, err)
 	}
 }
-func TestDefaultCodexUsesNativeCLI(t *testing.T) {
+func TestDefaultCodexUsesBuiltinHTTP(t *testing.T) {
 	c := Defaults()
 	for _, b := range c.Backends {
-		if b.ID == "codex" && b.Kind != "codex_cli" {
-			t.Fatal("Codex still depends on SillyTavern")
+		if b.ID == "codex" && b.Kind != "builtin" {
+			t.Fatal("Codex must use the in-process HTTP implementation by default")
 		}
 	}
 }

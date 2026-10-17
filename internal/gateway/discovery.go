@@ -66,7 +66,15 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 		return result
 	}
 	var ids []string
-	if b.Kind == "codex_cli" {
+	if b.Kind == "builtin" {
+		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		var err error
+		ids, err = s.integratedModels(probe, b)
+		if err != nil {
+			return fail("builtin_auth", err.Error(), "检查该来源的账号授权和网络。")
+		}
+	} else if b.Kind == "codex_cli" {
 		probe, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
 		cli, err := openCodex(probe)
@@ -127,5 +135,8 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 	result.ModelCount = len(result.models)
 	result.DurationMs = time.Since(begin).Milliseconds()
 	result.Next = "已读取模型目录。复制完整模型 ID 到客户端，发送一次消息验证实际推理权限。"
+	if b.Kind == "builtin" && (b.ID == "vertex" || b.ID == "workbuddy") {
+		result.Next = "内置模型目录；请发送消息验证实际权限。"
+	}
 	return result
 }

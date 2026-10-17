@@ -74,9 +74,10 @@ jobs:
           go vet ./...
           if ($LASTEXITCODE -ne 0) { throw 'Windows vet failed' }
           New-Item -ItemType Directory -Path windows -Force | Out-Null
-          go build -trimpath -ldflags="-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v$env:MIXED_API_VERSION" -o windows/MIXED-API.exe ./cmd/mixed-api
+          ./scripts/prepare-webview2.ps1
+          go build -tags bundled -trimpath -ldflags="-s -w -H=windowsgui -X github.com/NLKASHEI/MIXED-API/internal/gateway.BuildVersion=v$env:MIXED_API_VERSION" -o windows/MIXED-API.exe ./cmd/mixed-api
           if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
-          Copy-Item Start-MIXED-API.cmd,Start-MIXED-API-LAN.cmd,README.md,Install-MIXED-API.ps1 -Destination windows/
+          Copy-Item README.md,Install-MIXED-API.ps1,THIRD_PARTY_NOTICES.md -Destination windows/
           Copy-Item windows/MIXED-API.exe MIXED-API-Windows-x64.exe
           Compress-Archive -Path windows/* -DestinationPath MIXED-API-Windows-x64.zip
           $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'Install-MIXED-API.ps1'),[ref]$null,[ref]$null)

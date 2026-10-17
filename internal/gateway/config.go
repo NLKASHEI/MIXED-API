@@ -35,20 +35,20 @@ type Config struct {
 }
 
 var Guide = map[string]struct{ Repo, Note string }{
-	"vertex":    {"https://github.com/bad-woman/vertex2openai", "Express Key 或 Google Cloud Cookie + Project ID；原版默认端口 8050；Cookie 模式依赖非公开接口。"},
-	"codex":     {"https://github.com/openai/codex", "Windows 直接使用官方 Codex CLI，不需要 SillyTavern：安装 Node.js → npm install -g @openai/codex@latest → codex login。MIXED-API 通过本地 app-server 通信。"},
-	"opencode":  {"https://github.com/jasonxu114514/opencode2api", "启动 Go 程序，设置本地 server_keys；API 默认 8080，管理页 8081。"},
-	"workbuddy": {"https://github.com/sitingge/workboddy-proxy", "Windows 上先安装并登录 WorkBuddy 客户端；node wb-relay.js；默认 8790。"},
-	"aps":       {"https://github.com/DeconstructedCube/APS2api", "启动 APS2api，进入 2156/admin 创建 sk- 开头的本地 Key；可能依赖匿名端点且不保证稳定。"},
-	"aistudio":  {"https://github.com/iBUHub/AIStudioToAPI", "电脑上先运行 npm run setup-auth，通过 Camoufox 登录，再 npm start；默认 7860。含非商业许可。"},
+	"vertex":    {"https://github.com/bad-woman/vertex2openai", "快速V：填写本人的 Express API Key，使用内置 Google REST 协议。"},
+	"codex":     {"https://github.com/openai/codex", "Codex：在官方页面完成设备码授权；内置 HTTP 协议，无需安装 CLI。"},
+	"opencode":  {"https://github.com/zkygwxf-bot/opencode-proxy", "OpenCode：内置协议转换。服务方拒绝授权时直接报错，不伪造客户端身份。"},
+	"workbuddy": {"https://github.com/hawklithm/workbuddy2api", "WorkBuddy：本人账号授权，内置 HTTP 连接，无需启动官方 CLI。"},
+	"aps":       {"https://github.com/DeconstructedCube/APS2api", "无头V：内置核心重构中。"},
+	"aistudio":  {"https://github.com/Mag1cFall/AIStudio2API", "AIS：Build 与 Playground；核对 DeconstructedCube/aistudio-api 的同源协议。"},
 }
 
 func Defaults() Config {
 	return Config{Listen: "127.0.0.1:8765", Backends: []Backend{
-		{ID: "vertex", Name: "Vertex Express / Cookie", URL: "http://127.0.0.1:8050/v1", Auth: "bearer"},
-		{ID: "codex", Name: "Codex CLI (无需 SillyTavern)", Kind: "codex_cli", URL: "http://127.0.0.1:8901/codex/v1", Auth: "none"},
-		{ID: "opencode", Name: "OpenCode 2API", URL: "http://127.0.0.1:8080/v1", Auth: "bearer"},
-		{ID: "workbuddy", Name: "WorkBuddy Proxy", URL: "http://127.0.0.1:8790/v1", Auth: "bearer"},
+		{ID: "vertex", Name: "快速V", Kind: "builtin", URL: builtinBase("vertex"), Auth: "none"},
+		{ID: "codex", Name: "Codex", Kind: "builtin", URL: builtinBase("codex"), Auth: "none"},
+		{ID: "opencode", Name: "OpenCode", Kind: "builtin", URL: builtinBase("opencode"), Auth: "none"},
+		{ID: "workbuddy", Name: "WorkBuddy", Kind: "builtin", URL: builtinBase("workbuddy"), Auth: "none"},
 		{ID: "aps", Name: "APS2api", URL: "http://127.0.0.1:2156/v1", Auth: "bearer"},
 		{ID: "aistudio", Name: "AI Studio Build", URL: "http://127.0.0.1:7860/v1", Auth: "bearer"},
 	}}
@@ -80,7 +80,7 @@ func Validate(c Config) error {
 			return fmt.Errorf("duplicate backend id %q", b.ID)
 		}
 		ids[b.ID] = true
-		if b.Kind != "" && b.Kind != "http" && !(b.Kind == "codex_cli" && b.ID == "codex") {
+		if b.Kind != "" && b.Kind != "http" && !(b.Kind == "codex_cli" && b.ID == "codex") && !(b.Kind == "builtin" && knownBuiltin(b.ID)) {
 			return fmt.Errorf("invalid backend kind for %s", b.ID)
 		}
 		if b.Auth != "bearer" && b.Auth != "x-api-key" && b.Auth != "none" {
@@ -88,6 +88,9 @@ func Validate(c Config) error {
 		}
 		if _, err := backendURL(b.URL); err != nil {
 			return fmt.Errorf("backend %s: %w", b.ID, err)
+		}
+		if b.Kind == "builtin" && !isBuiltinURL(b) {
+			return fmt.Errorf("builtin %s requires its official endpoint", b.ID)
 		}
 	}
 	for alias, target := range c.Aliases {
