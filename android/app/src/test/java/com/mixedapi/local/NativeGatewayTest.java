@@ -81,6 +81,171 @@ public class NativeGatewayTest {
   }
 
   @Test
+  public void responsesCanReplayTheirOwnTextReasoningAndTools() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          JSONObject input = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          if (calls.incrementAndGet() == 2) {
+            String messages = input.getJSONArray("messages").toString();
+            assertTrue(
+                messages,
+                messages.contains("reasoning_content")
+                    && messages.contains("plan")
+                    && messages.contains("tool_call_id")
+                    && messages.contains("tool-result"));
+          }
+          String response =
+              "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"content\":\"hello\",\"reasoning_content\":\"plan\",\"tool_calls\":[{\"id\":\"c1\",\"function\":{\"name\":\"weather\",\"arguments\":\"{}\"}}]}}]}";
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(response.getBytes(StandardCharsets.UTF_8)));
+        });
+    JSONObject first =
+        call(
+            "/v1/responses",
+            GoogleProtocol.obj("model", "opencode/deepseek-v4-flash", "input", "hi").toString());
+    JSONArray history = GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi"));
+    JSONArray output = first.getJSONArray("output");
+    for (int i = 0; i < output.length(); i++) history.put(output.get(i));
+    history.put(
+        GoogleProtocol.obj(
+            "type", "function_call_output", "call_id", "c1", "output", "tool-result"));
+    call(
+        "/v1/responses",
+        GoogleProtocol.obj("model", "opencode/deepseek-v4-flash", "input", history).toString());
+    assertEquals(2, calls.get());
+  }
+
+  @Test
+  public void responsesStreamKeepsTwoSignedThinkingBlocksSeparate() throws Exception {
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          StringBuilder events = new StringBuilder();
+          events.append(
+              "data:"
+                  + " {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n");
+          for (int i = 0; i < 2; i++) {
+            events
+                .append("data: ")
+                .append(
+                    GoogleProtocol.obj(
+                        "type",
+                        "content_block_start",
+                        "index",
+                        i,
+                        "content_block",
+                        GoogleProtocol.obj("type", "thinking", "thinking", "")))
+                .append("\n\n");
+            events
+                .append("data: ")
+                .append(
+                    GoogleProtocol.obj(
+                        "type",
+                        "content_block_delta",
+                        "index",
+                        i,
+                        "delta",
+                        GoogleProtocol.obj("type", "thinking_delta", "thinking", "plan" + i)))
+                .append("\n\n");
+            events
+                .append("data: ")
+                .append(
+                    GoogleProtocol.obj(
+                        "type",
+                        "content_block_delta",
+                        "index",
+                        i,
+                        "delta",
+                        GoogleProtocol.obj(
+                            "type", "signature_delta", "signature", "signature" + i)))
+                .append("\n\n");
+            events
+                .append("data: ")
+                .append(GoogleProtocol.obj("type", "content_block_stop", "index", i))
+                .append("\n\n");
+          }
+          events.append(
+              "data:"
+                  + " {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n"
+                  + "data: {\"type\":\"message_stop\"}\n\n");
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(events.toString().getBytes(StandardCharsets.UTF_8)));
+        });
+    String result =
+        rawCall(
+            "/v1/responses",
+            GoogleProtocol.obj("model", "opencode/claude-opus-4-8", "input", "hi", "stream", true)
+                .toString());
+    assertTrue(result, result.contains("event: response.completed"));
+    assertFalse(result, result.contains("response.failed"));
+    JSONObject completed = null;
+    for (String line : result.split("\n"))
+      if (line.startsWith("data: ")) {
+        JSONObject event = new JSONObject(line.substring(6));
+        if (event.getString("type").equals("response.completed"))
+          completed = event.getJSONObject("response");
+      }
+    assertNotNull(completed);
+    JSONArray output = completed.getJSONArray("output");
+    assertEquals(2, output.length());
+    for (int i = 0; i < 2; i++)
+      assertEquals(
+          "signature" + i,
+          output
+              .getJSONObject(i)
+              .getJSONArray("reasoning_details")
+              .getJSONObject(0)
+              .getString("signature"));
+  }
+
+  @Test
+  public void nativeMessagesRejectInvalidCompletedToolArguments() throws Exception {
+    java.util.concurrent.atomic.AtomicBoolean limited =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          String data =
+              "data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-4-8\"}}\n\n"
+                  + "data:"
+                  + " {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"c1\",\"name\":\"weather\",\"input\":{}}}\n\n"
+                  + "data:"
+                  + " {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\"}}\n\n"
+                  + "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+                  + "data: "
+                  + GoogleProtocol.obj(
+                      "type",
+                      "message_delta",
+                      "delta",
+                      GoogleProtocol.obj("stop_reason", limited.get() ? "max_tokens" : "tool_use"))
+                  + "\n\ndata: {\"type\":\"message_stop\"}\n\n";
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)));
+        });
+    for (boolean truncated : new boolean[] {false, true}) {
+      limited.set(truncated);
+      String result =
+          rawCall(
+              "/v1/messages",
+              GoogleProtocol.obj(
+                      "model",
+                      "opencode/claude-opus-4-8",
+                      "messages",
+                      GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")),
+                      "stream",
+                      true,
+                      "max_tokens",
+                      100)
+                  .toString());
+      assertEquals(result, truncated, result.contains("event: message_stop"));
+      assertEquals(result, !truncated, result.contains("event: error"));
+    }
+  }
+
+  @Test
   public void protocolStreamsKeepFragmentedToolsUsageAndExplicitTruncation() throws Exception {
     java.util.concurrent.atomic.AtomicReference<String> finish =
         new java.util.concurrent.atomic.AtomicReference<>("tool_calls");

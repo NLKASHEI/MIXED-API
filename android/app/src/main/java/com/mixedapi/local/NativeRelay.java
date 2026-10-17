@@ -15,6 +15,10 @@ final class NativeRelay {
   private boolean started, done, messageStarted;
   private String messageFinish = "";
   private final java.util.Set<Integer> blocks = new java.util.HashSet<>();
+  private final java.util.Set<Integer> seenBlocks = new java.util.HashSet<>();
+  private final java.util.Map<Integer, JSONObject> toolInputs = new java.util.HashMap<>();
+  private final java.util.Map<Integer, StringBuilder> toolDeltas = new java.util.HashMap<>();
+  private long toolSize;
   private JSONObject result;
 
   NativeRelay(OutputStream out, String backend, String model, String protocol, boolean stream) {
@@ -56,19 +60,46 @@ final class NativeRelay {
               throw new IOException("Missing message start");
             if (type.equals("content_block_start")) {
               int index = event.getInt("index");
-              if (index < 0 || index > 1024 || !blocks.add(index))
+              if (index < 0 || index > 1024 || !seenBlocks.add(index))
                 throw new IOException("Invalid content block");
+              blocks.add(index);
+              JSONObject block = event.getJSONObject("content_block");
+              if (block.optString("type").equals("tool_use")
+                  || block.optString("type").equals("server_tool_use")) {
+                ProtocolRequest.required(block, "id");
+                ProtocolRequest.required(block, "name");
+                toolInputs.put(index, block.getJSONObject("input"));
+              }
             } else if (type.equals("content_block_delta")
                 && !blocks.contains(event.getInt("index")))
               throw new IOException("Unknown content block");
-            else if (type.equals("content_block_stop") && !blocks.remove(event.getInt("index")))
+            else if (type.equals("content_block_delta")) {
+              JSONObject delta = event.getJSONObject("delta");
+              if (delta.optString("type").equals("input_json_delta")) {
+                int index = event.getInt("index");
+                if (!toolInputs.containsKey(index)) throw new IOException("Unknown tool delta");
+                String value = delta.getString("partial_json");
+                toolSize += value.length();
+                if (toolSize > 16 * 1024 * 1024) throw new IOException("Tool arguments too large");
+                StringBuilder args = toolDeltas.get(index);
+                if (args == null) {
+                  args = new StringBuilder();
+                  toolDeltas.put(index, args);
+                }
+                args.append(value);
+              }
+            } else if (type.equals("content_block_stop") && !blocks.remove(event.getInt("index")))
               throw new IOException("Unknown content block");
             else if (type.equals("message_delta")) {
               JSONObject delta = event.getJSONObject("delta");
-              if (!delta.isNull("stop_reason")) messageFinish = delta.getString("stop_reason");
+              if (!delta.isNull("stop_reason")) {
+                messageFinish = delta.getString("stop_reason");
+                validateTools();
+              }
             } else if (type.equals("message_stop")) {
               if (!blocks.isEmpty() || !messageFinish(messageFinish))
                 throw new IOException("Missing completion");
+              validateTools();
               done = true;
             }
           }
@@ -81,6 +112,13 @@ final class NativeRelay {
         throw new IOException("Missing generated output");
       BridgeHttpServer.json(out, 200, result, backend);
     }
+  }
+
+  private void validateTools() throws Exception {
+    if (java.util.Arrays.asList("max_tokens", "model_context_window_exceeded", "refusal")
+        .contains(messageFinish)) return;
+    for (StringBuilder value : toolDeltas.values())
+      ProtocolRequest.objectArguments(value.toString());
   }
 
   static boolean messageFinish(String value) {
@@ -113,8 +151,20 @@ final class NativeRelay {
               throw new IOException("Invalid tool arguments");
           }
         }
-    } else if (protocol.equals("messages") && !messageFinish(result.optString("stop_reason")))
-      throw new IOException("Missing message completion");
+    } else if (protocol.equals("messages")) {
+      if (!messageFinish(result.optString("stop_reason")))
+        throw new IOException("Missing message completion");
+      JSONArray content = result.getJSONArray("content");
+      for (int i = 0; i < content.length(); i++) {
+        JSONObject part = content.getJSONObject(i);
+        if (part.optString("type").equals("tool_use")
+            || part.optString("type").equals("server_tool_use")) {
+          ProtocolRequest.required(part, "id");
+          ProtocolRequest.required(part, "name");
+          part.getJSONObject("input");
+        }
+      }
+    }
   }
 
   void event(String type, JSONObject data) throws Exception {

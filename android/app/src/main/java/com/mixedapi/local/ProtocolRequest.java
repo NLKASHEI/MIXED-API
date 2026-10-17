@@ -112,6 +112,25 @@ final class ProtocolRequest {
                   "content",
                   responseContent(item.get("output"))));
           break;
+        case "reasoning":
+          {
+            only(item, "type", "id", "summary", "reasoning_details", "status");
+            JSONArray summary = item.getJSONArray("summary");
+            StringBuilder thought = new StringBuilder();
+            for (int n = 0; n < summary.length(); n++) {
+              JSONObject part = summary.getJSONObject(n);
+              only(part, "type", "text");
+              if (!part.getString("type").equals("summary_text"))
+                throw new IOException("Unsupported reasoning summary");
+              thought.append(part.getString("text"));
+            }
+            JSONObject message = obj("role", "assistant", "content", JSONObject.NULL);
+            if (thought.length() > 0) message.put("reasoning_content", thought.toString());
+            if (item.has("reasoning_details"))
+              message.put("reasoning_details", item.getJSONArray("reasoning_details"));
+            messages.put(message);
+            break;
+          }
         default:
           throw new IOException("Unsupported input item");
       }
@@ -152,8 +171,14 @@ final class ProtocolRequest {
       switch (p.getString("type")) {
         case "input_text":
         case "output_text":
-          only(p, "type", "text");
+          only(p, "type", "text", "annotations");
+          if (p.has("annotations") && p.getJSONArray("annotations").length() != 0)
+            throw new IOException("Unsupported citation replay");
           result.put(obj("type", "text", "text", p.getString("text")));
+          break;
+        case "refusal":
+          only(p, "type", "refusal");
+          result.put(obj("type", "text", "text", p.getString("refusal")));
           break;
         case "input_image":
           {

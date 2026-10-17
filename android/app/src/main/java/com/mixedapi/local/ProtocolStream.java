@@ -242,6 +242,7 @@ final class ProtocolStream {
         JSONArray saved = item.optJSONArray("reasoning_details");
         if (saved == null) saved = new JSONArray();
         item.put("reasoning_details", saved.put(detail));
+        texts.remove("reasoning_content");
         if (messages)
           send(
               "content_block_delta",
