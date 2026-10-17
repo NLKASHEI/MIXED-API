@@ -41,4 +41,8 @@
 
 追加独立审查发现两个生命周期问题：Windows 旧窗口未退出时，新窗口注册相同类名失败；Android 取消回调不返回时，会话锁一直占用。Windows 改用每实例唯一类名和共享窗口回调，实际 Win32 注册测试先复现失败、修复后通过。Android 取消超过 1 秒未确认时，先废弃并销毁旧页再释放锁，旧等待者不能继续使用失效页；迟到回调不影响新页。新增渲染器挂起/确认取消回归，须以本提交的 Android CI 结果为准。
 
+2026-10-17 Android 原生协议增量 Standards 审查（固定 `73d56fd`）发现三项：成功 Responses 的 `error:null` 被误判失败；快速V的 `-search` 后缀丢失搜索工具；Opus 4.8 错用手动思考。均用公共 HTTP 用例复现后修复；4.8 同步修复 Go 与 Java，能力依据 [Claude 官方 thinking 文档](https://platform.claude.com/docs/en/build-with-claude/thinking)。Spec 由主代理继续对照 ADR-0005 和未完成项检查，尚不是全规格验收通过。
+
+Android CI [39014151486](https://github.com/NLKASHEI/MIXED-API/actions/runs/39014151486) 复现 Linux 立即重启监听端口的 BindException。监听器改为绑定前设置地址复用，绑定失败关闭未成功的 socket；复用不改变仅监听 127.0.0.1 的限制。需后续 CI 确认修复，不能把本机 Windows 测试当作 Linux/Android 通过。
+
 定向复核又复现 Windows 启动取消后遗留 WM_QUIT，污染下一次复用的 STA 线程。现仅在消息循环运行时投递退出消息；同 STA 连续创建/销毁回归通过，独立复核确认该修复。上述两项原生窗口测试不需要账号或渲染器；Android 的两个渲染器生命周期测试已在 `f0ea36a` 的 CI 通过。

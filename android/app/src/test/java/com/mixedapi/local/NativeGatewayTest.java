@@ -110,7 +110,7 @@ public class NativeGatewayTest {
         });
     JSONObject request =
         new JSONObject(
-            "{\"model\":\"opencode/claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"reasoning_effort\":\"high\",\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"weather\",\"parameters\":{\"type\":\"object\"}}}]}");
+            "{\"model\":\"opencode/claude-opus-4-8\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"reasoning_effort\":\"high\",\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"weather\",\"parameters\":{\"type\":\"object\"}}}]}");
     JSONObject response = call("/v1/chat/completions", request.toString());
     JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
     assertEquals("tool_calls", choice.getString("finish_reason"));
@@ -275,6 +275,11 @@ public class NativeGatewayTest {
               url);
           assertEquals("express-private", headers.get("x-goog-api-key"));
           assertFalse(headers.containsKey("Authorization"));
+          assertTrue(
+              new JSONObject(new String(body, StandardCharsets.UTF_8))
+                  .getJSONArray("tools")
+                  .getJSONObject(0)
+                  .has("googleSearch"));
           JSONObject packet = new JSONObject(new String(body, StandardCharsets.UTF_8));
           assertEquals(
               "hi",
@@ -300,7 +305,7 @@ public class NativeGatewayTest {
     request.setReadTimeout(3000);
     try (java.io.OutputStream out = request.getOutputStream()) {
       out.write(
-          "{\"model\":\"vertex/gemini-3-flash-preview\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+          "{\"model\":\"vertex/gemini-3-flash-preview-search\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
               .getBytes(StandardCharsets.UTF_8));
     }
     assertEquals(200, request.getResponseCode());
@@ -318,7 +323,7 @@ public class NativeGatewayTest {
             .getJSONObject(0)
             .getJSONObject("message")
             .getString("content"));
-    assertEquals("vertex/gemini-3-flash-preview", result.getString("model"));
+    assertEquals("vertex/gemini-3-flash-preview-search", result.getString("model"));
     assertEquals(3, result.getJSONObject("usage").getInt("total_tokens"));
     assertFalse(response.contains("express-private"));
     assertEquals(1, calls.get());
@@ -428,7 +433,7 @@ public class NativeGatewayTest {
           assertEquals("hi", input.getJSONArray("input").getJSONObject(0).getString("content"));
           assertEquals(128, input.getInt("max_output_tokens"));
           String response =
-              "{\"id\":\"resp1\",\"status\":\"completed\",\"output\":[{\"type\":\"reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]},{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]},{\"type\":\"function_call\",\"call_id\":\"call1\",\"name\":\"weather\",\"arguments\":\"{}\"}],\"usage\":{\"input_tokens\":8,\"output_tokens\":3,\"total_tokens\":11}}";
+              "{\"id\":\"resp1\",\"error\":null,\"status\":\"completed\",\"output\":[{\"type\":\"reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]},{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]},{\"type\":\"function_call\",\"call_id\":\"call1\",\"name\":\"weather\",\"arguments\":\"{}\"}],\"usage\":{\"input_tokens\":8,\"output_tokens\":3,\"total_tokens\":11}}";
           return new GoogleSessions.Response(
               200, new ByteArrayInputStream(response.getBytes(StandardCharsets.UTF_8)));
         });

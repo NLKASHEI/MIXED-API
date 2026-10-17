@@ -197,6 +197,11 @@ final class GoogleProtocol {
         declarations.put(d);
       }
     if (declarations.length() > 0) out.put("tools", arr(obj("functionDeclarations", declarations)));
+    if (input.optString("model").endsWith("-search")) {
+      JSONArray available = out.optJSONArray("tools");
+      if (available == null) available = new JSONArray();
+      out.put("tools", available.put(obj("googleSearch", new JSONObject())));
+    }
     if (input.has("tool_choice")) {
       Object choice = input.get("tool_choice");
       String mode;

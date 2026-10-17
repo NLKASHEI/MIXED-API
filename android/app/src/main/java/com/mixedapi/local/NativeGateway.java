@@ -20,14 +20,28 @@ final class NativeGateway {
 
   private final Context context;
   private final Transport transport;
+  private final NativeAccounts accounts;
 
-  NativeGateway(Context context, Transport transport) {
+  NativeGateway(Context context, Transport transport, NativeAccounts accounts) {
     this.context = context;
     this.transport = transport == null ? NativeHttp::send : transport;
+    this.accounts = accounts;
   }
 
   JSONArray models(JSONObject backend) throws Exception {
     String id = backend.getString("id");
+    if (id.equals("codex")) {
+      try (GoogleSessions.Response response =
+          accounts.request(id, "/models?client_version=0.163.0", null)) {
+        if (response.status != 200) throw new IOException("Codex 模型目录请求失败");
+        JSONArray rows = readJSON(response.body).getJSONArray("models"), ids = new JSONArray();
+        for (int i = 0; i < rows.length(); i++) {
+          String name = rows.getJSONObject(i).optString("slug");
+          if (!name.isEmpty()) ids.put(name);
+        }
+        return ids;
+      }
+    }
     if ("opencode".equals(id)) {
       try (GoogleSessions.Response response =
           transport.send(
@@ -45,8 +59,9 @@ final class NativeGateway {
         return ids;
       }
     }
-    if (!"vertex".equals(id)) throw new IOException("内置模型目录尚未完成");
-    if (backend.optString("provider_key").trim().isEmpty())
+    if (id.equals("workbuddy")) accounts.fresh(id, "");
+    else if (!"vertex".equals(id)) throw new IOException("内置模型目录尚未完成");
+    if (id.equals("vertex") && backend.optString("provider_key").trim().isEmpty())
       throw new IOException("请填写 Express API Key");
     try (InputStream input = context.getAssets().open("builtin-models.json")) {
       return new JSONObject(
@@ -72,6 +87,10 @@ final class NativeGateway {
       serveOpenCode(out, path, backend, publicModel, model, input);
       return;
     }
+    if (NativeAccounts.source(id) && path.equals("/v1/chat/completions")) {
+      serveAccountChat(out, id, publicModel, model, input);
+      return;
+    }
     if (!"vertex".equals(id) || !"/v1/chat/completions".equals(path)) {
       BridgeHttpServer.fail(out, 501, "该内置协议尚未完成");
       return;
@@ -93,6 +112,51 @@ final class NativeGateway {
         input,
         base(id) + "/v1/publishers/google/models/" + model.replaceFirst("-search$", ""),
         headers);
+  }
+
+  private void serveAccountChat(
+      OutputStream out, String id, String publicModel, String model, JSONObject input)
+      throws Exception {
+    JSONObject packet;
+    try {
+      packet = new JSONObject(input.toString()).put("model", model);
+      if (id.equals("codex")) {
+        packet = NativeResponses.request(packet).put("store", false);
+        if (!packet.has("instructions")) packet.put("instructions", "");
+      }
+      packet.put("stream", true);
+      if (input.optInt("n", 1) < 1 || input.optInt("n", 1) > 8)
+        throw new IOException("Invalid candidate count");
+    } catch (Exception e) {
+      BridgeHttpServer.fail(out, 400, "请求参数无法转换为来源协议");
+      return;
+    }
+    JSONObject options = input.optJSONObject("stream_options");
+    NativeChat chat =
+        new NativeChat(
+            out,
+            id,
+            publicModel,
+            input.optBoolean("stream"),
+            options != null && options.optBoolean("include_usage"),
+            input.optInt("n", 1));
+    try (GoogleSessions.Response response =
+        accounts.request(id, id.equals("codex") ? "/responses" : "/chat/completions", packet)) {
+      if (response.status != 200) {
+        BridgeHttpServer.providerFailure(
+            out,
+            response.status >= 400 && response.status < 600 ? response.status : 502,
+            response.retryAfter);
+        return;
+      }
+      if (id.equals("codex")) NativeResponses.read(response.body, chat);
+      else chat.read(response.body);
+    } catch (NativeAccounts.Failure e) {
+      BridgeHttpServer.fail(out, e.status, e.getMessage());
+    } catch (Exception e) {
+      if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+      if (!Thread.currentThread().isInterrupted()) chat.error();
+    }
   }
 
   private void serveGemini(
@@ -245,7 +309,7 @@ final class NativeGateway {
         return;
       }
       JSONObject result = readJSON(response.body);
-      if (result.has("error")) {
+      if (!result.isNull("error")) {
         BridgeHttpServer.fail(out, 502, "服务方生成失败");
         return;
       }

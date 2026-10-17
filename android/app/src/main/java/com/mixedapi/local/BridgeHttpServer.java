@@ -63,14 +63,21 @@ public final class BridgeHttpServer implements AutoCloseable {
       AccountStore.Keys keys) {
     context = ctx.getApplicationContext();
     google = new GoogleGateway(sessions);
-    accounts = new NativeAccounts(new AccountStore(context, keys));
-    nativeGateway = new NativeGateway(context, transport);
+    accounts = new NativeAccounts(new AccountStore(context, keys), transport);
+    nativeGateway = new NativeGateway(context, transport, accounts);
   }
 
   public synchronized void start() throws Exception {
     if (open.get()) return;
     BridgeConfig.load(context);
-    socket = new ServerSocket(8765, 50, InetAddress.getByName("127.0.0.1"));
+    socket = new ServerSocket();
+    try {
+      socket.setReuseAddress(true);
+      socket.bind(new java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), 8765), 50);
+    } catch (Exception e) {
+      socket.close();
+      throw e;
+    }
     open.set(true);
     acceptor =
         new Thread(
@@ -98,6 +105,7 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
     pool.shutdownNow();
     discoveryPool.shutdownNow();
+    accounts.close();
   }
 
   static byte[] bounded(InputStream in, int max) throws IOException {

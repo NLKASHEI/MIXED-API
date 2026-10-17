@@ -260,7 +260,7 @@ func configureAnthropicThinking(chat, out map[string]any) error {
 	}
 	model, _ := chat["model"].(string)
 	adaptive := false
-	for _, prefix := range []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-sonnet-4-7", "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-5"} {
+	for _, prefix := range []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-sonnet-4-7", "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-5"} {
 		if model == prefix || strings.HasPrefix(model, prefix+"-") {
 			adaptive = true
 		}

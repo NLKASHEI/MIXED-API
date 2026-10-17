@@ -109,7 +109,7 @@ func TestAnthropicThinkingUsesModelCapability(t *testing.T) {
 		model, effort, thinking string
 		status                  int
 	}{
-		{"claude-opus-4-5", "high", "enabled", 200}, {"claude-sonnet-4-6", "high", "adaptive", 200}, {"claude-3-5-haiku", "high", "", 400},
+		{"claude-opus-4-8", "high", "adaptive", 200}, {"claude-opus-4-5", "high", "enabled", 200}, {"claude-sonnet-4-6", "high", "adaptive", 200}, {"claude-3-5-haiku", "high", "", 400},
 	} {
 		t.Run(tc.model, func(t *testing.T) {
 			cfg := Defaults()

@@ -209,7 +209,8 @@ final class NativeMessages {
         throw new IOException("Invalid reasoning effort");
     }
     boolean adaptive =
-        model.matches("claude-(opus|sonnet)-4-[67](-.*)?")
+        model.matches("claude-opus-4-[678](-.*)?")
+            || model.matches("claude-sonnet-4-[67](-.*)?")
             || model.matches("claude-(opus|sonnet|fable|haiku)-5(-.*)?");
     if (adaptive) {
       if (effort.equals("max") && !model.startsWith("claude-opus-"))
