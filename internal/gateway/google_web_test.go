@@ -129,6 +129,27 @@ func TestGoogleWebRequiresEveryRequestedCandidate(t *testing.T) {
 	}
 }
 
+func TestGoogleWebRejectsMalformedOptionsBeforeSending(t *testing.T) {
+	for _, extra := range []string{`"n":1.5`, `"stream":"false"`, `"unknown_option":true`, `"temperature":-1`, `"stream_options":{"include_usage":"yes"}`} {
+		cfg := Defaults()
+		cfg.APIKey = "client"
+		cfg.Backends = []Backend{{ID: "aps", Kind: "builtin", URL: builtinBase("aps"), Auth: "none", Enabled: true}}
+		app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+		called := false
+		app.SetGoogleSessions(&fixtureGoogleBrowser{send: func(context.Context, string, googleweb.Operation) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: 503, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}})
+		r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"aps/gemini-test","messages":[{"role":"user","content":"hi"}],`+extra+`}`))
+		r.Header.Set("Authorization", "Bearer client")
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, r)
+		if w.Code != 400 || called {
+			t.Fatalf("%s: status %d, provider called %v", extra, w.Code, called)
+		}
+	}
+}
+
 func TestGoogleWebDoesNotCompleteRejectedStream(t *testing.T) {
 	frame := `{"candidates":[{"index":0,"content":{"parts":[{"text":"partial"}]},"finishReason":"STOP"}]}`
 	encoded, _ := json.Marshal(frame)

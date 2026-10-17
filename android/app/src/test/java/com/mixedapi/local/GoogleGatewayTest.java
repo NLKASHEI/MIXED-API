@@ -161,9 +161,12 @@ public class GoogleGatewayTest {
     } finally {
       c.disconnect();
     }
-    assertTrue(body, body.contains("aistudio/build/build-only"));
-    assertTrue(body.contains("aistudio/playground/play-only"));
-    assertFalse(body.contains("aistudio/build/play-only"));
+    java.util.Set<String> ids = new java.util.HashSet<>();
+    JSONArray catalog = new JSONObject(body).getJSONArray("data");
+    for (int i = 0; i < catalog.length(); i++) ids.add(catalog.getJSONObject(i).getString("id"));
+    assertTrue(body, ids.contains("aistudio/build/build-only"));
+    assertTrue(ids.contains("aistudio/playground/play-only"));
+    assertFalse(ids.contains("aistudio/build/play-only"));
     c = request("/api/accounts/aistudio", "client", null);
     assertEquals(401, c.getResponseCode());
     c.disconnect();
@@ -236,9 +239,9 @@ public class GoogleGatewayTest {
         .getOutputStream()
         .write(
             ("POST /v1/chat/completions HTTP/1.1\r\n"
-                 + "Host: localhost\r\n"
-                 + "Authorization: Bearer client\r\n"
-                 + "Content-Length: "
+                    + "Host: localhost\r\n"
+                    + "Authorization: Bearer client\r\n"
+                    + "Content-Length: "
                     + body.length()
                     + "\r\n\r\n"
                     + body)

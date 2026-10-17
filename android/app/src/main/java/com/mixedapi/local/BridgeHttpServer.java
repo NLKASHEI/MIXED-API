@@ -465,8 +465,7 @@ public final class BridgeHttpServer implements AutoCloseable {
             .put("command", "")
             .put("workdir", "");
       } else if ("activate".equals(action)) {
-        if (!"builtin".equals(b.optString("kind"))
-            || !"ready".equals(google.state(id).optString("status"))) {
+        if (!"builtin".equals(b.optString("kind")) || !googleReady(id)) {
           fail(out, 400, "请先在来源窗口完成本人授权并发送测试消息");
           return;
         }
@@ -591,7 +590,7 @@ public final class BridgeHttpServer implements AutoCloseable {
           return;
         }
         if ("start".equals(action)) {
-          if (!"ready".equals(google.state(id).optString("status"))) {
+          if (!googleReady(id)) {
             fail(out, 400, "请先完成来源授权");
             return;
           }

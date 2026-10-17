@@ -360,14 +360,22 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     @Override
     public void close() {
       if (!closed.compareAndSet(false, true)) return;
-      boolean interrupted = Thread.interrupted();
-      try {
-        eval(page, id, "window.__mixedGoogleWeb?.cancel('" + key + "')", 1000);
-      } catch (Exception ignored) {
-      } finally {
-        page.gate.release();
-        if (interrupted) Thread.currentThread().interrupt();
-      }
+      // Keep the lease until cancellation has reached the UI queue. A busy UI
+      // must not let a timed-out close admit another request ahead of its abort.
+      ui.post(
+          () -> {
+            try {
+              page.view.evaluateJavascript(
+                  "location.origin === "
+                      + JSONObject.quote(origin(id))
+                      + " ? window.__mixedGoogleWeb?.cancel('"
+                      + key
+                      + "') : null",
+                  ignored -> page.gate.release());
+            } catch (RuntimeException e) {
+              page.gate.release();
+            }
+          });
     }
   }
 

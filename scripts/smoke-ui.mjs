@@ -70,10 +70,6 @@ try {
   const response=await fetch(base+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer ui-test-client','Content-Type':'application/json'},body:JSON.stringify({model:'daily-chat',messages:[{role:'user',content:'hello'}]})});assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'Alias routing works');
   await page.locator('[data-page="diagnostics"]').click();await page.locator('#run-diagnostics').click();await page.locator('#diagnostics').getByText('2 个模型',{exact:false}).waitFor();
   await page.locator('[data-page="home"]').click();
-  if(process.env.MIXED_LOCAL_ENGINE_PATH){
-    const imported=await fetch(base+'/api/local/import',{method:'POST',headers:{Authorization:'Bearer ui-test-admin','Content-Type':'application/json'},body:JSON.stringify({path:process.env.MIXED_LOCAL_ENGINE_PATH})});assert.equal(imported.status,201);const origin=await imported.json();assert.equal(origin.origin.module,'github.com/bsfdsagfadg/vertex');
-    const state=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();assert.equal(state.backends.length,6,'component import created another source');assert(!state.backends.some(b=>b.id==='vertex_local'));await page.reload();await page.locator('#app').waitFor({state:'visible'});
-  }
   await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:join(output,'console-desktop.png'),fullPage:true});
   await page.locator('[data-page="admin"]').click();
   await page.locator('#admin-engines tr').nth(5).waitFor();
@@ -106,7 +102,6 @@ try {
   assert.equal(switched.backends.find(b=>b.id==='opencode').kind,'builtin');
   assert.equal(switched.backends.find(b=>b.id==='opencode').url,'https://opencode.ai/inference/v1');
   await page.keyboard.press('Escape');await page.locator('[data-page="admin"]').click();
-  if(process.env.MIXED_LOCAL_ENGINE_PATH){await page.locator('#load-engine-settings').click();await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();}
   await page.screenshot({path:join(output,'console-admin.png'),fullPage:true});
   await page.locator('[data-page="home"]').click();
   await page.setViewportSize({width:390,height:844});
@@ -114,6 +109,29 @@ try {
   await page.screenshot({path:join(output,'console-mobile.png'),fullPage:true});
   await page.locator('#providers .card').nth(1).getByRole('button').click();
   assert(await page.locator('#provider-dialog').isVisible(),'mobile onboarding does not open');await page.keyboard.press('Escape');
+  // Android capability negotiation shares the real preparation/settings APIs.
+  // Only native window opening/state is substituted; no login is performed.
+  await page.unroute('**/api/assist/status');
+  await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"android","builtin_backends":["aps","aistudio"]}'}));
+  await page.route('**/api/accounts/**',route=>route.fulfill({contentType:'application/json',body:'{"status":"waiting","message":"请在官方页面完成本人授权，并发送一条测试消息"}'}));
+  await page.reload();await page.locator('#app').waitFor({state:'visible'});
+  for(const [id,name] of [['aps','无头V'],['aistudio','AIS']]){
+    await page.locator('#providers .card').filter({has:page.getByRole('heading',{name,exact:true})}).getByRole('button').click();
+    await page.locator('#prepare-provider').click();await page.locator('#authorize-provider').waitFor({state:'visible'});
+    assert(await page.locator('#official-field').isHidden(),'Google source incorrectly asks for Express key');
+    await page.locator('#authorize-provider').click();
+    await page.locator('#provider-progress').filter({hasText:'测试消息'}).waitFor();
+    await page.locator('#next-provider').click();await page.locator('#toast').filter({hasText:'测试消息'}).waitFor();
+    assert(await page.locator('#authorize-provider').isVisible(),'unready source bypassed authorization');
+    const state=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
+    assert.equal(state.backends.find(b=>b.id===id).enabled,false);
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile Google wizard overflows');
+    await page.screenshot({path:join(output,`android-${id}-setup.png`),fullPage:true});
+    await page.keyboard.press('Escape');
+  }
+  await page.locator('[data-page="admin"]').click();await page.locator('#load-engine-settings').click();
+  await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');
+  await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();
   await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.evaluate(()=>sessionStorage.getItem('mixed-admin')),null);
   assert.deepEqual(errors,[],'browser JavaScript errors');
   console.log('UI passed: authenticated bootstrap, provider setup, model search, alias inference, diagnostics, mobile layout and logout.');

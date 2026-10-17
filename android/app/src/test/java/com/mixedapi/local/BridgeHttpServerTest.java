@@ -155,7 +155,8 @@ public class BridgeHttpServerTest {
   public void pcModelsRemainExplicitAndNeverCatchOtherProviders() throws Exception {
     Context ctx = RuntimeEnvironment.getApplication();
     JSONObject cfg = BridgeConfig.load(ctx);
-    cfg.getJSONArray("backends").getJSONObject(0).put("id", "pc");
+    JSONObject pc = cfg.getJSONArray("backends").getJSONObject(0).put("id", "pc");
+    cfg.put("backends", new JSONArray().put(pc));
     cfg.put("aliases", new JSONObject().put("daily-chat", "pc/example"));
     BridgeConfig.save(ctx, cfg);
     JSONObject catalog = read(request("GET", "/v1/models", "android-client", null));

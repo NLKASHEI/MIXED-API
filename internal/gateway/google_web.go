@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,10 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 	}
 	if model == "" || strings.ContainsAny(model, "/\\?#%") {
 		jsonError(w, 400, "模型 ID 无效")
+		return
+	}
+	if err := validateGoogleOptions(payload); err != nil {
+		jsonError(w, 400, err.Error())
 		return
 	}
 	body, err := expressPayload(payload, model)
@@ -197,6 +202,51 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		writer.CloseWithError(err)
 	}()
 	s.streamExpress(w, r, reader, "chatcmpl-"+newKey(""), publicModel, time.Now().Unix(), payload)
+}
+
+func validateGoogleOptions(payload map[string]json.RawMessage) error {
+	allowed := []string{"model", "messages", "stream", "stream_options", "temperature", "top_p", "top_k", "max_tokens", "max_completion_tokens", "seed", "n", "stop", "response_format", "reasoning_effort", "tools", "tool_choice", "user"}
+	for key, raw := range payload {
+		if !slices.Contains(allowed, key) {
+			return errors.New("不支持的请求参数")
+		}
+		switch key {
+		case "stream":
+			var value bool
+			if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
+				return errors.New("stream 必须是布尔值")
+			}
+		case "n", "top_k", "max_tokens", "max_completion_tokens", "seed":
+			var value int64
+			if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
+				return errors.New("请求参数需要整数")
+			}
+			if key != "seed" && value < 1 || key == "n" && value > 8 {
+				return errors.New("请求参数超出范围")
+			}
+		case "temperature", "top_p":
+			var value float64
+			maxValue := 2.0
+			if key == "top_p" {
+				maxValue = 1
+			}
+			if string(raw) == "null" || json.Unmarshal(raw, &value) != nil || value < 0 || value > maxValue {
+				return errors.New("请求参数超出范围")
+			}
+		case "stream_options":
+			var options map[string]json.RawMessage
+			if json.Unmarshal(raw, &options) != nil || options == nil {
+				return errors.New("stream_options 无效")
+			}
+			for name, item := range options {
+				var value bool
+				if name != "include_usage" || string(item) == "null" || json.Unmarshal(item, &value) != nil {
+					return errors.New("stream_options 无效")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // Retry only an explicit pre-generation busy/rate-limit response, never a
