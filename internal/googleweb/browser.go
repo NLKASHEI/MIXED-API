@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,8 +27,9 @@ type Page interface {
 }
 type Factory func(context.Context, string) (Page, error)
 type browserSession struct {
-	page Page
-	gate chan struct{}
+	page   Page
+	gate   chan struct{}
+	broken atomic.Bool
 }
 type Browser struct {
 	mu       sync.Mutex
@@ -53,7 +55,7 @@ func (b *Browser) Open(ctx context.Context, id string) error {
 			b.mu.Unlock()
 			return errors.New("browser closed")
 		}
-		if s := b.sessions[id]; s != nil {
+		if s := b.sessions[id]; s != nil && !s.broken.Load() {
 			b.mu.Unlock()
 			s.page.Show()
 			return nil
@@ -97,7 +99,11 @@ func (b *Browser) Open(ctx context.Context, id string) error {
 func (b *Browser) session(id string) *browserSession {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.sessions[id]
+	s := b.sessions[id]
+	if s != nil && s.broken.Load() {
+		return nil
+	}
+	return s
 }
 func (b *Browser) State(ctx context.Context, id string) State {
 	s := b.session(id)
@@ -123,6 +129,12 @@ func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Resp
 	case s.gate <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-b.ctx.Done():
+		return nil, b.ctx.Err()
+	}
+	if s.broken.Load() {
+		<-s.gate
+		return nil, errors.New("provider window must be reopened")
 	}
 	data := make([]byte, 24)
 	if _, err := rand.Read(data); err != nil {
@@ -135,8 +147,10 @@ func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Resp
 		<-s.gate
 		return nil, err
 	}
-	body := &browserBody{ctx: ctx, session: s, key: key}
-	raw, err := s.page.Eval(ctx, "window.__mixedGoogleWeb?.start('"+key+"',"+string(input)+") || false")
+	requestCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(b.ctx, cancel)
+	body := &browserBody{ctx: requestCtx, cancel: func() { stop(); cancel() }, session: s, key: key}
+	raw, err := s.page.Eval(requestCtx, "window.__mixedGoogleWeb?.start('"+key+"',"+string(input)+") || false")
 	if err != nil || string(raw) != "true" {
 		body.Close()
 		return nil, errors.New("provider session not ready")
@@ -192,6 +206,7 @@ type browserRead struct {
 }
 type browserBody struct {
 	ctx          context.Context
+	cancel       context.CancelFunc
 	session      *browserSession
 	key          string
 	pending      string
@@ -254,9 +269,15 @@ func (b *browserBody) Read(p []byte) (int, error) {
 }
 func (b *browserBody) Close() error {
 	b.once.Do(func() {
+		b.cancel()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		b.session.page.Eval(ctx, "window.__mixedGoogleWeb?.cancel('"+b.key+"')")
+		if _, err := b.session.page.Eval(ctx, "window.__mixedGoogleWeb?.cancel('"+b.key+"')"); err != nil {
+			// Do not leave an unbounded provider fetch alive when its UI cannot
+			// process the abort. A subsequent explicit Open creates a new page.
+			b.session.broken.Store(true)
+			b.session.page.Close()
+		}
 		<-b.session.gate
 	})
 	return nil

@@ -30,3 +30,5 @@ OpenCode v58 / v59 / 当前主分支和新增 AIS 来源的核对结果见 [2026
 AIS/无头V当前公共接口为 Chat Completions；其他协议明确返回 501。文本、base64 图片、函数工具、思考、结构化输出及流式帧已有协议转换测试。Playground 的强制工具选择、音频/TTS与部分高级工具未完成；Build 对已在目录识别的免费模型使用增量 RPC，对未知/订阅模型使用单次 RPC 后输出 SSE。不能把 SSE 形式当成所有模型均可逐字输出的证明。
 
 本次新 Java 模块需以对应提交的 Android CI 为准；真实设备尚未测试。账号刷新、跨协议覆盖、个人账号生成、干净 Windows、APK真机及正式发布资产仍是未关闭的交付条件。用户明确暂不登录，继续独立开发，不代登录、不把该项写成通过。
+
+最新已验证检查点：`4698324`，Actions [39008922441](https://github.com/NLKASHEI/MIXED-API/actions/runs/39008922441) 的 Windows 构建、Go race/vet、UI 回归、Android 构建/单元测试/Lint 全部通过。构建产物存在于 Actions，尚未创建新 Release。本机新版 EXE 工作台与后台已实际打开，直接子进程为内嵌 WebView2；该观察不是完整进程追踪或干净系统验收。

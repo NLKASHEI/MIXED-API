@@ -12,10 +12,11 @@ import (
 )
 
 type testPage struct {
-	mu        sync.Mutex
-	cancelled int
-	polls     int
-	closed    bool
+	mu           sync.Mutex
+	cancelled    int
+	polls        int
+	closed       bool
+	refuseCancel bool
 }
 
 func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error) {
@@ -25,6 +26,9 @@ func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error)
 		return json.RawMessage(`null`), nil
 	}
 	if strings.Contains(js, "cancel(") {
+		if p.refuseCancel {
+			return nil, errors.New("window unresponsive")
+		}
 		p.cancelled++
 		return json.RawMessage(`true`), nil
 	}
@@ -37,6 +41,36 @@ func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error)
 		return json.RawMessage(`{"status":200,"chunk":"aGk=","done":true}`), nil
 	}
 	return nil, errors.New("extra poll")
+}
+
+func TestFailedCancellationClosesPageAndAllowsExplicitReopen(t *testing.T) {
+	p := &testPage{refuseCancel: true}
+	created := 0
+	b := New(func(context.Context, string) (Page, error) {
+		created++
+		if created == 1 {
+			return p, nil
+		}
+		return &testPage{}, nil
+	})
+	defer b.Close()
+	if err := b.Open(context.Background(), "aps"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.Send(context.Background(), "aps", Operation{Kind: "aps", Model: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if !p.closed {
+		t.Fatal("failed cancellation left official fetch alive")
+	}
+	if state := b.State(context.Background(), "aps"); state.Status != "none" {
+		t.Fatalf("broken session reused: %+v", state)
+	}
+	if err = b.Open(context.Background(), "aps"); err != nil || created != 2 {
+		t.Fatalf("reopen: %d %v", created, err)
+	}
 }
 func (*testPage) Show()          {}
 func (p *testPage) Close() error { p.mu.Lock(); defer p.mu.Unlock(); p.closed = true; return nil }

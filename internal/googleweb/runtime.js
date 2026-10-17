@@ -29,13 +29,28 @@
       if(aps && u.origin===graphHost && u.pathname===graphPath)return 'aps';
     }catch(_){}return '';
   }
+  function graphRows(text) {
+    text=text.trim();if(text.startsWith('['))return JSON.parse(text);
+    const rows=[];let start=-1,depth=0,quoted=false,escaped=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i];
+      if(start<0){if(/\s/.test(c))continue;if(c!=='{')throw Error('invalid GraphQL root');start=i}
+      if(quoted){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')quoted=false;continue}
+      if(c==='"')quoted=true;else if(c==='{'||c==='[')depth++;else if(c==='}'||c===']')depth--;
+      if(depth===0){rows.push(JSON.parse(text.slice(start,i+1)));start=-1}
+    }
+    if(start>=0||!rows.length)throw Error('truncated GraphQL root');return rows;
+  }
   function observe(kind,status,text) {
     if(!kind)return;
     if(status===401||status===403){observedSuccess=false;return}
     if(status!==200 || text.length>8*1024*1024)return;
     try {
-      const root=parseSparse(text), finished=g=>g&&!g.error&&g.candidates?.some(c=>c.finishReason&&c.finishReason!=='FINISH_REASON_UNSPECIFIED');
-      if(kind==='aps') observedSuccess=Array.isArray(root)&&root.some(row=>row.results?.some(r=>!r.errors?.length&&finished(r.data?.ui?.streamGenerateContentAnonymous)));
+      const root=kind==='aps'?graphRows(text):parseSparse(text), finished=g=>g&&!g.error&&g.candidates?.some(c=>c.finishReason&&c.finishReason!=='FINISH_REASON_UNSPECIFIED');
+      if(kind==='aps') {
+        const valid=Array.isArray(root)&&root.length&&root.every(row=>!row.errors?.length&&Array.isArray(row.results)&&row.results.every(r=>!r.errors?.length));
+        observedSuccess=Boolean(valid&&root.some(row=>row.results.some(r=>{const data=r.data?.ui?.streamGenerateContentAnonymous;return (Array.isArray(data)?data:[data]).some(finished)})));
+      }
       else if(kind==='GenerateContent') observedSuccess=Array.isArray(root?.[0])&&root[0].some(f=>f?.[0]?.some(c=>c?.[1]>0))&&root.slice(1).every(s=>!s?.[0]);
       else {const frames=kind==='ProxyUnaryCall'?[root]:root?.[0];observedSuccess=Array.isArray(frames)&&frames.some(f=>finished(JSON.parse(typeof f?.[0]==='string'?f[0]:atob(f?.[2]||''))))&&(kind==='ProxyUnaryCall'||root.slice(1).every(s=>!s?.[0]))}
     }catch(_){observedSuccess=false}
