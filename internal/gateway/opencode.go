@@ -10,38 +10,45 @@ import (
 	"time"
 )
 
-func (s *Server) openCodeProtocol(ctx context.Context, model string) (string, error) {
+func (s *Server) openCodeModelRoute(ctx context.Context, model string) (openCodeTarget, error) {
+	if target, ok := openCodePinned[model]; ok {
+		return target, nil
+	}
 	s.protocolMu.Lock()
 	defer s.protocolMu.Unlock()
 	if time.Since(s.protocolsAt) < 5*time.Minute {
 		if protocol, ok := s.opencodeProtocols[model]; ok {
 			return protocol, nil
 		}
+		return openCodeTarget{}, errors.New("目录未声明此模型的可用协议")
 	}
 	probe, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(probe, "GET", "https://models.opencode.ai/api.json", nil)
+	req.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", errors.New("无法读取 OpenCode 模型协议目录")
+		return openCodeTarget{}, errors.New("无法读取 OpenCode 模型协议目录")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", errors.New("OpenCode 模型协议目录暂不可用")
+		return openCodeTarget{}, errors.New("OpenCode 模型协议目录暂不可用")
 	}
 	var providers map[string]struct {
 		NPM    string `json:"npm"`
+		API    string `json:"api"`
 		Models map[string]struct {
 			ID       string `json:"id"`
 			Provider *struct {
 				NPM string `json:"npm"`
+				API string `json:"api"`
 			} `json:"provider"`
 		} `json:"models"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&providers) != nil {
-		return "", errors.New("OpenCode 协议目录格式无效")
+		return openCodeTarget{}, errors.New("OpenCode 协议目录格式无效")
 	}
-	protocols := map[string]string{}
+	protocols := map[string]openCodeTarget{}
 	for id, p := range providers {
 		if id != "opencode" {
 			continue
@@ -50,25 +57,26 @@ func (s *Server) openCodeProtocol(ctx context.Context, model string) (string, er
 			if m.ID != "" {
 				name = m.ID
 			}
-			sdk := p.NPM
-			if m.Provider != nil && m.Provider.NPM != "" {
-				sdk = m.Provider.NPM
+			sdk, api := p.NPM, p.API
+			if m.Provider != nil {
+				if m.Provider.NPM != "" {
+					sdk = m.Provider.NPM
+				}
+				if m.Provider.API != "" {
+					api = m.Provider.API
+				}
 			}
-			switch sdk {
-			case "@ai-sdk/openai":
-				protocols[name] = "responses"
-			case "@ai-sdk/openai-compatible":
-				protocols[name] = "chat/completions"
-			case "@ai-sdk/anthropic":
-				protocols[name] = "messages"
+			if target, err := targetForSDK(sdk, api); err == nil {
+				protocols[name] = target
 			}
+
 		}
 	}
 	s.opencodeProtocols, s.protocolsAt = protocols, time.Now()
 	if protocol, ok := protocols[model]; ok {
 		return protocol, nil
 	}
-	return "", errors.New("目录未声明此模型的可用协议")
+	return openCodeTarget{}, errors.New("目录未声明此模型的可用协议")
 }
 
 func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage) {
@@ -76,17 +84,33 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		jsonError(w, 400, "OpenCode 内置核心必须连接官方端点")
 		return
 	}
-	protocol, err := s.openCodeProtocol(r.Context(), model)
+	target, err := s.openCodeModelRoute(r.Context(), model)
 	if err != nil {
 		jsonError(w, 503, err.Error())
+		return
+	}
+	protocol := target.Protocol
+	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion}
+	if b.ProviderKey != "" {
+		headers["Authorization"] = "Bearer " + b.ProviderKey
+	}
+	if _, ok := openCodePinned[model]; ok {
+		w.Header().Set("X-Mixed-Protocol-Catalog", "models.dev/f4088b386739")
+	}
+	if protocol == "gemini" {
+		s.serveGeminiHTTP(w, r, b, publicModel, model, payload, target.Base+"/models/", headers)
 		return
 	}
 	requested := strings.TrimPrefix(r.URL.Path, "/v1/")
 	body := payloadObject(payload)
 	body["model"] = model
-	converted := requested == "chat/completions" && protocol == "responses"
+	converted := requested == "chat/completions" && (protocol == "responses" || protocol == "messages")
 	if converted {
-		body, err = chatToResponses(body)
+		if protocol == "responses" {
+			body, err = chatToResponses(body)
+		} else {
+			body, err = chatToAnthropic(body)
+		}
 		if err != nil {
 			jsonError(w, 400, err.Error())
 			return
@@ -98,11 +122,13 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		jsonError(w, 501, "此模型当前要求 "+protocol+" 协议；该转换尚未完成")
 		return
 	}
-	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion}
+	if protocol == "messages" {
+		headers["Anthropic-Version"] = "2023-06-01"
+	}
 	if b.ProviderKey != "" {
 		headers["Authorization"] = "Bearer " + b.ProviderKey
 	}
-	resp, err := providerJSON(s.client, r, builtinBase("opencode")+"/"+protocol, body, headers)
+	resp, err := providerJSON(s.client, r, target.Base+"/"+protocol, body, headers)
 	if err != nil {
 		jsonError(w, 502, "无法连接 OpenCode 服务")
 		return
@@ -119,10 +145,23 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 			Include bool `json:"include_usage"`
 		}
 		json.Unmarshal(payload["stream_options"], &options)
-		streamResponsesAsChat(w, r, resp.Body, publicModel, options.Include)
+		if protocol == "responses" {
+			streamResponsesAsChat(w, r, resp.Body, publicModel, options.Include)
+		} else {
+			streamAnthropicAsChat(w, r, resp.Body, publicModel, options.Include)
+		}
 		return
 	}
 	if converted {
+		if protocol == "messages" {
+			var result anthropicMessage
+			if json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&result) != nil || result.Type != "message" || result.Stop == "" {
+				jsonError(w, 502, "OpenCode 返回无效生成结果")
+				return
+			}
+			jsonResult(w, 200, anthropicToChat(result, publicModel))
+			return
+		}
 		var result map[string]any
 		if json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&result) != nil || result["status"] == "failed" {
 			jsonError(w, 502, "OpenCode 返回无效生成结果")

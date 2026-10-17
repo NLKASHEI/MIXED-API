@@ -7,7 +7,7 @@
 | Windows 独立窗口 | Go + WebView2；普通启动不再打开外部浏览器 | 本机实际窗口显示；新的 GUI EXE 已核验 PE 子系统 |
 | 离线渲染资源 | 固定版 155.0.4283.60 随 EXE 嵌入，首次本地展开并逐文件校验 | 本机包哈希、微软签名、实际展开与窗口启动；尚无干净虚拟机验收 |
 | 快速V | Go 直接调用 Express REST，内置消息、工具、思考与流转换 | 黑盒模拟上游；未验证个人 Key 推理 |
-| OpenCode | Go 直接请求；从模型目录读取原生协议，支持 Chat→Responses 的完整/流式转换 | 黑盒模拟上游、并行工具与思考；其他跨协议转换仍待补全 |
+| OpenCode | Go 直接请求当前官方端点；内置审查过的协议目录，支持 Chat→Responses、Chat→Anthropic、Chat→Gemini 的完整/流式转换 | 黑盒模拟上游、并行工具与思考、真实 HTTP 取消、错误不回退；其他反向协议转换待补全 |
 | WorkBuddy | 原生授权轮询与 HTTP，非流式客户端由 SSE 收集 | 黑盒模拟授权/推理；实际账号、刷新与更多协议待验证/补全 |
 | Codex | 原生设备码授权、授权文件导入、Responses HTTP；Chat/Responses 输出 | 黑盒模拟授权/推理；实际账号、刷新待验证/补全 |
 | 无头V | 尚未完成原生请求链 | 继续核对官方与本地同源能力；未启动本地改版 EXE |
@@ -22,3 +22,5 @@ Android 保持纯 Java HTTP/电脑桥接。本轮 Go 内置来源不等同于已
 Windows 发布链需要 `-tags bundled`；开发时未带该标签的构建仅可使用已安装的 WebView2，不能作为完整交付包。正常安装与便携启动直接使用 EXE，局域网快捷方式传 `--lan`，发布包不附 CMD 启动器。
 
 当前验证：Go tests、vet、共享页面检查及 Playwright UI 回归通过。个人账号、Android 真机、干净 Windows 与最终发布资产仍待完成。本记录不关闭 Issue #3，不触发功能 Release。
+
+OpenCode v58 / v59 / 当前主分支和新增 AIS 来源的核对结果见 [2026-10-17 上游核对](upstream-audit-2026-10-17.md)。本轮双轴审查及已修复问题见 [审查记录](review-integrated-core.md)。

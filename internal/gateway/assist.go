@@ -143,22 +143,7 @@ func (s *Server) loginInstalled(id string) error {
 }
 func toolAvailable(tool string) bool { _, err := exec.LookPath(tool); return err == nil }
 func (s *Server) assistStatus() any {
-	info := map[string]any{"platform": runtime.GOOS, "native_codex_supported": runtime.GOOS == "windows", "tools": map[string]bool{"git": toolAvailable("git"), "node": toolAvailable("node"), "codex": toolAvailable("codex"), "npm": toolAvailable("npm"), "python": toolAvailable("python"), "winget": toolAvailable("winget")}}
-	for id, pack := range binaryUpstreams {
-		dir, err := s.binaryDir(id)
-		if err == nil {
-			_, err = findManagedExe(dir, pack.executable)
-			info[id+"_installed"] = err == nil
-		}
-	}
-	for id, pack := range managedSources {
-		dir, err := s.sourceDir(id)
-		if err == nil {
-			_, err = os.Stat(filepath.Join(dir, pack.readyFile))
-			info[id+"_installed"] = err == nil
-		}
-	}
-	return info
+	return map[string]any{"platform": runtime.GOOS, "native_codex_supported": true, "builtin_backends": []string{"vertex", "codex", "opencode", "workbuddy"}}
 }
 
 func (s *Server) installCodex() error {

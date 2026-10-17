@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -56,6 +57,20 @@ func rendererPath() (string, error) {
 	target := filepath.Join(cache, manifest.Root)
 	if verifyRenderer(target, manifest) == nil {
 		return target, nil
+	}
+	// A previous launch may have repaired a corrupt or still-in-use canonical
+	// cache. Reuse only an independently verified repair.
+	entries, err := os.ReadDir(cache)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), manifest.Root+"-repaired-") {
+			candidate := filepath.Join(cache, entry.Name())
+			if verifyRenderer(candidate, manifest) == nil {
+				return candidate, nil
+			}
+		}
 	}
 	cab, err := rendererBundle.ReadFile("resources/webview2.cab")
 	if err != nil {

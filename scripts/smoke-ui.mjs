@@ -80,6 +80,18 @@ try {
   assert.equal(await page.locator('#admin-enabled').textContent(),'1');
   assert.equal(await page.locator('#admin-engines tr').count(),6);
   assert.equal(await page.locator('#admin-engines').getByText(/http:\/\//).count(),0,'internal addresses are exposed in the admin list');
+  // Native lifecycle is real, including persistence; no child process or
+  // upstream network request is needed to enable/disable OpenCode.
+  const prepared=await fetch(base+'/api/assist/opencode/prepare',{method:'POST',headers:{Authorization:'Bearer ui-test-admin'}});assert.equal(prepared.status,200);
+  await page.locator('#refresh-admin').click();
+  const nativeRow=page.locator('#admin-engines tr').filter({hasText:'OpenCode'});
+  await nativeRow.getByRole('button',{name:'启用',exact:true}).click();
+  await nativeRow.getByRole('button',{name:'停用',exact:true}).waitFor();
+  assert.equal(await page.locator('#admin-running').textContent(),'1');
+  await nativeRow.getByRole('button',{name:'停用',exact:true}).click();
+  await nativeRow.getByRole('button',{name:'启用',exact:true}).waitFor();
+  const savedNative=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
+  const savedOpenCode=savedNative.backends.find(b=>b.id==='opencode');assert.equal(savedOpenCode.kind,'builtin');assert.equal(savedOpenCode.enabled,false);
   if(process.env.MIXED_LOCAL_ENGINE_PATH){await page.locator('#load-engine-settings').click();await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();}
   await page.screenshot({path:join(output,'console-admin.png'),fullPage:true});
   await page.locator('[data-page="home"]').click();

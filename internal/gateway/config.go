@@ -49,8 +49,8 @@ func Defaults() Config {
 		{ID: "codex", Name: "Codex", Kind: "builtin", URL: builtinBase("codex"), Auth: "none"},
 		{ID: "opencode", Name: "OpenCode", Kind: "builtin", URL: builtinBase("opencode"), Auth: "none"},
 		{ID: "workbuddy", Name: "WorkBuddy", Kind: "builtin", URL: builtinBase("workbuddy"), Auth: "none"},
-		{ID: "aps", Name: "APS2api", URL: "http://127.0.0.1:2156/v1", Auth: "bearer"},
-		{ID: "aistudio", Name: "AI Studio Build", URL: "http://127.0.0.1:7860/v1", Auth: "bearer"},
+		{ID: "aps", Name: "无头V", URL: "http://127.0.0.1:2156/v1", Auth: "bearer"},
+		{ID: "aistudio", Name: "AIS", URL: "http://127.0.0.1:7860/v1", Auth: "bearer"},
 	}}
 }
 func newKey(prefix string) string {
@@ -80,7 +80,7 @@ func Validate(c Config) error {
 			return fmt.Errorf("duplicate backend id %q", b.ID)
 		}
 		ids[b.ID] = true
-		if b.Kind != "" && b.Kind != "http" && !(b.Kind == "codex_cli" && b.ID == "codex") && !(b.Kind == "builtin" && knownBuiltin(b.ID)) {
+		if b.Kind != "" && b.Kind != "http" && !(b.Kind == "builtin" && knownBuiltin(b.ID)) {
 			return fmt.Errorf("invalid backend kind for %s", b.ID)
 		}
 		if b.Auth != "bearer" && b.Auth != "x-api-key" && b.Auth != "none" {
@@ -122,12 +122,41 @@ func LoadOrCreate(path string) (Config, error) {
 	if e := json.Unmarshal(data, &c); e != nil {
 		return c, e
 	}
-	// Keep existing user keys/config, but migrate the old ST-only Codex default.
+	// Keep the original configuration for recovery. An old CLI binding cannot
+	// silently launch a program on upgrade; the native source starts disabled
+	// until the user completes its authorization flow.
+	migrated := false
 	for i := range c.Backends {
 		b := &c.Backends[i]
-		if b.ID == "codex" && b.Kind == "" && b.URL == "http://127.0.0.1:8901/codex/v1" {
-			b.Kind = "codex_cli"
-			b.Name = "Codex CLI (无需 SillyTavern)"
+		if b.ID == "opencode" && b.Kind == "builtin" && b.URL == "https://opencode.ai/zen/v1" {
+			b.URL = builtinBase("opencode")
+			migrated = true
+		}
+		if b.ID == "codex" && (b.Kind == "codex_cli" || b.Kind == "" && b.URL == "http://127.0.0.1:8901/codex/v1") {
+			b.Kind, b.Name, b.URL, b.Auth = "builtin", "Codex", builtinBase("codex"), "none"
+			b.Enabled, b.Key, b.Command, b.Workdir = false, "", "", ""
+			migrated = true
+		}
+	}
+	if err := Validate(c); err != nil {
+		return c, err
+	}
+	if migrated {
+		backup, err := os.OpenFile(path+".before-integrated", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err == nil {
+			_, err = backup.Write(data)
+			closeErr := backup.Close()
+			if err != nil {
+				return c, err
+			}
+			if closeErr != nil {
+				return c, closeErr
+			}
+		} else if !os.IsExist(err) {
+			return c, err
+		}
+		if err := Save(path, c); err != nil {
+			return c, err
 		}
 	}
 	return c, Validate(c)

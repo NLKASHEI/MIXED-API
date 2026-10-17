@@ -39,6 +39,7 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 		if b.ProviderKey != "" {
 			r.Header.Set("Authorization", "Bearer "+b.ProviderKey)
 		}
+		r.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
 		resp, err := s.client.Do(r)
 		if err != nil {
 			return nil, errors.New("无法连接 OpenCode 模型目录")
@@ -203,7 +204,7 @@ func builtinBase(id string) string {
 	case "vertex":
 		return "https://aiplatform.googleapis.com"
 	case "opencode":
-		return "https://opencode.ai/zen/v1"
+		return "https://opencode.ai/inference/v1"
 	case "codex":
 		return "https://chatgpt.com/backend-api/codex"
 	case "workbuddy":

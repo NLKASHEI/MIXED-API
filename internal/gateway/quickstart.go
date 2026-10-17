@@ -20,6 +20,10 @@ import (
 )
 
 func (s *Server) enableBackend(id string) error {
+	return s.setBackendEnabled(id, true)
+}
+
+func (s *Server) setBackendEnabled(id string, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.cfg
@@ -27,7 +31,7 @@ func (s *Server) enableBackend(id string) error {
 	found := false
 	for i := range next.Backends {
 		if next.Backends[i].ID == id {
-			next.Backends[i].Enabled = true
+			next.Backends[i].Enabled = enabled
 			found = true
 			break
 		}

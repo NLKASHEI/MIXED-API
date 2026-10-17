@@ -1,10 +1,8 @@
 package gateway
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -53,12 +51,15 @@ type geminiResult struct {
 }
 
 func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return nil, nil
+	}
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
+		if text == "" {
+			return nil, nil
+		}
 		return []geminiPart{{Text: text}}, nil
-	}
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil, nil
 	}
 	var items []struct {
 		Type  string `json:"type"`
@@ -74,7 +75,9 @@ func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
 	for _, item := range items {
 		switch item.Type {
 		case "text":
-			parts = append(parts, geminiPart{Text: item.Text})
+			if item.Text != "" {
+				parts = append(parts, geminiPart{Text: item.Text})
+			}
 		case "image_url":
 			meta, data, ok := strings.Cut(item.Image.URL, ",")
 			if !ok || !strings.HasPrefix(meta, "data:image/") || !strings.HasSuffix(meta, ";base64") {
@@ -184,6 +187,15 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 		out["systemInstruction"] = geminiContent{Parts: system}
 	}
 	config := map[string]any{}
+	if strings.Contains(model, "-image") || strings.Contains(model, "nano-banana") {
+		config["responseModalities"] = []string{"TEXT", "IMAGE"}
+	}
+	if raw, ok := payload["n"]; ok {
+		var n int
+		if json.Unmarshal(raw, &n) != nil || n < 1 {
+			return nil, errors.New("n 必须是正整数")
+		}
+	}
 	for input, output := range map[string]string{"temperature": "temperature", "top_p": "topP", "top_k": "topK", "max_tokens": "maxOutputTokens", "max_completion_tokens": "maxOutputTokens", "n": "candidateCount", "seed": "seed"} {
 		if v, ok := payload[input]; ok {
 			config[output] = v
@@ -236,19 +248,43 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 			return nil, errors.New("tools 无效")
 		}
 	}
-	declarations := []json.RawMessage{}
+	declarations := []map[string]any{}
 	for _, tool := range tools {
 		if tool.Type != "function" {
 			return nil, errors.New("仅支持 function 工具")
 		}
-		declarations = append(declarations, tool.Function)
+		var function map[string]any
+		if json.Unmarshal(tool.Function, &function) != nil || function["name"] == nil {
+			return nil, errors.New("function 声明无效")
+		}
+		declaration := map[string]any{"name": function["name"]}
+		for _, field := range []string{"description", "parameters"} {
+			if value, ok := function[field]; ok {
+				declaration[field] = value
+			}
+		}
+		declarations = append(declarations, declaration)
 	}
 	allTools := []any{}
 	if len(declarations) > 0 {
 		allTools = append(allTools, map[string]any{"functionDeclarations": declarations})
 	}
 	var choice string
-	json.Unmarshal(payload["tool_choice"], &choice)
+	var allowed []string
+	if raw, ok := payload["tool_choice"]; ok {
+		if json.Unmarshal(raw, &choice) != nil {
+			var named struct {
+				Type     string `json:"type"`
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			}
+			if json.Unmarshal(raw, &named) != nil || named.Type != "function" || named.Function.Name == "" {
+				return nil, errors.New("tool_choice 无效")
+			}
+			choice, allowed = "required", []string{named.Function.Name}
+		}
+	}
 	if strings.HasSuffix(model, "-search") && choice != "none" {
 		allTools = append(allTools, map[string]any{"googleSearch": map[string]any{}})
 	}
@@ -260,7 +296,11 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 		if mode == "" {
 			return nil, errors.New("tool_choice 不支持")
 		}
-		out["toolConfig"] = map[string]any{"functionCallingConfig": map[string]any{"mode": mode}}
+		config := map[string]any{"mode": mode}
+		if len(allowed) > 0 {
+			config["allowedFunctionNames"] = allowed
+		}
+		out["toolConfig"] = map[string]any{"functionCallingConfig": config}
 	}
 	return out, nil
 }
@@ -276,6 +316,15 @@ func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend,
 	}
 	if strings.TrimSpace(b.ProviderKey) == "" {
 		jsonError(w, 401, "请先填写本人的 Express API Key")
+		return
+	}
+	s.serveGeminiHTTP(w, r, b, publicModel, model, payload, builtinBase("vertex")+"/v1/publishers/google/models/", map[string]string{"x-goog-api-key": b.ProviderKey})
+}
+
+// Shared Gemini wire implementation, also used for OpenCode's Google family.
+func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage, modelBase string, headers map[string]string) {
+	if r.URL.Path != "/v1/chat/completions" {
+		jsonError(w, 501, "该模型当前支持 chat/completions")
 		return
 	}
 	body, err := expressPayload(payload, model)
@@ -294,10 +343,10 @@ func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend,
 	if stream {
 		action = "streamGenerateContent?alt=sse"
 	}
-	endpoint := builtinBase("vertex") + "/v1/publishers/google/models/" + url.PathEscape(baseModel) + ":" + action
-	resp, err := providerJSON(s.client, r, endpoint, body, map[string]string{"x-goog-api-key": b.ProviderKey})
+	endpoint := modelBase + url.PathEscape(baseModel) + ":" + action
+	resp, err := providerJSON(s.client, r, endpoint, body, headers)
 	if err != nil {
-		jsonError(w, 502, "无法连接 Google Express 服务")
+		jsonError(w, 502, "无法连接模型服务")
 		return
 	}
 	defer resp.Body.Close()
@@ -357,6 +406,9 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 	var text, thought strings.Builder
 	calls := []any{}
 	for _, p := range parts {
+		if p.InlineData != nil && strings.HasPrefix(p.InlineData.MIME, "image/") {
+			text.WriteString("\n\n![image](data:" + p.InlineData.MIME + ";base64," + p.InlineData.Data + ")")
+		}
 		if p.Thought {
 			thought.WriteString(p.Text)
 		} else {
@@ -384,83 +436,52 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 }
 
 func (s *Server) streamExpress(w http.ResponseWriter, r *http.Request, body io.Reader, id, model string, created int64, payload map[string]json.RawMessage) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.WriteHeader(200)
-	send := func(v any) bool {
-		b, _ := json.Marshal(v)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
-			return false
-		}
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		return true
+	out := newSSEOutput(w, model)
+	out.id, out.created = id, created
+	offsets := map[int]int{}
+	tools := map[int]bool{}
+	finished := map[int]bool{}
+	expected := 1
+	if raw, ok := payload["n"]; ok {
+		json.Unmarshal(raw, &expected)
 	}
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 4096), maxBody)
-	var event strings.Builder
-	toolOffsets := map[int]int{}
-	toolSeen := map[int]bool{}
-	finished := false
 	var last geminiResult
-	process := func() bool {
-		if event.Len() == 0 {
-			return true
-		}
+	err := readSSE(r.Context(), body, func(data []byte) error {
 		var result geminiResult
-		data := event.String()
-		event.Reset()
-		if json.Unmarshal([]byte(data), &result) != nil || len(result.Error) > 0 {
-			send(map[string]any{"error": map[string]string{"message": "Google 流响应无效或中断"}})
-			return false
+		if json.Unmarshal(data, &result) != nil || len(result.Error) > 0 {
+			return errors.New("invalid Google event")
 		}
 		if result.Usage.Total > 0 {
 			last = result
 		}
 		choices := []any{}
 		for _, candidate := range result.Candidates {
-			message := geminiMessage(candidate.Content.Parts, true, toolOffsets[candidate.Index])
+			if candidate.Index < 0 || candidate.Index >= expected {
+				return errors.New("unexpected candidate")
+			}
+			message := geminiMessage(candidate.Content.Parts, true, offsets[candidate.Index])
 			for _, p := range candidate.Content.Parts {
 				if p.Call != nil {
-					toolOffsets[candidate.Index]++
-					toolSeen[candidate.Index] = true
+					offsets[candidate.Index]++
+					tools[candidate.Index] = true
 				}
 			}
-			reason := geminiFinish(candidate.Finish, toolSeen[candidate.Index])
+			reason := geminiFinish(candidate.Finish, tools[candidate.Index])
 			if reason != nil {
-				finished = true
+				finished[candidate.Index] = true
 			}
 			choices = append(choices, map[string]any{"index": candidate.Index, "delta": message, "finish_reason": reason})
 		}
 		if len(choices) > 0 {
-			return send(map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": choices})
+			return out.send(map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": choices})
 		}
-		return true
-	}
-	for scanner.Scan() {
-		if r.Context().Err() != nil {
-			return
-		}
-		line := scanner.Text()
-		if line == "" {
-			if !process() {
-				return
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			if event.Len() > 0 {
-				event.WriteByte('\n')
-			}
-			event.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
-		}
-	}
-	if !process() {
+		return nil
+	})
+	if r.Context().Err() != nil {
 		return
 	}
-	if scanner.Err() != nil || !finished {
-		send(map[string]any{"error": map[string]string{"message": "Google 流响应在完成前中断"}})
+	if err != nil || len(finished) != expected {
+		_ = out.send(map[string]any{"error": map[string]string{"message": "Google 流响应在完成前中断"}})
 		return
 	}
 	var options struct {
@@ -468,12 +489,9 @@ func (s *Server) streamExpress(w http.ResponseWriter, r *http.Request, body io.R
 	}
 	json.Unmarshal(payload["stream_options"], &options)
 	if options.Include {
-		if !send(map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []any{}, "usage": geminiUsage(last)}) {
+		if err = out.chunk(nil, nil, geminiUsage(last)); err != nil {
 			return
 		}
 	}
-	_, _ = io.WriteString(w, "data: [DONE]\n\n")
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
+	out.done()
 }

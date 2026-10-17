@@ -36,7 +36,7 @@ type Server struct {
 	logsMu            sync.Mutex
 	logs              []RequestLog
 	protocolMu        sync.Mutex
-	opencodeProtocols map[string]string
+	opencodeProtocols map[string]openCodeTarget
 	protocolsAt       time.Time
 	accountMu         sync.Mutex
 	logins            map[string]*loginAttempt
@@ -245,11 +245,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 		return
 	}
 	if b.Kind == "codex_cli" {
-		if r.URL.Path != "/v1/chat/completions" {
-			jsonError(w, 501, "Codex CLI supports /v1/chat/completions only")
-			return
-		}
-		s.forwardCodex(w, r, model, upstreamModel, payload)
+		jsonError(w, 410, "旧 CLI 接入已停用，请使用内置 Codex 重新授权")
 		return
 	}
 	payload["model"], _ = json.Marshal(upstreamModel)
@@ -415,6 +411,24 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 			jsonError(w, 404, "Unknown backend")
 			return
 		}
+		if back.Kind == "builtin" {
+			var err error
+			switch action {
+			case "start":
+				err = s.activateBackend(r.Context(), id)
+			case "stop":
+				err = s.setBackendEnabled(id, false)
+			default:
+				jsonError(w, 404, "Unknown action")
+				return
+			}
+			if err != nil {
+				jsonError(w, 400, err.Error())
+				return
+			}
+			jsonResult(w, 200, map[string]bool{"ok": true})
+			return
+		}
 		if action == "start" {
 			if e := s.startProcess(*back); e != nil {
 				jsonError(w, 400, e.Error())
@@ -482,66 +496,4 @@ func (s *Server) stopProcess(id string) {
 func loopback(addr string) bool {
 	host, _, e := net.SplitHostPort(addr)
 	return e == nil && (host == "127.0.0.1" || host == "::1" || host == "localhost")
-}
-
-func (s *Server) forwardCodex(w http.ResponseWriter, r *http.Request, publicModel, model string, payload map[string]json.RawMessage) {
-	ctx, cancel := context.WithTimeout(r.Context(), 14*time.Minute)
-	defer cancel()
-	cli, err := openCodex(ctx)
-	if err != nil {
-		jsonError(w, 502, err.Error())
-		return
-	}
-	defer cli.close()
-	var stream bool
-	_ = json.Unmarshal(payload["stream"], &stream)
-	var effort string
-	_ = json.Unmarshal(payload["reasoning_effort"], &effort)
-	id := fmt.Sprintf("chatcmpl-mixed-%d", time.Now().UnixNano())
-	created := time.Now().Unix()
-	started := false
-	send := func(delta string) error {
-		if !started {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("X-Accel-Buffering", "no")
-			w.WriteHeader(200)
-			started = true
-		}
-		chunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": delta}, "finish_reason": nil}}}
-		b, _ := json.Marshal(chunk)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
-			return err
-		}
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		return nil
-	}
-	var emit func(string) error
-	if stream {
-		emit = send
-	}
-	content, err := cli.chat(ctx, model, payload["messages"], effort, emit)
-	if err != nil {
-		if !started {
-			jsonError(w, 502, err.Error())
-		} else {
-			msg, _ := json.Marshal(map[string]any{"error": map[string]string{"message": err.Error(), "type": "codex_error"}})
-			fmt.Fprintf(w, "data: %s\n\n", msg)
-			fmt.Fprint(w, "data: [DONE]\n\n")
-		}
-		return
-	}
-	if stream {
-		if !started {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(200)
-		}
-		last := map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}}
-		b, _ := json.Marshal(last)
-		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b)
-		return
-	}
-	jsonResult(w, 200, map[string]any{"id": id, "object": "chat.completion", "created": created, "model": publicModel, "choices": []any{map[string]any{"index": 0, "message": map[string]string{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
 }

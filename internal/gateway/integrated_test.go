@@ -228,7 +228,7 @@ func TestIntegratedOpenCodeUsesNativeResponsesAndPreservesReasoning(t *testing.T
 			}
 		} else {
 			inference++
-			if r.URL.String() != "https://opencode.ai/zen/v1/responses" || r.Header.Get("Authorization") != "Bearer zen-secret" {
+			if r.URL.String() != "https://opencode.ai/inference/openai/v1/responses" || r.Header.Get("Authorization") != "Bearer zen-secret" {
 				t.Errorf("wrong native endpoint/auth")
 			}
 			if r.Header.Get("x-opencode-session-id") != "" {

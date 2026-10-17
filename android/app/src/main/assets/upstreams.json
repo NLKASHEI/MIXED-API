@@ -1,5 +1,5 @@
 {
-  "checked_on": "2026-10-16",
+  "checked_on": "2026-10-17",
   "sources": [
     {
       "id": "codex",
@@ -13,25 +13,20 @@
       "id": "vertex",
       "repo": "bad-woman/vertex2openai",
       "revision": "53a45b63bfef39e783edf8ea9c1e06800fc17496",
-      "entry": "app/main.py",
       "license": "MIT",
       "note": "Express REST 已内置；无需 Python。使用本人的 Express API Key。"
     },
     {
       "id": "opencode",
-      "repo": "jasonxu114514/opencode2api",
-      "revision": "v1.4.0",
-      "url": "https://github.com/jasonxu114514/opencode2api/releases/download/v1.4.0/opencode2api_v1.4.0_windows_amd64.zip",
-      "sha256": "f63e1049aa9aa489c5032cdd5f007088c192e4ed5d08afca0122ebdc0de41bab",
-      "entry": "opencode2api.exe",
-      "license": "GPL-3.0",
-      "note": "融合 OpenCode v58 手机包的协议转换思路，原生 Go 请求；服务方身份限制不作绕过。"
+      "repo": "zkygwxf-bot/opencode-proxy",
+      "revision": "9c845e3b633e4f5d67e05ce1b0dae3d02ca96c13",
+      "license": "MIT",
+      "note": "同一 OpenCode 来源融合 v58 协议能力，已核对 v59 测试版与主分支；Go 内置 Chat、Responses、Anthropic 适配，不运行 Node 或独立代理。"
     },
     {
       "id": "workbuddy",
-      "repo": "sitingge/workboddy-proxy",
-      "revision": "676b64d21a1ff7ea7ca6b4def5850ee61e97a06f",
-      "entry": "wb-relay.js",
+      "repo": "hawklithm/workbuddy2api",
+      "revision": "4354f83bd95d6995ef944ef342f95668ac1290b8",
       "license": "MIT",
       "note": "采用直接 HTTP 协议与本人授权流程；不再启动原有 Node relay 或官方 CLI。"
     },
@@ -43,16 +38,14 @@
       "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
       "entry": "vertex-proxy.exe",
       "license": "PolyForm-Noncommercial-1.0.0",
-      "note": "最新正式包仍为 v1.2.0；master 新增 Responses 等功能，未正式发包，不能宣称旧包已支持。原服务可能监听所有网卡。"
+      "note": "无头V内置核心开发中，准备操作不会下载或启动上游；官方与本地改版仍作为能力核对材料。"
     },
     {
       "id": "aistudio",
-      "repo": "iBUHub/AIStudioToAPI",
-      "revision": "fec035bcaa1f99df967abd2f3e0ed93d07369f50",
-      "entry": "main.js",
-      "npm": true,
-      "license": "CC-BY-NC-4.0",
-      "note": "AIS：Build / Playground 内置重构中；核对 Mag1cFall/AIStudio2API 与 DeconstructedCube/aistudio-api。"
+      "repo": "Mag1cFall/AIStudio2API",
+      "revision": "ebb27d109dfa8bcea96d481846f3f0a7536d89f0",
+      "license": "MIT",
+      "note": "AIS：Build / Playground 内置重构中；同时核对 DeconstructedCube/aistudio-api。尚未提供内置请求链。"
     }
   ]
 }

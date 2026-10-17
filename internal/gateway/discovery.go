@@ -75,17 +75,7 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 			return fail("builtin_auth", err.Error(), "检查该来源的账号授权和网络。")
 		}
 	} else if b.Kind == "codex_cli" {
-		probe, cancel := context.WithTimeout(ctx, 45*time.Second)
-		defer cancel()
-		cli, err := openCodex(probe)
-		if err != nil {
-			return fail("codex_auth", safeDiagnostic([]byte(err.Error())), "在官方 Codex CLI 完成本人登录，检查工具隔离设置后重试。")
-		}
-		defer cli.close()
-		ids, err = cli.models(probe)
-		if err != nil {
-			return fail("codex_models", safeDiagnostic([]byte(err.Error())), "检查 Codex 登录、网络和 CLI 版本。")
-		}
+		return fail("legacy_cli", "旧 CLI 接入已停用", "在来源配置中准备内置 Codex，完成本人授权。")
 	} else {
 		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
