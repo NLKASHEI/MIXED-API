@@ -28,7 +28,7 @@ try {
   child=spawn(resolve(process.env.MIXED_TEST_BINARY||'.git/MIXED-preview.exe'),['--no-browser','--config',path],{windowsHide:true,stdio:'ignore',env:{...process.env,APPDATA:join(root,'profile')}});
   child.on('error',error=>console.error(error.message));
   let ready=false;for(let i=0;i<60;i++){try{ready=(await fetch(base+'/health')).ok;if(ready)break}catch{}await delay(100)}assert(ready,'gateway did not start');
-  browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  browser=await chromium.launch({headless:true,executablePath:process.env.MIXED_TEST_BROWSER||undefined});const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const output=resolve(process.env.MIXED_UI_OUTPUT||'.git/ui-evidence');await mkdir(output,{recursive:true});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base+'/#admin=ui-test-admin');await page.locator('#app').waitFor({state:'visible'});
@@ -51,12 +51,9 @@ try {
   assert(await page.locator('#manual-settings').isVisible(),'user cannot return to fix connection settings');
   await page.unroute('**/v1/models');await page.keyboard.press('Escape');await page.locator('#refresh').click();
   // A fresh session exercises the normal managed 快速V path. Only the
-  // preparation/activation and official project probe are faked; config and discovery are real.
+  // only the official project probe is faked; preparation, activation and config are real.
   await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"windows","native_codex_supported":true,"tools":{}}'}));
   await page.reload();await page.locator('#app').waitFor({state:'visible'});
-  await page.route('**/api/assist/vertex/prepare',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
-  await page.route('**/api/assist/vertex/activate',route=>route.fulfill({contentType:'application/json',body:'{"ok":true}'}));
-  await page.route('**/api/status',route=>route.fulfill({contentType:'application/json',body:'{"processes":{"setup:vertex":"installed: fixture prepared"}}'}));
   await page.locator('#providers .card').nth(1).getByRole('button').click();
   assert(await page.locator('#official-field').isHidden(),'credentials shown before the authorization step');
   assert(await page.locator('#verify-provider').isHidden(),'preparation can skip to verification');
@@ -66,9 +63,19 @@ try {
   await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:join(output,'onboarding-fast-v.png'),fullPage:true});
   await page.route('**/api/express/project',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,project:'fixture-project',location:'us-central1',message:'fixture project'})}));
   await page.locator('#official-key').fill('fixture-express-key');await page.locator('#next-provider').click();
-  await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
+  await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:/已读取 \d+ 个模型/}).waitFor();
+  const nativeConfig=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
+  const nativeVertex=nativeConfig.backends.find(b=>b.id==='vertex');
+  assert.equal(nativeVertex.kind,'builtin');assert.equal(nativeVertex.express_project,'fixture-project');assert.equal(nativeVertex.express_location,'global');
   assert.equal(await page.locator('.client-summary').textContent(),`所有来源共用这个客户端地址：\n${base}/v1`);
-  await page.keyboard.press('Escape');await page.unroute('**/api/status');await page.unroute('**/api/assist/vertex/prepare');await page.unroute('**/api/assist/vertex/activate');
+  // Switching back to an explicit HTTP source must drop native-only routing.
+  await page.locator('#back-provider').click();await page.locator('#back-provider').click();
+  await page.locator('#manual-settings').evaluate(n=>n.open=true);
+  await page.locator('#backend-url').fill(config.backends[1].url);await page.locator('#backend-enabled').check();
+  const switchedHTTP=page.waitForResponse(r=>r.url()===base+'/api/config'&&r.request().method()==='PUT');
+  await page.locator('#save-provider').click();assert.equal((await switchedHTTP).status(),200,'native project fields prevented switching to HTTP');await page.locator('#next-provider').click();
+  await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
+  await page.keyboard.press('Escape');
   await page.locator('[data-page="models"]').click();await page.locator('#model-search').fill('test-chat');assert.equal(await page.locator('.model-row').count(),1);
   await page.locator('#open-alias').click();await page.locator('#alias-name').fill('daily-chat');await page.locator('#alias-target').selectOption('vertex/test-chat');await page.locator('#alias-form').getByRole('button',{name:'保存别名'}).click();
   await page.locator('#alias-dialog').waitFor({state:'hidden'});await page.locator('#aliases').getByText('daily-chat',{exact:true}).waitFor();
