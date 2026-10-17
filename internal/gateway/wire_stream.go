@@ -103,8 +103,14 @@ func (o *sseOutput) done() {
 func streamResponsesAsChat(w http.ResponseWriter, r *http.Request, body io.Reader, model string, includeUsage bool) {
 	out := newSSEOutput(w, model)
 	indices := map[int]int{}
+	arguments := map[int]string{}
+	size := 0
 	complete := false
 	err := readSSE(r.Context(), body, func(data []byte) error {
+		size += len(data)
+		if size > maxBody {
+			return errors.New("response too large")
+		}
 		if string(data) == "[DONE]" {
 			return nil
 		}
@@ -129,16 +135,34 @@ func streamResponsesAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 			if e.Item["type"] != "function_call" {
 				return nil
 			}
+			if _, exists := indices[e.Index]; exists {
+				return errors.New("duplicate tool identity")
+			}
+			id, _ := e.Item["call_id"].(string)
+			name, _ := e.Item["name"].(string)
+			if id == "" || name == "" {
+				return errors.New("missing tool identity")
+			}
+			args, _ := e.Item["arguments"].(string)
+			arguments[e.Index] = args
 			index := len(indices)
 			indices[e.Index] = index
-			return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "id": e.Item["call_id"], "type": "function", "function": map[string]any{"name": e.Item["name"], "arguments": ""}}}}, nil, nil)
+			return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "id": id, "type": "function", "function": map[string]any{"name": name, "arguments": args}}}}, nil, nil)
 		case "response.function_call_arguments.delta":
 			index, ok := indices[e.Index]
 			if !ok {
 				return errors.New("tool delta without call")
 			}
+			arguments[e.Index] += e.Delta
 			return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "function": map[string]any{"arguments": e.Delta}}}}, nil, nil)
 		case "response.completed", "response.incomplete":
+			if e.Type == "response.completed" {
+				for _, args := range arguments {
+					if !json.Valid([]byte(args)) {
+						return errors.New("invalid completed tool arguments")
+					}
+				}
+			}
 			finish := "stop"
 			if len(indices) > 0 {
 				finish = "tool_calls"

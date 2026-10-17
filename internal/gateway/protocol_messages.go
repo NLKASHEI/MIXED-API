@@ -207,7 +207,9 @@ func chatResultToMessages(chat map[string]any, model string) (map[string]any, er
 			}
 		case "function_call":
 			var args any
-			_ = json.Unmarshal([]byte(item["arguments"].(string)), &args)
+			if json.Unmarshal([]byte(item["arguments"].(string)), &args) != nil {
+				return nil, errors.New("截断的工具参数无法表示为完整 Messages input；请使用流式或 Responses 接口")
+			}
 			tool := map[string]any{"type": "tool_use", "id": item["call_id"], "name": item["name"], "input": args}
 			copyToolMetadata(tool, item)
 			content = append(content, tool)

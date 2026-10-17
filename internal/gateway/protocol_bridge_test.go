@@ -278,3 +278,40 @@ func TestResponsesStreamAcceptsFragmentedToolNames(t *testing.T) {
 		}
 	}
 }
+
+func TestChatRejectsMalformedResponsesToolCompletion(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		data := "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc1\",\"call_id\":\"call1\",\"name\":\"weather\",\"arguments\":\"\"}}\n\n" +
+			"data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"delta\":\"{\\\"city\\\":\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(data))}, nil
+	})
+	r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"opencode/gpt-5.4","messages":[{"role":"user","content":"hi"}],"stream":true}`))
+	r.Header.Set("Authorization", "Bearer client")
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	if strings.Contains(w.Body.String(), "[DONE]") || strings.Contains(w.Body.String(), `"finish_reason":"tool_calls"`) || !strings.Contains(w.Body.String(), `"error"`) {
+		t.Fatal(w.Body.String())
+	}
+}
+
+func TestNonStreamingMessagesDoesNotInventTruncatedToolInput(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"tool_calls":[{"id":"call1","function":{"name":"weather","arguments":"{\"city\":"}}]},"finish_reason":"length"}]}`))}, nil
+	})
+	r := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"opencode/deepseek-v4-flash","messages":[{"role":"user","content":"hi"}],"max_tokens":10}`))
+	r.Header.Set("Authorization", "Bearer client")
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	if w.Code != 502 || strings.Contains(w.Body.String(), `"input":null`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
