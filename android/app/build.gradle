@@ -29,7 +29,9 @@ android {
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (System.getenv('ANDROID_RELEASE_MODE') != 'none') {
+                signingConfig signingConfigs.release
+            }
             debuggable false
         }
     }

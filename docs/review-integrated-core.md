@@ -101,3 +101,5 @@ Spec 主代理复核：发布顺序和 APK 命名符合最新请求；本人账�
 发现并修复 1 项：Build 仅处理 HTTP 405/501，遗漏上游 code 12 及明确 unsupported 的 400 分支。已按同一固定版本的 `sendBuild` 和 `DecodeRPCError` 接入，公开 HTTP 先复现 4 个失败后通过；独立复核关闭该项。其余核心新增行为符合本轮范围。Google 本人账号生成仍未验收，Issue #5 保持开放。
 
 此前发布范围审查发现 Android `none` 仍上传 APK，已修为只保留 Gradle 构建/测试/Lint，不准备签名或上传 APK。Windows 本机验收仅证明 HWND/资源/退出，不宣称最终页面加载或干净安装通过；这些外围体验按用户要求留待人工测试。
+
+首次 v0.4.1 标签构建 39030745680 的核心 verify 通过，Android 打包暴露 `none` 仍绑定空 SigningConfig 的配置错误。修复为仅 `none` 不绑定签名，生成的未签名内部检查产物不上传；signed/preview 的签名与发布门禁保持有效。该次失败未发布 Release 资产；在新的提交重新执行标签构建，不能引用失败运行作为发布依据。
