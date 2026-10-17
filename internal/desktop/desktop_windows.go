@@ -62,6 +62,7 @@ type host struct {
 	err              error
 	handlers         []*comHandler
 	provider         *providerPage
+	pumping          bool
 }
 
 func (h *host) EnvironmentCompleted(code webviewloader.HRESULT, env *webviewloader.ICoreWebView2Environment) webviewloader.HRESULT {
@@ -234,7 +235,9 @@ func (h *host) proc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		user32.NewProc("DestroyWindow").Call(hwnd)
 		return 0
 	case 0x2:
-		user32.NewProc("PostQuitMessage").Call(0)
+		if h.pumping {
+			user32.NewProc("PostQuitMessage").Call(0)
+		}
 		return 0
 	case 0x82: // WM_NCDESTROY: the HWND may be reused before COM cleanup finishes.
 		windowHosts.CompareAndDelete(hwnd, h)
@@ -311,6 +314,7 @@ func runHost(h *host, class, caption, profileName string) error {
 		return errors.New("应用渲染器无法启动，请使用包含渲染资源的完整发布包")
 	}
 	var msg message
+	h.pumping = true
 	for {
 		ret, _, e := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(ret) == -1 {
@@ -323,6 +327,7 @@ func runHost(h *host, class, caption, profileName string) error {
 		user32.NewProc("TranslateMessage").Call(uintptr(unsafe.Pointer(&msg)))
 		user32.NewProc("DispatchMessageW").Call(uintptr(unsafe.Pointer(&msg)))
 	}
+	h.pumping = false
 	if h.controller != nil {
 		_ = h.controller.call(24)
 		h.controller.release()
