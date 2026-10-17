@@ -409,6 +409,15 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
   }
 
+  private boolean googleReady(String id) {
+    try {
+      return "ready".equals(google.state(id).optString("status"));
+    } catch (Exception e) {
+      if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+      return false;
+    }
+  }
+
   private void admin(OutputStream out, String method, String path, byte[] body, JSONObject config)
       throws Exception {
     if (path.startsWith("/api/accounts/")) {
