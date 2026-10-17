@@ -85,10 +85,16 @@ try:
     activities = adb("shell", "dumpsys", "activity", "activities")
     assert "/.MainActivity" in activities and "/.GoogleSourceActivity" not in activities
     adb("shell", "cmd", "statusbar", "expand-notifications")
-    time.sleep(2)
-    for attempt in range(8):
+    # Android can defer a newly started foreground-service notification. Give
+    # System UI time to post it without changing the app's notification policy.
+    time.sleep(10)
+    for attempt in range(12):
         root = tree()
         nodes = list(root.iter("node"))
+        if not any(node.attrib.get("package") == "com.android.systemui" for node in nodes):
+            adb("shell", "cmd", "statusbar", "expand-notifications")
+            time.sleep(2)
+            continue
         stop = next((node for node in nodes if node.attrib.get("text") == "停止服务"), None)
         if stop is not None:
             screenshot("notification.png")
@@ -111,6 +117,9 @@ try:
         time.sleep(1)
     else:
         (OUTPUT / "notifications.xml").write_bytes(ET.tostring(root, encoding="utf-8"))
+        # Disposable emulator, no real accounts. This redacted diagnostic
+        # distinguishes missing permission/channel from a UI locator failure.
+        (OUTPUT / "notification-state.txt").write_text(adb("shell", "dumpsys", "notification"), encoding="utf-8")
         raise AssertionError("Running notification has no accessible stop action")
 
     def stopped():
