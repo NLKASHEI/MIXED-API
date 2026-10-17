@@ -9,6 +9,12 @@ final class NativeAccounts {
   private final NativeGateway.Transport transport;
   private final java.util.Map<String, Refresh> refreshes = new java.util.HashMap<>();
   private boolean closed;
+  private final java.util.Map<String, Login> logins = new java.util.HashMap<>();
+
+  private static final class Login {
+    JSONObject visible;
+    Thread worker;
+  }
 
   static final class Failure extends java.io.IOException {
     final int status;
@@ -42,6 +48,73 @@ final class NativeAccounts {
   synchronized void close() {
     closed = true;
     for (String id : new java.util.ArrayList<>(refreshes.keySet())) invalidate(id);
+    for (String id : new java.util.ArrayList<>(logins.keySet())) cancelLogin(id);
+  }
+
+  private void cancelLogin(String id) {
+    Login old = logins.remove(id);
+    if (old != null && old.worker != null) old.worker.interrupt();
+  }
+
+  private JSONObject beginLogin(String id) throws Exception {
+    Login flow = new Login();
+    synchronized (this) {
+      if (closed) throw new Failure(503, "应用正在停止");
+      cancelLogin(id);
+      flow.visible = GoogleProtocol.obj("status", "pending", "message", "正在准备授权");
+      flow.worker = Thread.currentThread();
+      logins.put(id, flow);
+    }
+    try {
+      NativeLogin.Session session = NativeLogin.begin(transport, id);
+      synchronized (this) {
+        if (logins.get(id) != flow || closed) throw new Failure(401, "授权操作已取消");
+        flow.visible = session.visible;
+        flow.worker = new Thread(() -> pollLogin(id, flow, session), "MIXED account authorization");
+        flow.worker.setDaemon(true);
+        flow.worker.start();
+        return new JSONObject(flow.visible.toString());
+      }
+    } catch (Exception e) {
+      synchronized (this) {
+        if (logins.get(id) == flow) {
+          flow.worker = null;
+          flow.visible = GoogleProtocol.obj("status", "failed", "message", "无法发起授权，请稍后重试");
+        }
+      }
+      throw new Failure(503, "无法发起授权，请稍后重试");
+    }
+  }
+
+  private void pollLogin(String id, Login flow, NativeLogin.Session session) {
+    try {
+      while (!Thread.currentThread().isInterrupted()
+          && System.currentTimeMillis() < session.deadline) {
+        JSONObject credential = NativeLogin.poll(transport, id, session);
+        if (credential != null) {
+          synchronized (this) {
+            if (closed || logins.get(id) != flow) return;
+            invalidate(id);
+            store.write(id, credential);
+            logins.remove(id);
+          }
+          return;
+        }
+        Thread.sleep(
+            Math.min(session.interval, Math.max(1, session.deadline - System.currentTimeMillis())));
+      }
+    } catch (Exception ignored) {
+    }
+    synchronized (this) {
+      if (logins.get(id) == flow) {
+        try {
+          flow.visible = GoogleProtocol.obj("status", "failed", "message", "授权未完成，请重新登录");
+          flow.worker = null;
+        } catch (Exception ignored) {
+          logins.remove(id);
+        }
+      }
+    }
   }
 
   JSONObject fresh(String id, String rejected) throws Exception {
@@ -146,6 +219,7 @@ final class NativeAccounts {
   }
 
   synchronized JSONObject state(String id) throws Exception {
+    if (logins.containsKey(id)) return new JSONObject(logins.get(id).visible.toString());
     try {
       JSONObject value = store.read(id);
       if (!value.optString("access_token").isEmpty() && !value.optBoolean("needs_login"))
@@ -155,8 +229,21 @@ final class NativeAccounts {
     return GoogleProtocol.obj("status", "none");
   }
 
-  synchronized void admin(OutputStream out, String id, String action, String method, byte[] body)
+  void admin(OutputStream out, String id, String action, String method, byte[] body)
       throws Exception {
+    if (method.equals("POST") && action.equals("login")) {
+      try {
+        BridgeHttpServer.json(out, 200, beginLogin(id));
+      } catch (Failure e) {
+        BridgeHttpServer.fail(out, e.status, e.getMessage());
+      }
+      return;
+    }
+    adminSaved(out, id, action, method, body);
+  }
+
+  private synchronized void adminSaved(
+      OutputStream out, String id, String action, String method, byte[] body) throws Exception {
     if (method.equals("GET") && action.isEmpty()) {
       BridgeHttpServer.json(out, 200, state(id));
       return;
@@ -164,6 +251,7 @@ final class NativeAccounts {
     if (method.equals("DELETE") && action.isEmpty()) {
       try {
         invalidate(id);
+        cancelLogin(id);
         store.delete(id);
         BridgeHttpServer.json(out, 200, GoogleProtocol.obj("ok", true));
       } catch (Exception e) {
@@ -198,6 +286,7 @@ final class NativeAccounts {
       }
       try {
         invalidate(id);
+        cancelLogin(id);
         store.write(id, credential);
         BridgeHttpServer.json(out, 200, GoogleProtocol.obj("status", "authorized"));
       } catch (Exception e) {

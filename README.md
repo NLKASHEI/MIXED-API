@@ -53,7 +53,7 @@ Windows 产物尚无代码签名。Android 当前使用 Debug 签名；只有 CI
 
 ## 开发验证
 
-Go 1.23+，Android 使用 JDK 17 / SDK 35 / Gradle 8.10.2，Node 22+ 只用于开发检查。
+Go 1.23+，Android 使用 JDK 17 / SDK 35 / Gradle 8.13，Node 22+ 只用于开发检查。
 
 ```text
 go test ./...

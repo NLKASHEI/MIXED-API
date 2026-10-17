@@ -13,3 +13,7 @@ Windows 内置核心新增 Responses / Messages → Chat 的请求转换及完�
 Android 检查点：快速V直接调用 Gemini；OpenCode 按内置共享目录分派 Chat、Responses、Messages、Gemini。Chat 客户端的完整/流式请求已覆盖工具调用、思考文本与签名、用量、缺失终止帧和损坏工具参数。新增本地账号加密存储、导入、重启读取和注销，生产密钥来自 Android Keystore；JVM 测试仅注入 JCE 密钥，不替代设备 Keystore 验收。当前本机 assembleDebug、全部单元测试、lintDebug 通过（lint 0 错误、10 警告）。账号刷新、反向协议桥接及设备验收继续开发，不能将此检查点当作正式 release。
 
 Android 后续账号检查点：Codex 导入后的目录/生成走内置账号请求，自动刷新仅在临近过期或生成前 401；同来源并发合并、原子保存轮换、短暂失败退避、注销/重导入撤销旧刷新。HTTP 测试覆盖六个同时请求仅刷新一次、重启恢复、连续两次 401 轮换、忽略取消的旧刷新迟到。WorkBuddy 刷新编码已移植，授权流程和端到端测试尚待补齐；仍不能将目录可用等同真实推理或发布验收。
+
+进一步完成：Android WorkBuddy v2 授权状态、账号身份、刷新和 Chat 生成；Codex 设备授权和 PKCE 表单交换。均使用公共管理/推理接口及模拟服务方响应验证，未进行本人登录。真实本地 HTTP 服务另验证 PKCE Content-Type、读取挂起时的客户端断开、503/408/重定向不重复提交生成。传输取消从可阻塞的 HttpURLConnection.disconnect 改为 OkHttp Call.cancel；新增依赖和平台边界见 ADR-0005、第三方声明。
+
+2026-10-17 授权与网络检查点：Android Codex / WorkBuddy 授权、单次请求取消及六来源准备/启停入口的本机回归完成。AGP 8.13.2 + Gradle 8.13 修正 OkHttp Kotlin 元数据与旧 lint 的不兼容；assembleDebug、32 项 HTTP/平台测试、lintDebug 通过，lint 0 错误、13 警告（平台特性检查、备份策略和目标 API 等继续审查）。Go test ./...、go vet ./...、共享资源校验通过。此为开发检查点，真实账号和设备验收仍未通过，未发布。

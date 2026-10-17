@@ -49,6 +49,10 @@ public class NativeGatewayTest {
   }
 
   private String rawCall(String path, String body) throws Exception {
+    return rawCall(path, body, 200);
+  }
+
+  private String rawCall(String path, String body, int expected) throws Exception {
     HttpURLConnection c =
         (HttpURLConnection) new URL("http://127.0.0.1:8765" + path).openConnection();
     c.setRequestProperty("Authorization", "Bearer client");
@@ -67,7 +71,7 @@ public class NativeGatewayTest {
     } finally {
       c.disconnect();
     }
-    assertEquals(text, 200, status);
+    assertEquals(text, expected, status);
     return text;
   }
 
@@ -208,6 +212,113 @@ public class NativeGatewayTest {
               && result.contains("thought_signature")
               && result.contains("state"));
       if (stream) assertTrue(result, result.contains("[DONE]"));
+    }
+  }
+
+  @Test
+  public void disconnectedClientCancelsActualProviderHttpRead() throws Exception {
+    try (okhttp3.mockwebserver.MockWebServer upstream = new okhttp3.mockwebserver.MockWebServer()) {
+      upstream.start(java.net.InetAddress.getByName("127.0.0.1"), 0);
+      upstream.enqueue(
+          new okhttp3.mockwebserver.MockResponse()
+              .setBody("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n")
+              .setHeader("Content-Length", 1000000));
+      java.util.concurrent.CountDownLatch closed = new java.util.concurrent.CountDownLatch(1);
+      startSource(
+          "opencode",
+          (method, url, headers, body, deadline) -> {
+            GoogleSessions.Response response =
+                NativeHttp.send(
+                    method,
+                    "http://127.0.0.1:" + upstream.getPort() + "/chat/completions",
+                    headers,
+                    body,
+                    Math.min(deadline, System.currentTimeMillis() + 6000));
+            return new GoogleSessions.Response(
+                response.status,
+                new java.io.FilterInputStream(response.body) {
+                  @Override
+                  public void close() throws java.io.IOException {
+                    try {
+                      super.close();
+                    } finally {
+                      closed.countDown();
+                    }
+                  }
+                });
+          });
+      try (java.net.Socket client = new java.net.Socket("127.0.0.1", 8765)) {
+        client.setSoTimeout(3000);
+        byte[] body =
+            "{\"model\":\"opencode/deepseek-v4-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}"
+                .getBytes(StandardCharsets.UTF_8);
+        java.io.OutputStream out = client.getOutputStream();
+        out.write(
+            ("POST /v1/chat/completions HTTP/1.1\r\n"
+                    + "Host: 127.0.0.1:8765\r\n"
+                    + "Authorization: Bearer client\r\n"
+                    + "Content-Length: "
+                    + body.length
+                    + "\r\n\r\n")
+                .getBytes(StandardCharsets.US_ASCII));
+        out.write(body);
+        out.flush();
+        java.io.BufferedReader reader =
+            new java.io.BufferedReader(
+                new java.io.InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
+        String line;
+        boolean first = false;
+        while ((line = reader.readLine()) != null)
+          if (line.startsWith("data:") && line.contains("hello")) {
+            first = true;
+            break;
+          }
+        assertTrue("Incremental provider data was not forwarded", first);
+      }
+      assertTrue(
+          "Upstream remained blocked after client disconnect",
+          closed.await(3, java.util.concurrent.TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  public void transportDoesNotReplayGenerationOnRetryAfterOrRedirect() throws Exception {
+    try (okhttp3.mockwebserver.MockWebServer upstream = new okhttp3.mockwebserver.MockWebServer()) {
+      upstream.start(java.net.InetAddress.getByName("127.0.0.1"), 0);
+      java.util.concurrent.atomic.AtomicInteger status =
+          new java.util.concurrent.atomic.AtomicInteger(503);
+      upstream.setDispatcher(
+          new okhttp3.mockwebserver.Dispatcher() {
+            @Override
+            public okhttp3.mockwebserver.MockResponse dispatch(
+                okhttp3.mockwebserver.RecordedRequest request) {
+              return new okhttp3.mockwebserver.MockResponse()
+                  .setResponseCode(status.get())
+                  .setHeader("Retry-After", "0")
+                  .setHeader("Location", "http://127.0.0.1:" + upstream.getPort() + "/replayed")
+                  .setBody("{\"error\":\"private-provider-details\"}");
+            }
+          });
+      startSource(
+          "opencode",
+          (method, url, headers, body, deadline) ->
+              NativeHttp.send(
+                  method,
+                  "http://127.0.0.1:" + upstream.getPort() + "/chat/completions",
+                  headers,
+                  body,
+                  deadline));
+      int count = 0;
+      for (int code : new int[] {503, 307, 408}) {
+        status.set(code);
+        String result =
+            rawCall(
+                "/v1/chat/completions",
+                "{\"model\":\"opencode/deepseek-v4-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+                code == 307 ? 502 : code);
+        assertFalse(result.contains("private-provider-details"));
+        assertEquals(++count, upstream.getRequestCount());
+      }
     }
   }
 

@@ -45,4 +45,8 @@
 
 Android CI [39014151486](https://github.com/NLKASHEI/MIXED-API/actions/runs/39014151486) 复现 Linux 立即重启监听端口的 BindException。监听器改为绑定前设置地址复用，绑定失败关闭未成功的 socket；复用不改变仅监听 127.0.0.1 的限制。需后续 CI 确认修复，不能把本机 Windows 测试当作 Linux/Android 通过。
 
+后续 [39014712431](https://github.com/NLKASHEI/MIXED-API/actions/runs/39014712431) 在 `5d494f7` 的 verify、Android 全通过，证实端口重启修复；Windows 第一次失败为 Chocolatey 返回 503，重试后也通过。未打发布标签，release 跳过。之后的真实 HTTP 回归复现原生读取取消不及时，已将网络调用换为可取消且 one-shot 的传输；须在后续提交再次运行全量 CI。
+
 定向复核又复现 Windows 启动取消后遗留 WM_QUIT，污染下一次复用的 STA 线程。现仅在消息循环运行时投递退出消息；同 STA 连续创建/销毁回归通过，独立复核确认该修复。上述两项原生窗口测试不需要账号或渲染器；Android 的两个渲染器生命周期测试已在 `f0ea36a` 的 CI 通过。
+
+2026-10-17 授权与网络检查点：Android Codex / WorkBuddy 授权、单次请求取消及六来源准备/启停入口的本机回归完成。AGP 8.13.2 + Gradle 8.13 修正 OkHttp Kotlin 元数据与旧 lint 的不兼容；assembleDebug、32 项 HTTP/平台测试、lintDebug 通过，lint 0 错误、13 警告（平台特性检查、备份策略和目标 API 等继续审查）。Go test ./...、go vet ./...、共享资源校验通过。此为开发检查点，真实账号和设备验收仍未通过，未发布。

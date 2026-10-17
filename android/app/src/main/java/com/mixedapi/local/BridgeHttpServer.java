@@ -443,6 +443,21 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
   }
 
+  private boolean sourceReady(JSONObject backend) throws Exception {
+    String id = backend.getString("id");
+    if (GoogleGateway.source(id)) return googleReady(id);
+    if (NativeAccounts.source(id))
+      return "authorized".equals(accounts.state(id).optString("status"));
+    return id.equals("opencode")
+        || id.equals("vertex") && !backend.optString("provider_key").trim().isEmpty();
+  }
+
+  private static String setupHelp(String id) {
+    if (id.equals("vertex")) return "请先填写本人的 Express API Key";
+    if (GoogleGateway.source(id)) return "请先在来源窗口完成本人授权并发送测试消息";
+    return "请先完成本人账号授权";
+  }
+
   private void admin(OutputStream out, String method, String path, byte[] body, JSONObject config)
       throws Exception {
     if (path.startsWith("/api/accounts/")) {
@@ -478,7 +493,7 @@ public final class BridgeHttpServer implements AutoCloseable {
     }
     if (path.startsWith("/api/assist/") && "POST".equals(method)) {
       String[] segments = path.substring("/api/assist/".length()).split("/", -1);
-      if (segments.length != 2 || !GoogleGateway.source(segments[0])) {
+      if (segments.length != 2 || NativeGateway.base(segments[0]) == null) {
         fail(out, 501, "此来源尚未在 Android 内置");
         return;
       }
@@ -497,14 +512,14 @@ public final class BridgeHttpServer implements AutoCloseable {
       if ("prepare".equals(action)) {
         if (!"builtin".equals(b.optString("kind"))) b.put("enabled", false);
         b.put("kind", "builtin")
-            .put("url", GoogleGateway.base(id))
+            .put("url", NativeGateway.base(id))
             .put("auth", "none")
             .put("key", "")
             .put("command", "")
             .put("workdir", "");
       } else if ("activate".equals(action)) {
-        if (!"builtin".equals(b.optString("kind")) || !googleReady(id)) {
-          fail(out, 400, "请先在来源窗口完成本人授权并发送测试消息");
+        if (!"builtin".equals(b.optString("kind")) || !sourceReady(b)) {
+          fail(out, 400, setupHelp(id));
           return;
         }
         b.put("enabled", true);
@@ -551,17 +566,15 @@ public final class BridgeHttpServer implements AutoCloseable {
       return;
     }
     if ("/api/assist/status".equals(path) && "GET".equals(method)) {
+      JSONArray sources = GoogleProtocol.arr("vertex", "codex", "opencode", "workbuddy");
+      if (GoogleSessions.supported()) sources.put("aps").put("aistudio");
       json(
           out,
           200,
           new JSONObject()
               .put("platform", "android")
-              .put("native_codex_supported", false)
-              .put(
-                  "builtin_backends",
-                  GoogleSessions.supported()
-                      ? GoogleProtocol.arr("aps", "aistudio")
-                      : new JSONArray()));
+              .put("native_codex_supported", true)
+              .put("builtin_backends", sources));
       return;
     }
     if ("/api/upstreams".equals(path) && "GET".equals(method)) {
@@ -576,7 +589,7 @@ public final class BridgeHttpServer implements AutoCloseable {
       return;
     }
     if ("/api/local/import".equals(path)) {
-      fail(out, 501, "Android 不能导入 Windows EXE；请在电脑接入后使用电脑桥接。");
+      fail(out, 410, "来源核心已内置，请在接入步骤中配置账号；无需导入程序。");
       return;
     }
     if ("/api/diagnostics".equals(path) && "GET".equals(method)) {
@@ -623,13 +636,13 @@ public final class BridgeHttpServer implements AutoCloseable {
       for (int i = 0; i < bs.length(); i++) {
         JSONObject b = bs.getJSONObject(i);
         if (!id.equals(b.optString("id"))) continue;
-        if (!GoogleGateway.source(id) || !"builtin".equals(b.optString("kind"))) {
+        if (NativeGateway.base(id) == null || !"builtin".equals(b.optString("kind"))) {
           fail(out, 410, "应用不启动外部来源程序");
           return;
         }
         if ("start".equals(action)) {
-          if (!googleReady(id)) {
-            fail(out, 400, "请先完成来源授权");
+          if (!sourceReady(b)) {
+            fail(out, 400, setupHelp(id));
             return;
           }
           b.put("enabled", true);
@@ -673,7 +686,7 @@ public final class BridgeHttpServer implements AutoCloseable {
         .put("state", "disabled")
         .put("model_count", 0)
         .put("duration_ms", 0)
-        .put("next", "启用来源后检查模型；桌面引擎请连接电脑网关。");
+        .put("next", "在接入步骤中配置账号并启用来源，再检查模型。");
     if (!b.optBoolean("enabled")) return result;
     String code = "", next = "";
     HttpURLConnection c = null;
