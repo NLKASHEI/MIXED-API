@@ -103,22 +103,35 @@ public final class BridgeHttpServer implements AutoCloseable {
   }
 
   @Override
-  public synchronized void close() {
-    open.set(false);
-    try {
-      if (socket != null) socket.close();
-    } catch (Exception ignored) {
-    }
-    for (Socket peer : peers) {
+  public void close() {
+    Thread listener;
+    synchronized (this) {
+      open.set(false);
       try {
-        peer.close();
-      } catch (IOException ignored) {
+        if (socket != null) socket.close();
+      } catch (Exception ignored) {
+      }
+      for (Socket peer : peers) {
+        try {
+          peer.close();
+        } catch (IOException ignored) {
+        }
+      }
+      peers.clear();
+      pool.shutdownNow();
+      discoveryPool.shutdownNow();
+      accounts.close();
+      listener = acceptor;
+    }
+    // accept() can still own the native descriptor after socket.close(). Join
+    // outside the monitor: an accepted peer may be waiting to register there.
+    if (listener != null && listener != Thread.currentThread()) {
+      try {
+        listener.join(1000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
     }
-    peers.clear();
-    pool.shutdownNow();
-    discoveryPool.shutdownNow();
-    accounts.close();
   }
 
   static byte[] bounded(InputStream in, int max) throws IOException {
@@ -435,6 +448,7 @@ public final class BridgeHttpServer implements AutoCloseable {
       }
       if ("POST".equals(method)
           && ("/v1/chat/completions".equals(path)
+              || "/v1/audio/speech".equals(path)
               || "/v1/responses".equals(path)
               || "/v1/embeddings".equals(path)
               || "/v1/messages".equals(path)
@@ -870,6 +884,35 @@ public final class BridgeHttpServer implements AutoCloseable {
       return;
     }
     if ("builtin".equals(b.optString("kind"))) {
+      if (path.equals("/v1/audio/speech")) {
+        JSONObject selectedBackend = b;
+        SpeechBridge.serve(
+            out,
+            id,
+            input,
+            (target, chat) -> {
+              if (!GoogleGateway.source(id))
+                nativeGateway.serve(
+                    target,
+                    "/v1/chat/completions",
+                    selectedBackend,
+                    requested,
+                    upstreamModel,
+                    chat);
+              else {
+                JSONObject settings = cfg.optJSONObject("engine_settings");
+                google.serve(
+                    target,
+                    "/v1/chat/completions",
+                    selectedBackend,
+                    requested,
+                    upstreamModel,
+                    chat,
+                    settings == null ? null : settings.optJSONObject(id));
+              }
+            });
+        return;
+      }
       if (!GoogleGateway.source(id)) {
         nativeGateway.serve(out, path, b, requested, upstreamModel, input);
         return;

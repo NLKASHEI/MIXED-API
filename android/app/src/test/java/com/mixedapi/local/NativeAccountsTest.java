@@ -95,6 +95,15 @@ public class NativeAccountsTest {
   }
 
   @Test
+  public void listenerCanCloseAndImmediatelyRebindRepeatedly() throws Exception {
+    for (int i = 0; i < 100; i++) {
+      server.close();
+      start();
+    }
+    call("GET", "/api/accounts/codex", "admin", null, 200);
+  }
+
+  @Test
   public void refreshCannotChangeCodexAccount() throws Exception {
     JSONObject value = auth("expired", "refresh");
     value.getJSONObject("tokens").put("expires", 1);

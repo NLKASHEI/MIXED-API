@@ -132,6 +132,10 @@ func (s *Server) prepareIntegrated(id string) error {
 // Provider protocol implementations live behind the same authenticated HTTP
 // seam as external services. They never start an upstream application.
 func (s *Server) serveIntegrated(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage) {
+	if r.URL.Path == "/v1/audio/speech" {
+		s.serveSpeech(w, r, b, publicModel, model, payload)
+		return
+	}
 	if (r.URL.Path == "/v1/responses" && b.ID != "codex" || r.URL.Path == "/v1/messages") && b.ID != "opencode" {
 		s.serveProtocolBridge(w, r, b, publicModel, model, payload)
 		return

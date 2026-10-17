@@ -11,6 +11,7 @@ import org.json.JSONObject;
 final class NativeResponses {
   static void read(InputStream body, NativeChat chat) throws Exception {
     Map<Integer, Integer> tools = new HashMap<>();
+    java.util.Set<Integer> reasoningItems = new java.util.HashSet<>();
     NativeWire.events(
         body,
         data -> {
@@ -33,6 +34,24 @@ final class NativeResponses {
             case "response.refusal.delta":
               delta.put("refusal", event.getString("delta"));
               break;
+            case "response.output_item.done":
+              {
+                JSONObject item = event.getJSONObject("item");
+                int index = event.getInt("output_index");
+                if (!item.optString("type").equals("reasoning") || !reasoningItems.add(index))
+                  return;
+                delta.put(
+                    "reasoning_details",
+                    GoogleProtocol.arr(
+                        GoogleProtocol.obj(
+                            "type",
+                            "reasoning.item",
+                            "format",
+                            "openai-responses-v1",
+                            "item",
+                            item)));
+                break;
+              }
             case "response.output_item.added":
               {
                 JSONObject item = event.getJSONObject("item");
@@ -77,6 +96,21 @@ final class NativeResponses {
             case "response.incomplete":
               {
                 JSONObject response = event.getJSONObject("response");
+                JSONArray items = response.optJSONArray("output"), details = new JSONArray();
+                if (items != null)
+                  for (int n = 0; n < items.length(); n++) {
+                    JSONObject item = items.getJSONObject(n);
+                    if (item.optString("type").equals("reasoning") && reasoningItems.add(n))
+                      details.put(
+                          GoogleProtocol.obj(
+                              "type",
+                              "reasoning.item",
+                              "format",
+                              "openai-responses-v1",
+                              "item",
+                              item));
+                  }
+                if (details.length() > 0) delta.put("reasoning_details", details);
                 finish = tools.isEmpty() ? "stop" : "tool_calls";
                 if (type.equals("response.incomplete")) {
                   JSONObject detail = response.optJSONObject("incomplete_details");
@@ -128,6 +162,19 @@ final class NativeResponses {
     for (int i = 0; i < messages.length(); i++) {
       JSONObject message = messages.getJSONObject(i);
       String role = message.getString("role");
+      JSONArray details = message.optJSONArray("reasoning_details");
+      if (details != null)
+        for (int n = 0; n < details.length(); n++) {
+          JSONObject d = details.getJSONObject(n);
+          if (!d.optString("format").equals("openai-responses-v1")
+              || !d.optString("type").equals("reasoning.item")
+              || !role.equals("assistant"))
+            throw new IOException("Incompatible reasoning signature");
+          JSONObject item = d.getJSONObject("item");
+          if (!item.optString("type").equals("reasoning"))
+            throw new IOException("Invalid reasoning item");
+          input.put(item);
+        }
       if (role.equals("tool")) {
         String call = message.getString("tool_call_id");
         if (call.isEmpty()) throw new IOException("Missing tool identity");
@@ -225,6 +272,7 @@ final class NativeResponses {
     if (!status.equals("completed") && !status.equals("incomplete"))
       throw new IOException("Unfinished response");
     JSONArray output = response.getJSONArray("output"), calls = new JSONArray();
+    JSONArray details = new JSONArray();
     StringBuilder text = new StringBuilder(),
         reasoning = new StringBuilder(),
         refusal = new StringBuilder();
@@ -250,6 +298,9 @@ final class NativeResponses {
           else throw new IOException("Unsupported response content");
         }
       } else if (type.equals("reasoning")) {
+        details.put(
+            GoogleProtocol.obj(
+                "type", "reasoning.item", "format", "openai-responses-v1", "item", item));
         JSONArray summary = item.optJSONArray("summary");
         if (summary != null)
           for (int n = 0; n < summary.length(); n++)
@@ -257,6 +308,7 @@ final class NativeResponses {
       } else throw new IOException("Unsupported Responses output item");
     }
     JSONObject message = GoogleProtocol.obj("role", "assistant", "content", text.toString());
+    if (details.length() > 0) message.put("reasoning_details", details);
     if (reasoning.length() > 0) message.put("reasoning_content", reasoning.toString());
     if (refusal.length() > 0) message.put("refusal", refusal.toString());
     if (calls.length() > 0) message.put("tool_calls", calls);

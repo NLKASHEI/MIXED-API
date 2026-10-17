@@ -141,6 +141,19 @@ func playgroundOperation(model string, body any) (googleweb.Operation, error) {
 				config[8] = schema
 			case "seed":
 				config[18] = v
+			case "speechConfig":
+				speech, err := playgroundSpeech(v)
+				if err != nil {
+					return googleweb.Operation{}, err
+				}
+				config[15] = speech
+			case "mediaResolution":
+				name, _ := v.(string)
+				code := map[string]int{"MEDIA_RESOLUTION_LOW": 1, "MEDIA_RESOLUTION_MEDIUM": 2, "MEDIA_RESOLUTION_HIGH": 3}[name]
+				if code == 0 {
+					return googleweb.Operation{}, errors.New("媒体分辨率无效")
+				}
+				config[17] = code
 			case "thinkingConfig":
 				t, ok := v.(map[string]any)
 				if !ok {

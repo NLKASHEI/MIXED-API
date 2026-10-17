@@ -44,7 +44,7 @@ func TestExpressInputToolRoundTrip(t *testing.T) {
 		if body.Config.Function.Mode != "ANY" || len(body.Config.Function.Names) != 1 || body.Config.Function.Names[0] != "weather" {
 			t.Error("named tool choice was lost")
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"index":0,"content":{"parts":[{"text":"sunny"}]},"finishReason":"STOP"}]}`))}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"index":0,"content":{"parts":[{"functionCall":{"name":"weather","args":{}}}]},"finishReason":"STOP"}]}`))}, nil
 	})
 	r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"vertex/gemini-test","messages":[{"role":"user","content":"weather"},{"role":"assistant","content":null,"tool_calls":[{"id":"a","type":"function","function":{"name":"weather","arguments":"{}"}}]},{"role":"tool","tool_call_id":"a","content":"sunny"}],"tools":[{"type":"function","function":{"name":"weather","parameters":{"type":"object","properties":{}},"strict":true}}],"tool_choice":{"type":"function","function":{"name":"weather"}}}`))
 	r.Header.Set("Authorization", "Bearer client")

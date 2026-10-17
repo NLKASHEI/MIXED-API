@@ -51,6 +51,12 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		jsonError(w, 400, err.Error())
 		return
 	}
+	contract, err := googleTools(payload)
+	if err != nil {
+		jsonError(w, 400, err.Error())
+		return
+	}
+	contract.prepare(body, kind == "playground")
 	if s.google == nil {
 		jsonError(w, 503, "来源会话不可用，请在应用内完成授权步骤")
 		return
@@ -100,6 +106,9 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		outputBytes := 0
 		candidates := map[int]int{}
 		err = decodeGoogleWeb(ctx, kind, resp.Body, func(frame geminiResult) error {
+			if err := contract.check(frame); err != nil {
+				return err
+			}
 			raw, _ := json.Marshal(frame)
 			outputBytes += len(raw)
 			if outputBytes > maxBody {
@@ -205,7 +214,7 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 }
 
 func validateGoogleOptions(payload map[string]json.RawMessage) error {
-	allowed := []string{"model", "messages", "stream", "stream_options", "temperature", "top_p", "top_k", "max_tokens", "max_completion_tokens", "seed", "n", "stop", "response_format", "reasoning_effort", "tools", "tool_choice", "user"}
+	allowed := []string{"model", "messages", "stream", "stream_options", "temperature", "top_p", "top_k", "max_tokens", "max_completion_tokens", "seed", "n", "stop", "response_format", "reasoning_effort", "tools", "tool_choice", "parallel_tool_calls", "user", "modalities", "audio", "media_resolution"}
 	for key, raw := range payload {
 		if !slices.Contains(allowed, key) {
 			return errors.New("不支持的请求参数")

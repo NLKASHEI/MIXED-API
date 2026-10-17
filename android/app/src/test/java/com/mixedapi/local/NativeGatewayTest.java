@@ -21,6 +21,114 @@ import org.robolectric.annotation.Config;
 public class NativeGatewayTest {
   private BridgeHttpServer server;
 
+  @Test
+  public void responsesStreamPreservesOpaqueReasoningOnce() throws Exception {
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) ->
+            new GoogleSessions.Response(
+                200,
+                new ByteArrayInputStream(
+                    ("data:"
+                         + " {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"rs1\",\"type\":\"reasoning\",\"summary\":[],\"encrypted_content\":\"opaque-fixture\"}}\n\n"
+                         + "data:"
+                         + " {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"status\":\"completed\",\"output\":[{\"id\":\"rs1\",\"type\":\"reasoning\",\"summary\":[],\"encrypted_content\":\"opaque-fixture\"}]}}\n\n")
+                        .getBytes(StandardCharsets.UTF_8))));
+    String result =
+        rawCall(
+            "/v1/chat/completions",
+            "{\"model\":\"opencode/gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}");
+    assertTrue(result.contains("[DONE]"));
+    assertEquals(1, result.split("opaque-fixture", -1).length - 1);
+  }
+
+  @Test
+  public void chatReplaysNativeResponsesReasoningItems() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          if (calls.incrementAndGet() == 2)
+            assertTrue(
+                new String(body, StandardCharsets.UTF_8)
+                    .contains("\"encrypted_content\":\"opaque-fixture\""));
+          return new GoogleSessions.Response(
+              200,
+              new ByteArrayInputStream(
+                  "{\"id\":\"r1\",\"status\":\"completed\",\"output\":[{\"id\":\"rs1\",\"type\":\"reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"opaque-fixture\"},{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"answer\"}]}]}"
+                      .getBytes(StandardCharsets.UTF_8)));
+        });
+    JSONObject reply =
+        call(
+            "/v1/chat/completions",
+            "{\"model\":\"opencode/gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
+    assertTrue(reply.toString().contains("opaque-fixture"));
+    call(
+        "/v1/chat/completions",
+        GoogleProtocol.obj(
+                "model",
+                "opencode/gpt-5.4",
+                "messages",
+                GoogleProtocol.arr(
+                    GoogleProtocol.obj("role", "user", "content", "hi"),
+                    reply.getJSONArray("choices").getJSONObject(0).getJSONObject("message"),
+                    GoogleProtocol.obj("role", "user", "content", "continue")))
+            .toString());
+    assertEquals(2, calls.get());
+  }
+
+  @Test
+  public void googleAudioPreservesModalitiesAndMediaInput() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    startSource(
+        "vertex",
+        (method, url, headers, body, deadline) -> {
+          calls.incrementAndGet();
+          JSONObject input = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          assertEquals(
+              "[\"TEXT\",\"AUDIO\"]",
+              input
+                  .getJSONObject("generationConfig")
+                  .getJSONArray("responseModalities")
+                  .toString());
+          String content = input.getJSONArray("contents").toString().replace("\\/", "/");
+          assertTrue(content.contains("audio/wav"));
+          assertTrue(content.contains("application/pdf"));
+          assertEquals(
+              "MEDIA_RESOLUTION_HIGH",
+              input.getJSONObject("generationConfig").getString("mediaResolution"));
+          return new GoogleSessions.Response(
+              200,
+              new ByteArrayInputStream(
+                  "{\"candidates\":[{\"index\":0,\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}"
+                      .getBytes(StandardCharsets.UTF_8)));
+        });
+    Context ctx = RuntimeEnvironment.getApplication();
+    JSONObject config = BridgeConfig.load(ctx);
+    config.getJSONArray("backends").getJSONObject(0).put("provider_key", "fixture-key");
+    BridgeConfig.save(ctx, config);
+    String request =
+        "{\"model\":\"vertex/tts\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_audio\",\"input_audio\":{\"format\":\"wav\",\"data\":\"AAABAA==\"}},{\"type\":\"file\",\"file\":{\"file_data\":\"data:application/pdf;base64,JVBERg==\"}}]}],\"media_resolution\":\"high\",\"modalities\":[\"text\",\"audio\"],\"audio\":{\"voice\":\"Kore\",\"format\":\"pcm16\"}}";
+    rawCall("/v1/chat/completions", request, 200);
+    rawCall("/v1/chat/completions", request.replace("[\"text\",\"audio\"]", "[\"text\"]"), 400);
+    assertEquals(1, calls.get());
+  }
+
+  @Test
+  public void bridgeDoesNotDropAudioIntoEmptyTextSuccess() throws Exception {
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) ->
+            new GoogleSessions.Response(
+                200,
+                new ByteArrayInputStream(
+                    "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"\",\"media\":[{\"mime_type\":\"audio/L16;codec=pcm;rate=24000\",\"data\":\"AAABAA==\"}]}}]}"
+                        .getBytes(StandardCharsets.UTF_8))));
+    rawCall("/v1/responses", "{\"model\":\"opencode/deepseek-v4-flash\",\"input\":\"hi\"}", 502);
+  }
+
   private void startSource(String id, NativeGateway.Transport transport) throws Exception {
     Context ctx = RuntimeEnvironment.getApplication();
     ctx.getSharedPreferences("mixed_config", Context.MODE_PRIVATE).edit().clear().commit();

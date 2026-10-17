@@ -55,3 +55,18 @@ Android CI [39014151486](https://github.com/NLKASHEI/MIXED-API/actions/runs/3901
 
 
 2026-10-17 平台与账号检查点：Android targetSdk 35，新增系统栏/刘海/键盘避让、用户可停止的 specialUse 本机监听通知、配置及会话的备份/迁移排除。电脑共享与外部 HTTP 改用同一可取消传输；独立 Standards 复核发现停止监听器未关闭已接受连接，已用 18 个并发/排队客户端复现并修复。三处协议复核问题（Responses 输出回传、多个签名思考块、原生 Messages 完成工具校验）在 023b177 修复。Go/Android 拒绝刷新后的账号身份变化，过期且不可刷新的凭证显示过期；Go 导入拒绝 CR/LF/NUL 且不替换原账号。Go 全量 tests/vet、Android assembleDebug、47 项公共接口/平台回归和 lintDebug 通过（0 错误、11 警告）。API 35 模拟平台测试不是真机测试；ADB 当前未连接设备。Spec 轴仍由主代理审查，未宣称真实账号、干净系统或最终 Release 验收。
+
+
+## 2026-10-17 媒体、工具约束与 PR 报错分类
+
+当前 PR #4 及旧 PR #1/#2 的线上 review/comments 均为空。本轮红叉来自 Actions，不能将它们全解释成代码审查结论。
+
+需要修复并有失败回归的行为：音频经 Responses 转换丢失后返回空白成功；audio 配置覆盖用户声明的文字输出；Go 接受双声道 PCM 却写成单声道 WAV；WAV 尾部/填充校验遗漏；显式工具约束未验证；Responses 加密思考项目丢失；Android 关闭监听后立即重绑的端口释放竞态。均已修复，协议正反例与 100 次关闭重绑纳入测试。
+
+测试自身修正：旧 TestExpressInputToolRoundTrip 强制 weather 函数，却让模拟服务方返回文字并期望成功。现模拟真实函数返回，保留原请求映射断言，不放松新合约。
+
+CI 环境修正：Android 模拟器首次找不到 adb，随后日志明确报 Unknown AVD name；设置平台工具 PATH 和一致的 ANDROID_USER_HOME / ANDROID_AVD_HOME。其失败不说明业务协议坏了，但未通过前也不计作设备验收。保留日志，不能靠删除验收步骤让红叉变绿。
+
+无需随本次业务改动处理：依赖存在新版、Gradle 9 弃用预告、第三方 Actions 的 Node 20/punycode 提示；当前实际构建成功。Android Lint 的 JavaScript 使用是本机管理页/官方会话的已审查设计，不因通用提示删除必要能力。未采用无复现路径的风格重构。
+
+独立 Standards 定向复核媒体校验、工具约束、reasoning.item 往返和监听关闭修复后，未发现新增可行动缺陷；4 个 Go 定向 HTTP 测试独立通过。Spec 由主代理核对：账号真实生成、干净 Windows、实体 Android 与完整专有能力仍不可写成通过。当前本机 Go tests/vet、Android 54 项测试及构建/lint 通过；端口修复需新的 Linux CI 验证。

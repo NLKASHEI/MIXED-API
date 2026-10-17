@@ -157,6 +157,9 @@ func (o *responseStream) chunk(raw []byte) error {
 		o.usage = chunk.Usage
 	}
 	for _, c := range chunk.Choices {
+		if c.Delta["media"] != nil || c.Delta["audio"] != nil {
+			return errors.New("audio representation unavailable; use audio/speech")
+		}
 		if c.Index != 0 || o.finish != "" {
 			return errors.New("data after completion")
 		}

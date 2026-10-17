@@ -205,8 +205,12 @@ final class GoogleGateway {
       }
     }
     JSONObject op;
+    GoogleTools contract;
     try {
-      op = GoogleProtocol.operation(kind, model, GoogleProtocol.gemini(input));
+      contract = new GoogleTools(input);
+      JSONObject gem = GoogleProtocol.gemini(input);
+      contract.prepare(gem, kind.equals("playground"));
+      op = GoogleProtocol.operation(kind, model, gem);
     } catch (Exception e) {
       BridgeHttpServer.fail(out, 400, "请求参数无效或该能力尚不支持，请检查配置指引");
       return;
@@ -219,6 +223,7 @@ final class GoogleGateway {
     boolean stream = input.optBoolean("stream"),
         aggregate = settings != null && settings.optBoolean("aggregate_stream");
     Output result = new Output(out, id, publicModel, stream && !aggregate, input.optInt("n", 1));
+    result.contract = contract;
     try (GoogleSessions.Response response =
         send(id, op, deadline, settings == null ? 0 : settings.optInt("max_retries"))) {
       if (response.status != 200) {
@@ -250,6 +255,7 @@ final class GoogleGateway {
     final Set<Integer> calls = new HashSet<>();
     JSONObject usage = new JSONObject();
     boolean started;
+    GoogleTools contract;
     long size;
 
     Output(OutputStream out, String backend, String model, boolean incremental, int expected) {
@@ -268,6 +274,7 @@ final class GoogleGateway {
       if (cs == null) return;
       for (int i = 0; i < cs.length(); i++) {
         JSONObject c = cs.getJSONObject(i);
+        if (contract != null) contract.check(c);
         int index = c.optInt("index");
         if (index < 0 || index >= expected) throw new IOException("候选索引无效");
         JSONObject content = c.optJSONObject("content");

@@ -49,6 +49,19 @@ func chatToResponses(chat map[string]any) (map[string]any, error) {
 			return nil, errors.New("messages 格式无效")
 		}
 		role, _ := m["role"].(string)
+		if details, ok := m["reasoning_details"].([]any); ok {
+			for _, value := range details {
+				d, ok := value.(map[string]any)
+				if !ok || d["format"] != "openai-responses-v1" || d["type"] != "reasoning.item" {
+					return nil, errors.New("此模型不支持回传其他协议的思考签名")
+				}
+				item, ok := d["item"].(map[string]any)
+				if !ok || item["type"] != "reasoning" || role != "assistant" {
+					return nil, errors.New("思考项目无效")
+				}
+				input = append(input, item)
+			}
+		}
 		if role == "tool" {
 			id, ok := m["tool_call_id"].(string)
 			if !ok || id == "" {
@@ -164,6 +177,7 @@ func chatToResponses(chat map[string]any) (map[string]any, error) {
 
 func responsesToChat(resp map[string]any, model string) map[string]any {
 	text, reasoning := "", ""
+	details := []any{}
 	calls := []any{}
 	if output, ok := resp["output"].([]any); ok {
 		for _, v := range output {
@@ -188,6 +202,7 @@ func responsesToChat(resp map[string]any, model string) map[string]any {
 				}
 			}
 			if item["type"] == "reasoning" {
+				details = append(details, map[string]any{"type": "reasoning.item", "format": "openai-responses-v1", "item": item})
 				if summary, ok := item["summary"].([]any); ok {
 					for _, v := range summary {
 						if p, ok := v.(map[string]any); ok {
@@ -201,6 +216,9 @@ func responsesToChat(resp map[string]any, model string) map[string]any {
 		}
 	}
 	message := map[string]any{"role": "assistant", "content": text}
+	if len(details) > 0 {
+		message["reasoning_details"] = details
+	}
 	if reasoning != "" {
 		message["reasoning_content"] = reasoning
 	}

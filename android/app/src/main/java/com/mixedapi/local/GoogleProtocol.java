@@ -65,6 +65,10 @@ final class GoogleProtocol {
             "reasoning_effort",
             "tools",
             "tool_choice",
+            "parallel_tool_calls",
+            "modalities",
+            "audio",
+            "media_resolution",
             "user");
     for (String key : keys(input)) if (!allowed.contains(key)) throw new IOException("不支持的请求参数");
     if (input.has("stream") && !(input.get("stream") instanceof Boolean))
@@ -185,6 +189,7 @@ final class GoogleProtocol {
     }
     if (input.optString("model").contains("-image"))
       config.put("responseModalities", arr("TEXT", "IMAGE"));
+    GoogleMedia.configure(input, config);
     if (config.length() > 0) out.put("generationConfig", config);
     JSONArray tools = input.optJSONArray("tools"), declarations = new JSONArray();
     if (tools != null)
@@ -259,6 +264,16 @@ final class GoogleProtocol {
                   "inlineData",
                   obj("mimeType", url.substring(5, cut - 7), "data", url.substring(cut + 1))));
           break;
+        case "input_audio":
+          JSONObject audio = p.getJSONObject("input_audio");
+          String formatName = audio.getString("format");
+          String mime =
+              formatName.equals("wav") ? "audio/wav" : formatName.equals("mp3") ? "audio/mpeg" : "";
+          out.put(GoogleMedia.blob(mime, audio.getString("data")));
+          break;
+        case "file":
+          out.put(GoogleMedia.dataURL(p.getJSONObject("file").getString("file_data")));
+          break;
         default:
           throw new IOException("消息内容类型尚未支持");
       }
@@ -323,6 +338,20 @@ final class GoogleProtocol {
             break;
           case "seed":
             config.put(18, v);
+            break;
+          case "speechConfig":
+            config.put(15, GoogleMedia.speechWire((JSONObject) v));
+            break;
+          case "mediaResolution":
+            int resolution =
+                java.util.Arrays.asList(
+                        "",
+                        "MEDIA_RESOLUTION_LOW",
+                        "MEDIA_RESOLUTION_MEDIUM",
+                        "MEDIA_RESOLUTION_HIGH")
+                    .indexOf(v.toString());
+            if (resolution < 1) throw new IOException("Invalid media resolution");
+            config.put(17, resolution);
             break;
           case "thinkingConfig":
             JSONObject t = (JSONObject) v;
@@ -608,12 +637,16 @@ final class GoogleProtocol {
   static JSONObject message(JSONArray parts, boolean stream, int offset) throws Exception {
     StringBuilder text = new StringBuilder(), thoughts = new StringBuilder();
     JSONArray calls = new JSONArray();
+    JSONArray mediaParts = new JSONArray();
     JSONObject result = obj("role", "assistant");
     for (int i = 0; i < parts.length(); i++) {
       JSONObject p = parts.getJSONObject(i);
       if (p.optBoolean("thought")) thoughts.append(p.optString("text"));
       else text.append(p.optString("text"));
       JSONObject media = p.optJSONObject("inlineData");
+      if (media != null && !media.optString("mimeType").startsWith("image/"))
+        mediaParts.put(
+            obj("mime_type", media.getString("mimeType"), "data", media.getString("data")));
       if (media != null && media.optString("mimeType").startsWith("image/"))
         text.append("\n\n![image](data:")
             .append(media.getString("mimeType"))
@@ -637,6 +670,7 @@ final class GoogleProtocol {
       }
     }
     result.put("content", text.toString());
+    if (mediaParts.length() > 0) result.put("media", mediaParts);
     if (thoughts.length() > 0) result.put("reasoning_content", thoughts.toString());
     if (calls.length() > 0) result.put("tool_calls", calls);
     return result;

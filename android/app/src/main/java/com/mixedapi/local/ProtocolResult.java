@@ -97,6 +97,8 @@ final class ProtocolResult {
     JSONArray choices = chat.getJSONArray("choices");
     if (choices.length() != 1) throw new IOException("Invalid choices");
     JSONObject choice = choices.getJSONObject(0), message = choice.getJSONObject("message");
+    if (!message.isNull("media") || !message.isNull("audio"))
+      throw new IOException("Audio representation unavailable; use audio/speech");
     String finish = choice.getString("finish_reason"), status = status(finish);
     JSONArray output = new JSONArray(), content = new JSONArray();
     JSONObject details = null;

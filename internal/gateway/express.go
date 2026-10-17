@@ -11,14 +11,11 @@ import (
 )
 
 type geminiPart struct {
-	Text             string `json:"text,omitempty"`
-	Thought          bool   `json:"thought,omitempty"`
-	ThoughtSignature string `json:"thoughtSignature,omitempty"`
-	InlineData       *struct {
-		MIME string `json:"mimeType"`
-		Data string `json:"data"`
-	} `json:"inlineData,omitempty"`
-	Call *struct {
+	Text             string      `json:"text,omitempty"`
+	Thought          bool        `json:"thought,omitempty"`
+	ThoughtSignature string      `json:"thoughtSignature,omitempty"`
+	InlineData       *geminiBlob `json:"inlineData,omitempty"`
+	Call             *struct {
 		Name string          `json:"name"`
 		Args json.RawMessage `json:"args"`
 	} `json:"functionCall,omitempty"`
@@ -67,6 +64,13 @@ func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
 		Image struct {
 			URL string `json:"url"`
 		} `json:"image_url"`
+		Audio struct {
+			Format string `json:"format"`
+			Data   string `json:"data"`
+		} `json:"input_audio"`
+		File struct {
+			Data string `json:"file_data"`
+		} `json:"file"`
 	}
 	if json.Unmarshal(raw, &items) != nil {
 		return nil, errors.New("消息内容必须是文本或内容数组")
@@ -84,11 +88,21 @@ func geminiParts(raw json.RawMessage) ([]geminiPart, error) {
 				return nil, errors.New("图片请使用 base64 data URL；不会代替用户下载任意远程地址")
 			}
 			p := geminiPart{}
-			p.InlineData = &struct {
-				MIME string `json:"mimeType"`
-				Data string `json:"data"`
-			}{strings.TrimSuffix(strings.TrimPrefix(meta, "data:"), ";base64"), data}
+			p.InlineData = &geminiBlob{strings.TrimSuffix(strings.TrimPrefix(meta, "data:"), ";base64"), data}
 			parts = append(parts, p)
+		case "input_audio":
+			mime := map[string]string{"wav": "audio/wav", "mp3": "audio/mpeg"}[item.Audio.Format]
+			blob, err := inlineMedia(mime, item.Audio.Data)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, geminiPart{InlineData: blob})
+		case "file":
+			blob, err := mediaDataURL(item.File.Data)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, geminiPart{InlineData: blob})
 		default:
 			return nil, errors.New("该消息内容类型尚不支持")
 		}
@@ -236,6 +250,9 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 			return nil, errors.New("reasoning_effort 不支持")
 		}
 	}
+	if err := googleMediaConfig(payload, config); err != nil {
+		return nil, err
+	}
 	if len(config) > 0 {
 		out["generationConfig"] = config
 	}
@@ -332,6 +349,12 @@ func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backe
 		jsonError(w, 400, err.Error())
 		return
 	}
+	contract, err := googleTools(payload)
+	if err != nil {
+		jsonError(w, 400, err.Error())
+		return
+	}
+	contract.prepare(body, false)
 	var stream bool
 	json.Unmarshal(payload["stream"], &stream)
 	baseModel := strings.TrimSuffix(model, "-search")
@@ -364,6 +387,10 @@ func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backe
 			return
 		}
 		choices := []any{}
+		if err := contract.check(result); err != nil {
+			jsonError(w, 502, "来源违反工具调用约束")
+			return
+		}
 		for _, candidate := range result.Candidates {
 			message := geminiMessage(candidate.Content.Parts, false, 0)
 			choices = append(choices, map[string]any{"index": candidate.Index, "message": message, "finish_reason": geminiFinish(candidate.Finish, len(candidate.Content.Parts) > 0 && hasGeminiCalls(candidate.Content.Parts))})
@@ -405,9 +432,13 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 	message := map[string]any{"role": "assistant"}
 	var text, thought strings.Builder
 	calls := []any{}
+	media := []any{}
 	for _, p := range parts {
 		if p.InlineData != nil && strings.HasPrefix(p.InlineData.MIME, "image/") {
 			text.WriteString("\n\n![image](data:" + p.InlineData.MIME + ";base64," + p.InlineData.Data + ")")
+		}
+		if p.InlineData != nil && !strings.HasPrefix(p.InlineData.MIME, "image/") {
+			media = append(media, map[string]any{"mime_type": p.InlineData.MIME, "data": p.InlineData.Data})
 		}
 		if p.Thought {
 			thought.WriteString(p.Text)
@@ -426,6 +457,9 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 		}
 	}
 	message["content"] = text.String()
+	if len(media) > 0 {
+		message["media"] = media
+	}
 	if thought.Len() > 0 {
 		message["reasoning_content"] = thought.String()
 	}
@@ -436,6 +470,11 @@ func geminiMessage(parts []geminiPart, stream bool, offset int) map[string]any {
 }
 
 func (s *Server) streamExpress(w http.ResponseWriter, r *http.Request, body io.Reader, id, model string, created int64, payload map[string]json.RawMessage) {
+	contract, err := googleTools(payload)
+	if err != nil {
+		jsonError(w, 400, err.Error())
+		return
+	}
 	out := newSSEOutput(w, model)
 	out.id, out.created = id, created
 	offsets := map[int]int{}
@@ -446,10 +485,13 @@ func (s *Server) streamExpress(w http.ResponseWriter, r *http.Request, body io.R
 		json.Unmarshal(raw, &expected)
 	}
 	var last geminiResult
-	err := readSSE(r.Context(), body, func(data []byte) error {
+	err = readSSE(r.Context(), body, func(data []byte) error {
 		var result geminiResult
 		if json.Unmarshal(data, &result) != nil || len(result.Error) > 0 {
 			return errors.New("invalid Google event")
+		}
+		if err := contract.check(result); err != nil {
+			return err
 		}
 		if result.Usage.Total > 0 {
 			last = result

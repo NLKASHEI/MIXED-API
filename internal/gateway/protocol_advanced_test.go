@@ -21,6 +21,42 @@ func advancedBridge(t *testing.T, handler func(*http.Request) string) *Server {
 	return app
 }
 
+func TestChatReplaysNativeResponsesReasoningItems(t *testing.T) {
+	calls := 0
+	app := advancedBridge(t, func(r *http.Request) string {
+		calls++
+		if calls == 2 {
+			raw, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(raw), `"encrypted_content":"opaque-fixture"`) {
+				t.Error("native reasoning lost on replay")
+			}
+		}
+		return `{"id":"r1","status":"completed","output":[{"id":"rs1","type":"reasoning","summary":[{"type":"summary_text","text":"plan"}],"encrypted_content":"opaque-fixture"},{"type":"message","content":[{"type":"output_text","text":"answer"}]}]}`
+	})
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"opencode/gpt-5.4","messages":[{"role":"user","content":"hi"}]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "opaque-fixture") {
+		t.Fatalf("reasoning lost: %d %s", w.Code, w.Body.String())
+	}
+	var reply map[string]any
+	json.Unmarshal(w.Body.Bytes(), &reply)
+	message := reply["choices"].([]any)[0].(map[string]any)["message"]
+	raw, _ := json.Marshal(map[string]any{"model": "opencode/gpt-5.4", "messages": []any{map[string]any{"role": "user", "content": "hi"}, message, map[string]any{"role": "user", "content": "continue"}}})
+	w = accountTestCall(app, "POST", "/v1/chat/completions", "client", string(raw))
+	if w.Code != 200 || calls != 2 {
+		t.Fatal("replay failed", w.Code)
+	}
+}
+
+func TestResponsesStreamPreservesOpaqueReasoningOnce(t *testing.T) {
+	app := advancedBridge(t, func(r *http.Request) string {
+		return "data: " + `{"type":"response.output_item.done","output_index":0,"item":{"id":"rs1","type":"reasoning","summary":[],"encrypted_content":"opaque-fixture"}}` + "\n\ndata: " + `{"type":"response.completed","response":{"id":"r1","status":"completed","output":[{"id":"rs1","type":"reasoning","summary":[],"encrypted_content":"opaque-fixture"}]}}` + "\n\n"
+	})
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"opencode/gpt-5.4","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	if w.Code != 200 || strings.Count(w.Body.String(), "opaque-fixture") != 1 || !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Fatal("opaque stream state lost or duplicated", w.Body.String())
+	}
+}
+
 func TestResponsesCanReplaySignedReasoningAndCitations(t *testing.T) {
 	calls := 0
 	app := advancedBridge(t, func(r *http.Request) string {
@@ -65,6 +101,16 @@ func TestBridgeRejectsUnrepresentableOptionsBeforeInference(t *testing.T) {
 		if w.Code != 400 {
 			t.Errorf("unsupported option: %d", w.Code)
 		}
+	}
+}
+
+func TestBridgeDoesNotDropAudioIntoEmptyTextSuccess(t *testing.T) {
+	app := advancedBridge(t, func(r *http.Request) string {
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"","media":[{"mime_type":"audio/L16;codec=pcm;rate=24000","data":"AAABAA=="}]}}]}`
+	})
+	w := accountTestCall(app, "POST", "/v1/responses", "client", `{"model":"opencode/deepseek-v4-flash","input":"hi"}`)
+	if w.Code != 502 {
+		t.Fatalf("unrepresentable output silently lost: %d %s", w.Code, w.Body.String())
 	}
 }
 

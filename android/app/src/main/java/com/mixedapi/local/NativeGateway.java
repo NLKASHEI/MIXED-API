@@ -206,8 +206,11 @@ final class NativeGateway {
       Map<String, String> headers)
       throws Exception {
     JSONObject packet;
+    GoogleTools contract;
     try {
       packet = GoogleProtocol.gemini(input);
+      contract = new GoogleTools(input);
+      contract.prepare(packet, false);
     } catch (Exception e) {
       BridgeHttpServer.fail(out, 400, "请求参数无效或不支持");
       return;
@@ -216,6 +219,7 @@ final class NativeGateway {
     String endpoint = modelURL + (stream ? ":streamGenerateContent?alt=sse" : ":generateContent");
     GoogleGateway.Output result =
         new GoogleGateway.Output(out, id, publicModel, stream, input.optInt("n", 1));
+    result.contract = contract;
     try (GoogleSessions.Response response =
         transport.send(
             "POST",

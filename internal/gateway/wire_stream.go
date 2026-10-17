@@ -103,6 +103,7 @@ func (o *sseOutput) done() {
 func streamResponsesAsChat(w http.ResponseWriter, r *http.Request, body io.Reader, model string, includeUsage bool) {
 	out := newSSEOutput(w, model)
 	indices := map[int]int{}
+	reasoningItems := map[int]bool{}
 	arguments := map[int]string{}
 	size := 0
 	complete := false
@@ -131,6 +132,11 @@ func streamResponsesAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 			return out.chunk(map[string]any{"content": e.Delta}, nil, nil)
 		case "response.reasoning_summary_text.delta":
 			return out.chunk(map[string]any{"reasoning_content": e.Delta}, nil, nil)
+		case "response.output_item.done":
+			if e.Item["type"] == "reasoning" && !reasoningItems[e.Index] {
+				reasoningItems[e.Index] = true
+				return out.chunk(map[string]any{"reasoning_details": []any{map[string]any{"type": "reasoning.item", "format": "openai-responses-v1", "item": e.Item}}}, nil, nil)
+			}
 		case "response.output_item.added":
 			if e.Item["type"] != "function_call" {
 				return nil
@@ -156,6 +162,17 @@ func streamResponsesAsChat(w http.ResponseWriter, r *http.Request, body io.Reade
 			arguments[e.Index] += e.Delta
 			return out.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": index, "function": map[string]any{"arguments": e.Delta}}}}, nil, nil)
 		case "response.completed", "response.incomplete":
+			if items, ok := e.Response["output"].([]any); ok {
+				for index, value := range items {
+					item, ok := value.(map[string]any)
+					if ok && item["type"] == "reasoning" && !reasoningItems[index] {
+						if err := out.chunk(map[string]any{"reasoning_details": []any{map[string]any{"type": "reasoning.item", "format": "openai-responses-v1", "item": item}}}, nil, nil); err != nil {
+							return err
+						}
+						reasoningItems[index] = true
+					}
+				}
+			}
 			if e.Type == "response.completed" {
 				for _, args := range arguments {
 					if !json.Valid([]byte(args)) {

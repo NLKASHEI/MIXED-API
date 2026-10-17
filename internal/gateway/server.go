@@ -158,7 +158,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/v1/models" && r.Method == "GET":
 		s.listModels(w, r, cfg)
-	case (r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/embeddings" || r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/messages/count_tokens") && r.Method == "POST":
+	case (r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/audio/speech" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/embeddings" || r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/messages/count_tokens") && r.Method == "POST":
 		s.forward(w, r, cfg)
 	default:
 		jsonError(w, 404, "Unsupported endpoint")

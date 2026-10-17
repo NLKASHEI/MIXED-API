@@ -317,6 +317,9 @@ func chatResultToResponses(chat map[string]any, model string) (map[string]any, e
 	if !ok || choice["finish_reason"] == nil {
 		return nil, errors.New("unfinished response")
 	}
+	if message["media"] != nil || message["audio"] != nil {
+		return nil, errors.New("audio representation unavailable; use audio/speech")
+	}
 	status := "completed"
 	var incomplete any
 	if choice["finish_reason"] == "length" || choice["finish_reason"] == "content_filter" {

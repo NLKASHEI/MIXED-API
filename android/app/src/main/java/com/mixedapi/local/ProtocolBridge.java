@@ -43,6 +43,25 @@ final class ProtocolBridge {
       if (!capture.passthrough && !stream.done) stream.error();
       return;
     }
+    try {
+      byte[] captured = capture(handler, chat);
+      String packet = new String(captured, java.nio.charset.StandardCharsets.UTF_8);
+      int split = packet.indexOf("\r\n\r\n");
+      if (split < 0) throw new IOException("Missing internal response");
+      if (!packet.startsWith("HTTP/1.1 200 ")) {
+        out.write(captured);
+        out.flush();
+        return;
+      }
+      JSONObject response =
+          ProtocolResult.convert(new JSONObject(packet.substring(split + 4)), model, messages);
+      BridgeHttpServer.json(out, 200, response, backend);
+    } catch (Exception e) {
+      if (!Thread.currentThread().isInterrupted()) BridgeHttpServer.fail(out, 502, "来源结果无法转换为完整响应");
+    }
+  }
+
+  static byte[] capture(Handler handler, JSONObject chat) throws Exception {
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
     OutputStream capture =
         new OutputStream() {
@@ -59,22 +78,8 @@ final class ProtocolBridge {
             buffer.write(bytes, offset, count);
           }
         };
-    try {
-      handler.serve(capture, chat);
-      String packet = buffer.toString("UTF-8");
-      int split = packet.indexOf("\r\n\r\n");
-      if (split < 0) throw new IOException("Missing internal response");
-      if (!packet.startsWith("HTTP/1.1 200 ")) {
-        out.write(buffer.toByteArray());
-        out.flush();
-        return;
-      }
-      JSONObject response =
-          ProtocolResult.convert(new JSONObject(packet.substring(split + 4)), model, messages);
-      BridgeHttpServer.json(out, 200, response, backend);
-    } catch (Exception e) {
-      if (!Thread.currentThread().isInterrupted()) BridgeHttpServer.fail(out, 502, "来源结果无法转换为完整响应");
-    }
+    handler.serve(capture, chat);
+    return buffer.toByteArray();
   }
 
   /**

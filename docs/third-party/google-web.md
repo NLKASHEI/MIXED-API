@@ -4,7 +4,7 @@
 
 | 来源 | 固定版本 | 采用范围 |
 | --- | --- | --- |
-| Mag1cFall/AIStudio2API | ebb27d109dfa8bcea96d481846f3f0a7536d89f0 | MIT；MakerSuite JSON+protobuf 字段、Build 代理封装、WAA 函数发现方式。重新组织为 Go 协议模块和隔离的官方页面会话。完整许可见 AIStudio2API-MIT.txt。 |
+| Mag1cFall/AIStudio2API | 54faed274d328c377272d6085d35133742d94085 | MIT；MakerSuite JSON+protobuf 字段、Build 代理封装、WAA 函数发现、语音字段与显式工具调用约束。重新组织为 Go/Java 协议模块和隔离的官方页面会话。完整许可见 AIStudio2API-MIT.txt。 |
 | DeconstructedCube/aistudio-api | 6d1f243b811834a88fecac5615e6a161ea112efb | 只核对协议与依赖说明；没有可核验的 LICENSE 文件，因此不复制其实现。 |
 | DeconstructedCube/APS2api | 见 upstream-audit-2026-10-17.md 与 upstreams.json | PolyForm Noncommercial；作为匿名 GraphQL 请求/响应的协议核对输入。未复制其认证模拟器、代理池或调度实现。MIXED 请求模板来自用户当前官方页面，流解析和队列为独立实现。 |
 
