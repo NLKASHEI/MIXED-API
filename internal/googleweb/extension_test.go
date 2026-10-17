@@ -39,16 +39,25 @@ func TestCurrentBrowserExtensionTransport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	dial := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{"Origin": []string{"chrome-extension://abcdefghijklmnopabcdefghijklmnop"}})}
-	conn, _, _, err := dial.Dial(ctx, endpoint)
+	conn, buffered, _, err := dial.Dial(ctx, endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	// The hello frame can arrive in the same read as the upgrade response.
+	// Keep the dialer's buffered bytes instead of waiting for a second hello.
+	var peer io.ReadWriter = conn
+	if buffered != nil {
+		peer = struct {
+			io.Reader
+			io.Writer
+		}{buffered, conn}
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
-			raw, _, e := wsutil.ReadServerData(conn)
+			raw, _, e := wsutil.ReadServerData(peer)
 			if e != nil {
 				return
 			}
