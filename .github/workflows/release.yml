@@ -144,9 +144,43 @@ jobs:
           name: android-reports
           path: android/app/build/reports/
 
+  android-device:
+    needs: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-release
+      - name: Start clean Android 15 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64' 'emulator' 'platform-tools'
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --name mixed-api --package 'system-images;android-35;google_apis;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -avd mixed-api -no-window -no-audio -no-snapshot -gpu swiftshader -memory 2048 -cores 2 > /tmp/mixed-emulator.log 2>&1 &
+          timeout 180 adb wait-for-device
+          for attempt in $(seq 1 120); do
+            if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == 1 ]]; then break; fi
+            sleep 2
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1
+          adb shell input keyevent 82
+      - name: Verify installed APK and notification lifecycle
+        run: python3 scripts/smoke-android.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-device-evidence
+          path: android-device-evidence/
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [version, verify, windows, android]
+    needs: [version, verify, windows, android, android-device]
     permissions:
       contents: write
     runs-on: ubuntu-24.04
