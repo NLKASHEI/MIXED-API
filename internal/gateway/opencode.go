@@ -90,6 +90,11 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		return
 	}
 	protocol := target.Protocol
+	requested := strings.TrimPrefix(r.URL.Path, "/v1/")
+	if (requested == "responses" || requested == "messages") && requested != protocol {
+		s.serveProtocolBridge(w, r, b, publicModel, model, payload)
+		return
+	}
 	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion}
 	if b.ProviderKey != "" {
 		headers["Authorization"] = "Bearer " + b.ProviderKey
@@ -101,7 +106,6 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		s.serveGeminiHTTP(w, r, b, publicModel, model, payload, target.Base+"/models/", headers)
 		return
 	}
-	requested := strings.TrimPrefix(r.URL.Path, "/v1/")
 	body := payloadObject(payload)
 	body["model"] = model
 	converted := requested == "chat/completions" && (protocol == "responses" || protocol == "messages")
