@@ -18,7 +18,11 @@ type accountCredential struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 	AccountID    string `json:"account_id,omitempty"`
 	Domain       string `json:"domain,omitempty"`
+	UserID       string `json:"user_id,omitempty"`
+	EnterpriseID string `json:"enterprise_id,omitempty"`
+	Department   string `json:"department,omitempty"`
 	Expires      int64  `json:"expires,omitempty"`
+	NeedsLogin   bool   `json:"needs_login,omitempty"`
 }
 type loginAttempt struct {
 	Status  string `json:"status"`
@@ -45,7 +49,7 @@ func (s *Server) credential(id string) (accountCredential, error) {
 		return accountCredential{}, err
 	}
 	var c accountCredential
-	if json.Unmarshal(raw, &c) != nil || c.AccessToken == "" {
+	if json.Unmarshal(raw, &c) != nil || c.AccessToken == "" || c.NeedsLogin {
 		return c, errors.New("账号凭证无效，请重新授权")
 	}
 	return c, nil
@@ -134,6 +138,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 			old.cancel()
 		}
 		delete(s.logins, id)
+		s.cancelRefresh(id)
 		if err := s.storeCredential(id, *source.Tokens); err != nil {
 			jsonError(w, 500, "无法保存账号授权")
 			return
@@ -148,6 +153,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 			state.cancel()
 		}
 		delete(s.logins, id)
+		s.cancelRefresh(id)
 		if err := os.Remove(s.accountFile(id)); err != nil && !os.IsNotExist(err) {
 			jsonError(w, 500, "无法清除本机授权")
 			return
@@ -167,8 +173,9 @@ func (s *Server) beginAccountLogin(ctx context.Context, id string) (loginAttempt
 	}
 	probe, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	r, _ := http.NewRequestWithContext(probe, "POST", "https://copilot.tencent.com/plugin/auth/state?platform=workbuddy", strings.NewReader("{}"))
+	r, _ := http.NewRequestWithContext(probe, "POST", "https://copilot.tencent.com/v2/plugin/auth/state?platform=workbuddy", strings.NewReader("{}"))
 	r.Header.Set("Content-Type", "application/json")
+	workbuddyAnonymousHeaders(r.Header)
 	resp, err := s.client.Do(r)
 	if err != nil {
 		return loginAttempt{}, errors.New("无法打开 WorkBuddy 授权流程")
@@ -224,6 +231,7 @@ func (s *Server) finishLogin(id string, flow *loginAttempt, c accountCredential,
 		return
 	}
 	if err == nil {
+		s.cancelRefresh(id)
 		err = s.storeCredential(id, c)
 	}
 	flow.URL, flow.Code = "", ""
@@ -240,7 +248,8 @@ func (s *Server) finishLogin(id string, flow *loginAttempt, c accountCredential,
 }
 func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, state string) {
 	for {
-		r, _ := http.NewRequestWithContext(ctx, "GET", "https://copilot.tencent.com/plugin/auth/token?state="+url.QueryEscape(state), nil)
+		r, _ := http.NewRequestWithContext(ctx, "GET", "https://copilot.tencent.com/v2/plugin/auth/token?state="+url.QueryEscape(state), nil)
+		workbuddyAnonymousHeaders(r.Header)
 		resp, err := s.client.Do(r)
 		if err == nil {
 			data, decodeErr := decodeAccountResponse(resp.Body)
@@ -248,10 +257,14 @@ func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, sta
 			if decodeErr == nil && resp.StatusCode == 200 {
 				token, _ := data["accessToken"].(string)
 				if token != "" {
-					refresh, _ := data["refreshToken"].(string)
-					domain, _ := data["domain"].(string)
-					s.finishLogin("workbuddy", flow, accountCredential{AccessToken: token, RefreshToken: refresh, Domain: domain}, nil)
-					return
+					c, parseErr := workbuddyTokens(data, accountCredential{})
+					if parseErr == nil {
+						c, parseErr = s.workbuddyAccount(ctx, state, c)
+						if parseErr == nil {
+							s.finishLogin("workbuddy", flow, c, nil)
+							return
+						}
+					}
 				}
 			}
 		}

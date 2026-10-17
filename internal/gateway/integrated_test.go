@@ -90,10 +90,12 @@ func TestWorkBuddyUserAuthorizationAndInferenceNeedNoCLI(t *testing.T) {
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var data string
 		switch r.URL.Path {
-		case "/plugin/auth/state":
+		case "/v2/plugin/auth/state":
 			data = `{"data":{"state":"flow-test","authUrl":"https://copilot.tencent.com/login?state=flow-test"}}`
-		case "/plugin/auth/token":
+		case "/v2/plugin/auth/token":
 			data = `{"data":{"accessToken":"private-access","refreshToken":"private-refresh"}}`
+		case "/v2/plugin/login/account":
+			data = `{"data":{"uid":"user-test"}}`
 		case "/v2/chat/completions":
 			if r.Header.Get("Authorization") != "Bearer private-access" {
 				t.Error("not using authorized account")

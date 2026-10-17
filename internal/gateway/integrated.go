@@ -26,7 +26,7 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 			return nil, errors.New("请填写 Express API Key")
 		}
 		if b.ID == "workbuddy" {
-			if _, err := s.credential(b.ID); err != nil {
+			if _, err := s.freshCredential(ctx, b.ID, ""); err != nil {
 				return nil, err
 			}
 		}
@@ -68,15 +68,8 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 		return ids, nil
 	}
 	if b.ID == "codex" {
-		c, err := s.credential(b.ID)
-		if err != nil {
-			return nil, err
-		}
-		r, _ := http.NewRequestWithContext(ctx, "GET", builtinBase(b.ID)+"/models?client_version=0.163.0", nil)
-		r.Header.Set("Authorization", "Bearer "+c.AccessToken)
-		r.Header.Set("ChatGPT-Account-ID", c.AccountID)
-		r.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
-		resp, err := s.client.Do(r)
+		r, _ := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1/v1/models", nil)
+		resp, err := s.accountJSON(r, b.ID, "/models?client_version=0.163.0", nil)
 		if err != nil {
 			return nil, errors.New("无法读取 Codex 模型目录")
 		}

@@ -16,22 +16,13 @@ func (s *Server) serveWorkBuddy(w http.ResponseWriter, r *http.Request, b Backen
 		jsonError(w, 501, "WorkBuddy 当前提供 chat/completions")
 		return
 	}
-	c, err := s.credential("workbuddy")
-	if err != nil {
-		jsonError(w, 401, err.Error())
-		return
-	}
 	body := payloadObject(payload)
 	body["model"] = model
 	stream, _ := body["stream"].(bool)
 	body["stream"] = true
-	headers := map[string]string{"Authorization": "Bearer " + c.AccessToken, "User-Agent": "MIXED-API/" + BuildVersion, "Accept": "text/event-stream"}
-	if c.Domain != "" {
-		headers["X-Domain"] = c.Domain
-	}
-	resp, err := providerJSON(s.client, r, builtinBase("workbuddy")+"/chat/completions", body, headers)
+	resp, err := s.accountJSON(r, "workbuddy", "/chat/completions", body)
 	if err != nil {
-		jsonError(w, 502, "无法连接 WorkBuddy 服务")
+		writeAccountError(w, err)
 		return
 	}
 	defer resp.Body.Close()

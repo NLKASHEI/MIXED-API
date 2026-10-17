@@ -39,6 +39,7 @@ type Server struct {
 	protocolsAt       time.Time
 	accountMu         sync.Mutex
 	logins            map[string]*loginAttempt
+	refreshes         map[string]*accountRefresh
 	google            googleweb.Sessions
 	googleBuildUnary  map[string]bool
 }

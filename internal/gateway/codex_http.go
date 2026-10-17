@@ -16,11 +16,7 @@ func (s *Server) serveCodexHTTP(w http.ResponseWriter, r *http.Request, b Backen
 		jsonError(w, 501, "Codex 支持 chat/completions 与 responses")
 		return
 	}
-	c, err := s.credential("codex")
-	if err != nil {
-		jsonError(w, 401, err.Error())
-		return
-	}
+	var err error
 	body := payloadObject(payload)
 	body["model"] = model
 	stream, _ := body["stream"].(bool)
@@ -37,9 +33,9 @@ func (s *Server) serveCodexHTTP(w http.ResponseWriter, r *http.Request, b Backen
 	if _, ok := body["instructions"]; !ok {
 		body["instructions"] = ""
 	}
-	resp, err := providerJSON(s.client, r, builtinBase("codex")+"/responses", body, map[string]string{"Authorization": "Bearer " + c.AccessToken, "ChatGPT-Account-ID": c.AccountID, "User-Agent": "MIXED-API/" + BuildVersion, "Accept": "text/event-stream"})
+	resp, err := s.accountJSON(r, "codex", "/responses", body)
 	if err != nil {
-		jsonError(w, 502, "无法连接 Codex 服务")
+		writeAccountError(w, err)
 		return
 	}
 	defer resp.Body.Close()
