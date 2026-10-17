@@ -198,7 +198,9 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
 		}
 	}
 	available := map[string]bool{}
+	access := map[string]*modelAccess{}
 	for _, m := range models {
+		access[m.ID] = m.Access
 		available[m.ID] = true
 	}
 	names := make([]string, 0, len(c.Aliases))
@@ -209,7 +211,7 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
 	for _, name := range names {
 		target := c.Aliases[name]
 		if available[target] {
-			models = append(models, catalogModel{ID: name, Object: "model", OwnedBy: "alias", Original: target})
+			models = append(models, catalogModel{ID: name, Object: "model", OwnedBy: "alias", Original: target, Access: access[target]})
 		}
 	}
 	jsonResult(w, 200, map[string]any{"object": "list", "data": models, "backend_errors": errorsByBackend})

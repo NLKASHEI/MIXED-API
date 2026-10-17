@@ -339,6 +339,6 @@ func runHost(h *host, class, caption, profileName string) error {
 
 // NewGoogleSessions creates provider windows lazily, only after the user opens
 // the corresponding authorization step. It never opens a terminal/process.
-func NewGoogleSessions() *googleweb.Browser {
-	return googleweb.New(func(ctx context.Context, id string) (googleweb.Page, error) { return newProviderPage(ctx, id) })
+func NewGoogleSessions(root string) *googleweb.Browser {
+	return googleweb.New(func(ctx context.Context, id string) (googleweb.Page, error) { return newSystemBrowserPage(ctx, id, root) })
 }

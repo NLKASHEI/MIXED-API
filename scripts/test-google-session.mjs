@@ -9,13 +9,25 @@ const rpc='https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.
 const valid='[[[[[[[[null,"hello"]],"model"],1]],null,[2,1,3]]]]';
 const sent=[];let responseStatus=200,responseText=valid;
 class FakeXHR{open(){}setRequestHeader(){}send(){}addEventListener(){}}
-class Textarea{set value(v){this.text=v}getClientRects(){return [1]}dispatchEvent(){}}
+class Textarea{get value(){return this.text||''}set value(v){this.text=v}getClientRects(){return [1]}dispatchEvent(){}}
 const textarea=new Textarea();
 const window={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */return 'proof-'+hash}},fetch:async(url,options)=>{sent.push({url,options});return new Response(responseText,{status:responseStatus})}};
-const globals={window,location:{origin:'https://aistudio.google.com',href:'https://aistudio.google.com/prompts/new_chat'},document:{cookie:'',querySelectorAll:()=>[textarea]},XMLHttpRequest:FakeXHR,HTMLTextAreaElement:Textarea,InputEvent:class{},Event:class{},Headers,Request,URL,TextEncoder,TextDecoder,crypto:webcrypto,structuredClone,AbortController,Uint8Array,btoa,atob,setTimeout,setInterval:()=>1,clearInterval(){},addEventListener(){}};
+const globals={window,location:{origin:'https://aistudio.google.com',href:'https://aistudio.google.com/prompts/new_chat'},document:{cookie:'',querySelectorAll:selector=>selector==='ms-prompt-box textarea'?[textarea]:[]},XMLHttpRequest:FakeXHR,HTMLTextAreaElement:Textarea,InputEvent:class{},Event:class{},KeyboardEvent:class{constructor(type){this.type=type}},Headers,Request,URL,TextEncoder,TextDecoder,crypto:webcrypto,structuredClone,AbortController,Uint8Array,btoa,atob,setTimeout,clearTimeout,DOMException,setInterval:()=>1,clearInterval(){},addEventListener(){}};
 runInNewContext(script,globals);
 const session=window.__mixedGoogleWeb;
 assert.equal(session.state().status,'waiting');
+let clicks=0;
+const runButton={disabled:false,closest:()=>null,getClientRects:()=>[1],click(){clicks++;window.default_MakerSuite.native(()=>{},'bootstrap').then(()=>window.fetch(rpc+'GenerateContent',{headers:{'x-goog-api-key':'fixture-page-key'},body:'[]'})).catch(()=>{});}};
+globals.document.querySelectorAll=selector=>selector==='ms-run-button button'?[runButton]:selector==='ms-prompt-box textarea'?[textarea]:[];
+textarea.text='unsent user draft';
+assert.equal(session.initialize().status,'waiting');assert.equal(clicks,0,'initialization overwrote a user draft');
+textarea.text='';
+assert.equal(session.initialize().status,'initializing');
+await delay(150);
+assert.equal(clicks,1);
+assert.equal(sent.length,0,'bootstrap was sent upstream instead of intercepted');
+assert.equal(session.state().status,'ready','automatic official-page bootstrap did not capture a function service');
+assert.equal(textarea.text,'','bootstrap prompt not restored');
 await window.default_MakerSuite.native({},'manual');
 responseStatus=403;await window.fetch(rpc+'GenerateContent',{headers:{'x-goog-api-key':'fixture-page-key'},body:'[]'});await delay(20);
 assert.equal(session.state().status,'waiting','rejected request accepted as authorization');
@@ -58,4 +70,29 @@ await graphWindow.fetch(graph,{body:JSON.stringify(template)});await delay(20);
 assert.equal(graphSession.start(id,{kind:'aps',model:'gemini-test',body:{contents:[{parts:[{text:'hi'}]}]}}),true);await delay(20);
 assert.equal(proofCalls,2);assert.equal(graphRequest.url,graph);assert.equal(JSON.parse(graphRequest.options.body).variables.recaptchaToken,'fixture-proof');
 assert.equal(graphSession.cancel(id),true);assert.equal(graphRequest.options.signal.aborted,true);
+// A fresh APS page initializes from its real contenteditable input without
+// sending a generation or clicking a consent dialog.
+let consent=true, graphUpstreamCalls=0;
+const input={isContentEditable:true,textContent:'',getClientRects:()=>[1],dispatchEvent(e){if(e.type==='keydown')graphWindow2.grecaptcha.enterprise.execute('official-key',{}).then(()=>graphWindow2.fetch(graph,{body:JSON.stringify(template)})).catch(()=>{});}};
+const graphWindow2={grecaptcha:{enterprise:{execute:async()=> 'fixture-proof'}},fetch:async()=>{graphUpstreamCalls++;return new Response('[]')}};
+runInNewContext(script,{...globals,window:graphWindow2,XMLHttpRequest:class extends FakeXHR {},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:{cookie:'',querySelectorAll:s=>s.includes('aria-modal')?(consent?[input]:[]):s==='[contenteditable="true"][role="textbox"]'?[input]:[]}});
+assert.equal(graphWindow2.__mixedGoogleWeb.initialize().status,'waiting');
+assert.equal(input.textContent,'','initializer touched input behind consent');
+consent=false;
+assert.equal(graphWindow2.__mixedGoogleWeb.initialize().status,'initializing');
+await delay(150);
+assert.equal(graphWindow2.__mixedGoogleWeb.state().status,'ready');
+assert.equal(graphUpstreamCalls,0,'APS bootstrap escaped to upstream');
+assert.equal(input.textContent,'');
+let releaseProof,lateSent=0;
+const proofWait=new Promise(resolve=>releaseProof=resolve);
+const lateWindow={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */await proofWait;return 'proof'}},fetch:async()=>{lateSent++;return new Response(valid)}};
+const lateField=new Textarea();
+const lateButton={disabled:false,closest:()=>null,getClientRects:()=>[1],click(){lateWindow.default_MakerSuite.native({},'bootstrap').then(()=>lateWindow.fetch(rpc+'GenerateContent',{headers:{'x-goog-api-key':'fixture'},body:'[]'})).catch(()=>{});}};
+runInNewContext(script,{...globals,window:lateWindow,XMLHttpRequest:class extends FakeXHR{},document:{cookie:'',querySelectorAll:s=>s==='ms-prompt-box textarea'?[lateField]:s==='ms-run-button button'?[lateButton]:[]}});
+assert.equal(lateWindow.__mixedGoogleWeb.initialize().status,'initializing');await delay(150);
+lateWindow.__mixedGoogleWeb.cancelInitialize();releaseProof();await delay(20);
+assert.equal(lateSent,0,'cancelled initialization leaked a delayed generation');
+assert.equal(lateWindow.__mixedGoogleWeb.state().status,'waiting');
+assert.equal(lateWindow.__mixedGoogleWeb.start(id,{kind:'models'}),false,'invalidated page allowed a new request');
 console.log('Google official-session bootstrap, rejection, unary RPC, catalog, GraphQL framing, cancellation, origin and serialization checks passed.');

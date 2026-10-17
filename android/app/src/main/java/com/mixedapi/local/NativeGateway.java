@@ -28,6 +28,39 @@ final class NativeGateway {
     this.accounts = accounts;
   }
 
+  JSONObject modelAccess(String model) throws Exception {
+    String kind = "unknown", label = "权限与费用待确认";
+    try (InputStream asset = context.getAssets().open("upstreams.json")) {
+      JSONArray sources = readJSON(asset).getJSONArray("sources");
+      for (int i = 0; i < sources.length(); i++) {
+        JSONObject source = sources.getJSONObject(i);
+        if (!"opencode".equals(source.optString("id"))) continue;
+        if (containsModel(source.optJSONArray("retired_models"), model)) {
+          kind = "retired";
+          label = "上游已撤下或停用";
+        } else if (containsModel(source.optJSONArray("free_models"), model)) {
+          kind = "free_candidate";
+          label = "免费无头候选 · 本应用未验证可用";
+        }
+      }
+    }
+    if ("unknown".equals(kind) && !model.endsWith("-free")) {
+      try (InputStream asset = context.getAssets().open("opencode-models.json")) {
+        if (readJSON(asset).has(model)) {
+          kind = "key_paid";
+          label = "需要 Key · 按账号计费";
+        }
+      }
+    }
+    return GoogleProtocol.obj("kind", kind, "label", label, "verified", false);
+  }
+
+  private static boolean containsModel(JSONArray models, String model) {
+    if (models != null)
+      for (int i = 0; i < models.length(); i++) if (model.equals(models.optString(i))) return true;
+    return false;
+  }
+
   JSONArray models(JSONObject backend) throws Exception {
     String id = backend.getString("id");
     if (id.equals("codex")) {

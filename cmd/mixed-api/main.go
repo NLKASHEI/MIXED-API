@@ -35,7 +35,7 @@ func main() {
 	}
 	server := gateway.NewServer(*file, cfg)
 	if runtime.GOOS == "windows" && !*noBrowser {
-		sessions := desktop.NewGoogleSessions()
+		sessions := desktop.NewGoogleSessions(filepath.Join(filepath.Dir(*file), "browser-profiles"))
 		server.SetGoogleSessions(sessions)
 		defer sessions.Close()
 	}

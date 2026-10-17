@@ -22,6 +22,30 @@ public class NativeGatewayTest {
   private BridgeHttpServer server;
 
   @Test
+  public void modelCatalogExplainsFreePaidRetiredAndUnknownAccess() throws Exception {
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) ->
+            new GoogleSessions.Response(
+                200,
+                new ByteArrayInputStream(
+                    "{\"data\":[{\"id\":\"big-pickle\"},{\"id\":\"gpt-5.5\"},{\"id\":\"muse-spark-1.3-contributor-free\"},{\"id\":\"future-model\"}]}"
+                        .getBytes(StandardCharsets.UTF_8))));
+    Context ctx = RuntimeEnvironment.getApplication();
+    JSONObject config = BridgeConfig.load(ctx);
+    config.put("aliases", new JSONObject().put("paid-alias", "opencode/gpt-5.5"));
+    BridgeConfig.save(ctx, config);
+    JSONArray models = call("/v1/models", null).getJSONArray("data");
+    assertEquals(5, models.length());
+    String[] kinds = {"free_candidate", "key_paid", "retired", "unknown", "key_paid"};
+    for (int i = 0; i < kinds.length; i++) {
+      JSONObject access = models.getJSONObject(i).getJSONObject("access");
+      assertEquals(kinds[i], access.getString("kind"));
+      assertFalse(access.getBoolean("verified"));
+    }
+  }
+
+  @Test
   public void googleSignedThoughtReplayRejectsOtherProtocols() throws Exception {
     java.util.concurrent.atomic.AtomicInteger calls =
         new java.util.concurrent.atomic.AtomicInteger();

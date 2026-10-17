@@ -19,6 +19,10 @@ final class GoogleGateway {
 
     JSONObject state(String id) throws Exception;
 
+    default JSONObject initialize(String id) throws Exception {
+      return state(id);
+    }
+
     GoogleSessions.Response send(String id, JSONObject operation, long deadline) throws Exception;
   }
 
@@ -41,6 +45,10 @@ final class GoogleGateway {
 
   JSONObject state(String id) throws Exception {
     return sessions.state(id);
+  }
+
+  JSONObject initialize(String id) throws Exception {
+    return sessions.initialize(id);
   }
 
   void open(Context context, String id) throws Exception {
@@ -80,8 +88,7 @@ final class GoogleGateway {
   }
 
   JSONArray models(String id) throws Exception {
-    if (!"ready".equals(state(id).optString("status")))
-      throw new IOException("请在来源窗口完成本人授权并发送测试消息");
+    if (!"ready".equals(state(id).optString("status"))) throw new IOException("请先打开来源页面并连接会话");
     JSONArray models = new JSONArray();
     if ("aps".equals(id)) {
       for (String name :

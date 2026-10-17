@@ -6,16 +6,18 @@ import (
 )
 
 type upstreamSource struct {
-	ID       string `json:"id"`
-	Repo     string `json:"repo"`
-	Revision string `json:"revision"`
-	Version  string `json:"version,omitempty"`
-	URL      string `json:"url,omitempty"`
-	SHA256   string `json:"sha256,omitempty"`
-	Entry    string `json:"entry,omitempty"`
-	NPM      bool   `json:"npm,omitempty"`
-	License  string `json:"license"`
-	Note     string `json:"note"`
+	ID            string   `json:"id"`
+	Repo          string   `json:"repo"`
+	Revision      string   `json:"revision"`
+	Version       string   `json:"version,omitempty"`
+	URL           string   `json:"url,omitempty"`
+	SHA256        string   `json:"sha256,omitempty"`
+	Entry         string   `json:"entry,omitempty"`
+	NPM           bool     `json:"npm,omitempty"`
+	License       string   `json:"license"`
+	Note          string   `json:"note"`
+	FreeModels    []string `json:"free_models,omitempty"`
+	RetiredModels []string `json:"retired_models,omitempty"`
 }
 type sourceCatalog struct {
 	CheckedOn string           `json:"checked_on"`

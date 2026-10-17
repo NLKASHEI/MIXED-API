@@ -19,9 +19,27 @@
     {
       "id": "opencode",
       "repo": "zkygwxf-bot/opencode-proxy",
-      "revision": "9c845e3b633e4f5d67e05ce1b0dae3d02ca96c13",
+      "revision": "27626a9d192b988938bb3d5f0e4fa241af7ae309",
       "license": "MIT",
-      "note": "同一 OpenCode 来源融合 v58 协议能力，已核对 v59 测试版与主分支；Go 内置 Chat、Responses、Anthropic 适配，不运行 Node 或独立代理。"
+      "note": "免费无头与 Key 计费模型分开标注。上游免费模式含客户端身份处理，MIXED 尚未验证无 Key 生成可用；不填 Key 不代表可用。",
+      "free_models": [
+        "muse-spark-1.2-contributor-free",
+        "mimo-v2.6-flash-free",
+        "longcat-2.5-preview-free",
+        "space-bunny-free",
+        "big-pickle",
+        "nemotron-3.5-lightning-free",
+        "nemotron-3.5-super-vl-free",
+        "deepseek-v4.1-flash-free",
+        "glm-5.3-flash-free",
+        "beam-free"
+      ],
+      "retired_models": [
+        "muse-spark-1.3-contributor-free",
+        "nemotron-3-ultra-free",
+        "step-5-preview-free",
+        "jev-1.13-free"
+      ]
     },
     {
       "id": "workbuddy",
@@ -38,14 +56,14 @@
       "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
       "entry": "vertex-proxy.exe",
       "license": "PolyForm-Noncommercial-1.0.0",
-      "note": "无头V内置核心开发中，准备操作不会下载或启动上游；官方与本地改版仍作为能力核对材料。"
+      "note": "无头V：协议模块已有实现，网页会话接入存在兼容问题，尚不能保证可用。准备成功不代表能生成。"
     },
     {
       "id": "aistudio",
       "repo": "Mag1cFall/AIStudio2API",
-      "revision": "ebb27d109dfa8bcea96d481846f3f0a7536d89f0",
+      "revision": "2cbe310ce6ebab093bf83e5078de8296f03770a9",
       "license": "MIT",
-      "note": "AIS：Build / Playground 内置重构中；同时核对 DeconstructedCube/aistudio-api。尚未提供内置请求链。"
+      "note": "AIS Build / Playground：协议模块已有实现，网页会话接入存在兼容问题，尚不能保证可用。登录成功不代表反代接通。"
     }
   ]
 }

@@ -431,7 +431,13 @@ public final class BridgeHttpServer implements AutoCloseable {
           fail(out, 401, "Admin key required");
           return;
         }
-        admin(out, method, path, body, config);
+        if ("POST".equals(method)
+            && ("/api/accounts/aistudio/initialize".equals(path)
+                || "/api/accounts/aps/initialize".equals(path))) {
+          try (ClientDisconnect cancelled = new ClientDisconnect(s, in)) {
+            admin(out, method, path, body, config);
+          }
+        } else admin(out, method, path, body, config);
         return;
       }
       if (!path.startsWith("/v1/")) {
@@ -488,7 +494,7 @@ public final class BridgeHttpServer implements AutoCloseable {
 
   private static String setupHelp(String id) {
     if (id.equals("vertex")) return "请先填写本人的 Express API Key";
-    if (GoogleGateway.source(id)) return "请先在来源窗口完成本人授权并发送测试消息";
+    if (GoogleGateway.source(id)) return "请先打开来源页面并连接会话";
     return "请先完成本人账号授权";
   }
 
@@ -510,12 +516,16 @@ public final class BridgeHttpServer implements AutoCloseable {
           json(out, 200, google.state(id));
           return;
         }
+        if (segments.length == 2 && "initialize".equals(segments[1]) && "POST".equals(method)) {
+          json(out, 200, google.initialize(id));
+          return;
+        }
         if (segments.length == 2 && "login".equals(segments[1]) && "POST".equals(method)) {
           google.open(context, id);
           json(
               out,
               200,
-              GoogleProtocol.obj("status", "waiting", "message", "请在官方页面完成本人授权并手动发送测试消息"));
+              GoogleProtocol.obj("status", "waiting", "message", "请在来源窗口完成本人登录与页面提示，然后返回连接会话"));
           return;
         }
       } catch (Exception e) {
@@ -730,9 +740,11 @@ public final class BridgeHttpServer implements AutoCloseable {
             GoogleGateway.source(id) ? google.models(id) : nativeGateway.models(b);
         for (int n = 0; n < nativeModels.length(); n++) {
           String name = nativeModels.getString(n);
-          result.models.put(
+          JSONObject model =
               GoogleProtocol.obj(
-                  "id", id + "/" + name, "object", "model", "owned_by", id, "original_id", name));
+                  "id", id + "/" + name, "object", "model", "owned_by", id, "original_id", name);
+          if ("opencode".equals(id)) model.put("access", nativeGateway.modelAccess(name));
+          result.models.put(model);
         }
         result
             .diagnostic
@@ -826,6 +838,11 @@ public final class BridgeHttpServer implements AutoCloseable {
       }
       if (!result.error.isEmpty()) errors.put(result.diagnostic.getString("id"), result.error);
     }
+    java.util.Map<String, JSONObject> access = new java.util.HashMap<>();
+    for (int i = 0; i < all.length(); i++) {
+      JSONObject m = all.getJSONObject(i);
+      if (m.has("access")) access.put(m.getString("id"), m.getJSONObject("access"));
+    }
     JSONObject aliases = cfg.optJSONObject("aliases");
     if (aliases != null) {
       java.util.List<String> names = new java.util.ArrayList<>();
@@ -840,7 +857,8 @@ public final class BridgeHttpServer implements AutoCloseable {
                   .put("id", name)
                   .put("object", "model")
                   .put("owned_by", "alias")
-                  .put("original_id", target));
+                  .put("original_id", target)
+                  .put("access", access.get(target)));
       }
     }
     BridgeLogs.add(200, "aggregate", "/v1/models", "模型总数 " + all.length());

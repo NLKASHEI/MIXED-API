@@ -246,6 +246,76 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     return raw instanceof JSONObject ? (JSONObject) raw : new JSONObject().put("status", "waiting");
   }
 
+  public JSONObject initialize(String id) throws Exception {
+    Page p = page(id);
+    if (p == null) return GoogleProtocol.obj("status", "none", "message", "请先打开来源页面");
+    if (!p.gate.tryAcquire(35, TimeUnit.SECONDS))
+      return GoogleProtocol.obj("status", "waiting", "message", "来源正在处理请求，请稍后重试");
+    try {
+      if (p.broken.get()) throw new IOException("来源窗口已失效，请重新打开");
+      Object raw =
+          eval(
+              p,
+              id,
+              "window.__mixedGoogleWeb?.initialize() || {status:'waiting',message:'请完成本人登录后再连接会话'}",
+              3000);
+      JSONObject result =
+          raw instanceof JSONObject ? (JSONObject) raw : GoogleProtocol.obj("status", "waiting");
+      long deadline = System.currentTimeMillis() + 32000;
+      while ("initializing".equals(result.optString("status"))) {
+        if (System.currentTimeMillis() >= deadline) throw new IOException("连接会话超时");
+        Thread.sleep(100);
+        result = state(id);
+      }
+      return result;
+    } finally {
+      releaseLease(p, id, "window.__mixedGoogleWeb?.cancelInitialize() === true");
+    }
+  }
+
+  private void releaseLease(Page page, String id, String expression) {
+    // Hold the lease until abort is acknowledged. A hung renderer is removed
+    // and destroyed before releasing it; an old waiter cannot reuse that page.
+    ui.post(
+        () -> {
+          AtomicBoolean finished = new AtomicBoolean();
+          Runnable expired =
+              () -> {
+                if (!finished.compareAndSet(false, true)) return;
+                try {
+                  discard(id, page);
+                } finally {
+                  page.gate.release();
+                }
+              };
+          ui.postDelayed(expired, 1000);
+          try {
+            if (page.broken.get()) {
+              expired.run();
+              return;
+            }
+            page.view.evaluateJavascript(
+                "location.origin === "
+                    + JSONObject.quote(origin(id))
+                    + " ? ("
+                    + expression
+                    + ") : false",
+                ack -> {
+                  if (!"true".equals(ack)) {
+                    expired.run();
+                    return;
+                  }
+                  if (!finished.compareAndSet(false, true)) return;
+                  ui.removeCallbacks(expired);
+                  page.gate.release();
+                });
+          } catch (RuntimeException e) {
+            ui.removeCallbacks(expired);
+            expired.run();
+          }
+        });
+  }
+
   public static final class Response implements AutoCloseable {
     public final int status;
     public final InputStream body;
@@ -399,42 +469,7 @@ public final class GoogleSessions implements AutoCloseable, GoogleGateway.Transp
     @Override
     public void close() {
       if (!closed.compareAndSet(false, true)) return;
-      // Hold the lease until abort is acknowledged. A hung renderer is removed
-      // and destroyed before releasing it; an old waiter cannot reuse that page.
-      ui.post(
-          () -> {
-            AtomicBoolean finished = new AtomicBoolean();
-            Runnable expired =
-                () -> {
-                  if (!finished.compareAndSet(false, true)) return;
-                  try {
-                    discard(id, page);
-                  } finally {
-                    page.gate.release();
-                  }
-                };
-            ui.postDelayed(expired, 1000);
-            try {
-              if (page.broken.get()) {
-                expired.run();
-                return;
-              }
-              page.view.evaluateJavascript(
-                  "location.origin === "
-                      + JSONObject.quote(origin(id))
-                      + " ? window.__mixedGoogleWeb?.cancel('"
-                      + key
-                      + "') : null",
-                  ignored -> {
-                    if (!finished.compareAndSet(false, true)) return;
-                    ui.removeCallbacks(expired);
-                    page.gate.release();
-                  });
-            } catch (RuntimeException e) {
-              ui.removeCallbacks(expired);
-              expired.run();
-            }
-          });
+      releaseLease(page, id, "window.__mixedGoogleWeb?.cancel('" + key + "') === true");
     }
   }
 

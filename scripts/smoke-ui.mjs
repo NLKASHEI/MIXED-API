@@ -36,6 +36,10 @@ try {
   await page.locator('#providers .card').nth(1).getByRole('button').click();
   await page.locator('#manual-settings').evaluate(n=>n.open=true);await page.locator('#backend-enabled').check();await page.locator('#save-provider').click();
   await page.locator('#next-provider').click();await page.locator('#verify-provider').click();await page.locator('#provider-progress').filter({hasText:'已读取 2 个模型'}).waitFor();
+  await page.route('**/v1/chat/completions',route=>route.fulfill({status:403,contentType:'application/json',body:'{"error":{"message":"fixture denied"}}'}));
+  await page.getByRole('button',{name:'测试对话',exact:true}).click();await page.locator('#provider-models').getByText('测试未通过：fixture denied',{exact:true}).waitFor();
+  await page.unroute('**/v1/chat/completions');
+  await page.getByRole('button',{name:'测试对话',exact:true}).click();await page.locator('#provider-models').getByText(/测试通过：vertex\/test-chat/).waitFor();
   await page.getByRole('button',{name:'关闭',exact:true}).first().click();
   // Reopen completion, then fail the next real HTTP refresh. Old model data
   // must never turn a failed verification into a successful completion.
@@ -113,15 +117,15 @@ try {
   // Only native window opening/state is substituted; no login is performed.
   await page.unroute('**/api/assist/status');
   await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"android","builtin_backends":["aps","aistudio"]}'}));
-  await page.route('**/api/accounts/**',route=>route.fulfill({contentType:'application/json',body:'{"status":"waiting","message":"请在官方页面完成本人授权，并发送一条测试消息"}'}));
+  await page.route('**/api/accounts/**',route=>route.fulfill({contentType:'application/json',body:'{"status":"waiting","message":"请完成本人授权后连接会话"}'}));
   await page.reload();await page.locator('#app').waitFor({state:'visible'});
   for(const [id,name] of [['aps','无头V'],['aistudio','AIS']]){
     await page.locator('#providers .card').filter({has:page.getByRole('heading',{name,exact:true})}).getByRole('button').click();
     await page.locator('#prepare-provider').click();await page.locator('#authorize-provider').waitFor({state:'visible'});
     assert(await page.locator('#official-field').isHidden(),'Google source incorrectly asks for Express key');
     await page.locator('#authorize-provider').click();
-    await page.locator('#provider-progress').filter({hasText:'测试消息'}).waitFor();
-    await page.locator('#next-provider').click();await page.locator('#toast').filter({hasText:'测试消息'}).waitFor();
+    await page.locator('#provider-progress').filter({hasText:'连接会话'}).waitFor();
+    await page.locator('#next-provider').click();await page.locator('#toast').filter({hasText:'连接会话'}).waitFor();
     assert(await page.locator('#authorize-provider').isVisible(),'unready source bypassed authorization');
     const state=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
     assert.equal(state.backends.find(b=>b.id===id).enabled,false);
@@ -159,6 +163,15 @@ try {
   await page.locator('#open-alias').click();
   assert.equal(await page.locator('#alias-target').inputValue(),'pc/vertex/test-chat','PC namespace duplicated');
   await page.keyboard.press('Escape');
+  await page.unroute('**/v1/models');
+  await page.route('**/v1/models',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({data:[
+    {id:'opencode/big-pickle',owned_by:'opencode',access:{kind:'free_candidate',label:'免费无头候选 · 本应用未验证可用',verified:false}},
+    {id:'opencode/gpt-5.5',owned_by:'opencode',access:{kind:'key_paid',label:'需要 Key · 按账号计费',verified:false}}
+  ]})}));
+  await page.locator('#refresh').click();await page.locator('#model-search').fill('');
+  await page.locator('#model-list').getByText(/免费无头候选/).waitFor();
+  await page.locator('#model-list').getByText(/需要 Key/).waitFor();
+  await page.screenshot({path:join(output,'opencode-access.png'),fullPage:true});
   await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.evaluate(()=>sessionStorage.getItem('mixed-admin')),null);
   assert.deepEqual(errors,[],'browser JavaScript errors');
   console.log('UI passed: authenticated bootstrap, provider setup, model search, alias inference, diagnostics, mobile layout and logout.');

@@ -13,6 +13,30 @@
   const originalFetch = window.fetch.bind(window);
   let headers = {}, template = null, graphURL = '', snapshot = null, service = null, captcha = null, observedSuccess = false;
   const requests = new Map();
+  let bootstrap=null, initialized=false, invalidated=false, initializationMessage='';
+  const promptValue=e=>e.isContentEditable?e.textContent:e.value;
+  function setPrompt(textarea,value) {
+    if(textarea.isContentEditable)textarea.textContent=value;
+    else Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,value);
+    textarea.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+    textarea.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function cancelInitialize(completed=false) {
+    const pending=bootstrap;if(!pending)return true;
+    bootstrap=null;clearTimeout(pending.timer);
+    if(pending.triggered&&!completed){invalidated=true;initialized=false;observedSuccess=false;initializationMessage='初始化已中止，请刷新官方页面后重新连接会话';}
+    if(promptValue(pending.textarea)===pending.prompt)setPrompt(pending.textarea,'');
+    return true;
+  }
+  function interceptBootstrap(kind,body) {
+    if(invalidated)return Boolean(kind);
+    if(!bootstrap)return false;
+    if(ais && kind!=='GenerateContent')return false;
+    if(aps){try{if(kind!=='aps'||JSON.parse(body).operationName!=='StreamGenerateContentAnonymous')return false}catch(_){return false}}
+    initialized=ais?Boolean(snapshot && service && headers['x-goog-api-key']):Boolean(template && captcha);
+    initializationMessage=initialized?'':'页面初始化未取得完整会话，请重新打开来源页面';
+    cancelInitialize(true);return true;
+  }
   const allowedHeaders = new Set(['authorization','x-goog-api-key','x-goog-authuser','x-user-agent','x-aistudio-visit-id','x-goog-ext-519733851-bin','x-goog-ext-174067345-bin']);
   function parseSparse(text) {
     let result='', quoted=false, escaped=false, previous='';
@@ -43,6 +67,7 @@
   }
   function observe(kind,status,text) {
     if(!kind)return;
+    initialized=false;
     if(status===401||status===403){observedSuccess=false;return}
     if(status!==200 || text.length>8*1024*1024)return;
     try {
@@ -76,17 +101,20 @@
       }
     } catch (_) {}
   }
-  window.fetch = function(input, init) {
-    if (input instanceof Request) input.clone().text().then(body=>capture(input.url, init?.headers || input.headers, init?.body || body)).catch(()=>{});
-    else capture(input, init?.headers, init?.body);
-    const kind=generationKind(input instanceof Request?input.url:input);
-    const response=originalFetch(input, init);response.then(r=>observeFetch(kind,r)).catch(()=>{});return response;
+  window.fetch = async function(input, init) {
+    const raw=input instanceof Request?input.url:input, kind=generationKind(raw);let body=init?.body;
+    if(input instanceof Request) {
+      body=body ?? await input.clone().text();
+      capture(raw,init?.headers||input.headers,body);
+    } else capture(raw,init?.headers,init?.body);
+    if(interceptBootstrap(kind,body))throw new DOMException('Initialization complete','AbortError');
+    const response=await originalFetch(input, init);observeFetch(kind,response).catch(()=>{});return response;
   };
   const open=XMLHttpRequest.prototype.open, setHeader=XMLHttpRequest.prototype.setRequestHeader, send=XMLHttpRequest.prototype.send;
   const xhrs=new WeakMap();
   XMLHttpRequest.prototype.open=function(method,url,...rest){xhrs.set(this,{url,headers:{}});return open.call(this,method,url,...rest)};
   XMLHttpRequest.prototype.setRequestHeader=function(k,v){const x=xhrs.get(this);if(x)x.headers[k]=v;return setHeader.call(this,k,v)};
-  XMLHttpRequest.prototype.send=function(body){const x=xhrs.get(this);if(x){capture(x.url,x.headers,body);const kind=generationKind(x.url);if(kind)this.addEventListener('load',()=>{try{observe(kind,this.status,typeof this.responseText==='string'?this.responseText:'')}catch(_){}},{once:true})}return send.call(this,body)};
+  XMLHttpRequest.prototype.send=function(body){const x=xhrs.get(this);if(x){capture(x.url,x.headers,body);const kind=generationKind(x.url);if(interceptBootstrap(kind,body)){this.abort();queueMicrotask(()=>{this.dispatchEvent(new ProgressEvent('abort'));this.dispatchEvent(new ProgressEvent('loadend'))});return}if(kind)this.addEventListener('load',()=>{try{observe(kind,this.status,typeof this.responseText==='string'?this.responseText:'')}catch(_){}},{once:true})}return send.call(this,body)};
   function discover() {
     if (ais && !snapshot) {
       const maker=window.default_MakerSuite;
@@ -95,7 +123,7 @@
         const source=Function.prototype.toString.call(maker[key]);
         if (!source.includes('.snapshot({') || !source.includes('content') || !source.includes('yield')) continue;
         snapshot=maker[key];
-        maker[key]=function(...args){if(args[0] && typeof args[0]==='object')service=args[0];return snapshot.apply(this,args)};
+        maker[key]=function(...args){if(args[0] && ['object','function'].includes(typeof args[0]))service=args[0];return snapshot.apply(this,args)};
         break;
       }
     }
@@ -111,8 +139,42 @@
   const timer=setInterval(discover,100);addEventListener('pagehide',()=>{clearInterval(timer);for(const s of requests.values())s.controller.abort()},{once:true});
   function state() {
     discover();
-    const ready=observedSuccess && (ais ? Boolean(snapshot && service && headers['x-goog-api-key']) : Boolean(template && captcha));
-    return {status:ready?'ready':'waiting', message:ready?'已连接':'请在此官方页面完成本人授权，并手动发送一条测试消息'};
+    if(invalidated)return {status:'waiting',message:initializationMessage};
+    if(bootstrap)return {status:'initializing',message:'正在连接来源会话'};
+    const ready=(observedSuccess||initialized) && (ais ? Boolean(snapshot && service && headers['x-goog-api-key']) : Boolean(template && captcha));
+    let message=ready?'会话已连接，尚未验证实际推理':initializationMessage;
+    if(!message)message=ais?(!snapshot?'AIS 页面未就绪，请完成本人登录后连接会话':'请点击连接会话，自动初始化官方页面'):
+      (!template?'无头V 官方页面请求模板未建立，当前页面兼容性未通过':!captcha?'无头V 官方页面验证接口未就绪':'无头V 官方请求未成功，尚不能使用');
+    return {status:ready?'ready':'waiting',message};
+  }
+  function initialize() {
+    discover();
+    if(invalidated || bootstrap || state().status==='ready')return state();
+    initializationMessage='';
+    if(requests.size)return {status:'waiting',message:'有请求正在执行，请完成后再连接会话'};
+    const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>e.getClientRects().length>0);
+    if(visible('[role="dialog"],[aria-modal="true"]').length)return {status:'waiting',message:'请本人处理官方页面的条款、登录或验证提示后再连接会话'};
+    const fields=visible(ais?'ms-prompt-box textarea':'[contenteditable="true"][role="textbox"]');
+    const buttons=ais?visible('ms-run-button button'):[];
+    if((ais&&(!snapshot||buttons.length!==1)) || fields.length!==1)return {status:'waiting',message:'官方页面输入框未就绪，请完成本人登录与页面提示后重试'};
+    const textarea=fields[0],button=buttons[0];
+    if((promptValue(textarea)||'').trim())return {status:'waiting',message:'官方页面有未发送的内容，请先自行保存或清空，再连接会话'};
+    const prompt='MIXED connection initialization';
+    setPrompt(textarea,prompt);
+    const pending={textarea,prompt,timer:setTimeout(()=>{initializationMessage='来源初始化超时，请检查官方页面的登录、验证或权限提示';cancelInitialize()},30000)};
+    bootstrap=pending;
+    (async()=>{
+      // Angular/Quill updates its form asynchronously after input events.
+      await new Promise(r=>setTimeout(r,100));
+      while(bootstrap===pending && button && (button.disabled||button.closest('[aria-disabled="true"]')))await new Promise(r=>setTimeout(r,100));
+      if(bootstrap!==pending)return;
+      try {
+        pending.triggered=true;
+        if(ais)button.click();
+        else textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+      }catch(_){cancelInitialize();initializationMessage='来源初始化失败，请重新打开官方页面'}
+    })();
+    return state();
   }
   async function proof(binding,prompt) {
     if (!snapshot || !service) throw Error('authorization_required');
@@ -153,15 +215,15 @@
     return {url:graphURL,headers:{'content-type':'application/json'},body:JSON.stringify(body)};
   }
   window.__mixedGoogleWeb={
-    state,
+    state, initialize, cancelInitialize,
     start(id,op){
-      if (requests.size || !/^[a-f0-9]{48}$/.test(id) || !op || typeof op.model!=='string' && !['models','build_models'].includes(op.kind)) return false;
+      if (invalidated || bootstrap || requests.size || !/^[a-f0-9]{48}$/.test(id) || !op || typeof op.model!=='string' && !['models','build_models'].includes(op.kind)) return false;
       if(op.model && !/^[A-Za-z0-9._-]+$/.test(op.model)) return false;
       const s={controller:new AbortController(),status:0,headers:{},chunks:[],done:false,error:''};requests.set(id,s);
       (async()=>{try{
         const q=await request(op);if(s.controller.signal.aborted)throw Error('cancelled');
         const response=await originalFetch(q.url,{method:'POST',headers:q.headers,body:q.body,credentials:'include',redirect:'error',signal:s.controller.signal});
-        s.status=response.status;if(s.status===401||s.status===403)observedSuccess=false;for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
+        s.status=response.status;if(s.status===401||s.status===403){observedSuccess=false;initialized=false;initializationMessage="来源拒绝请求，请检查本人授权与权限";}for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
         if(!response.body)return;
         const reader=response.body.getReader();
         for(;;){const {value,done}=await reader.read();if(done)break;

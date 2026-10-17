@@ -34,7 +34,7 @@ func (s *Server) activateBackend(ctx context.Context, id string) error {
 		}
 		if id == "aps" || id == "aistudio" {
 			if s.google == nil || s.google.State(ctx, id).Status != "ready" {
-				return errors.New("请在来源窗口完成本人授权，并发送一条测试消息")
+				return errors.New("请先打开来源页面并连接会话")
 			}
 		}
 		return s.enableBackend(id)

@@ -25,11 +25,11 @@ Windows 构建产物提供独立 `MIXED-API-Windows-x64.exe`、便携 ZIP 和 Se
 | 名称 | Windows 内置接入方式 | 模型命名 |
 | --- | --- | --- |
 | 快速V | 填写自己的 Google Express API Key | `vertex/模型ID` |
-| 无头V | 应用内的官方页面会话，不填 Express Key；首次按提示确认规则并发送测试消息 | `aps/模型ID` |
+| 无头V | 官方页面会话，不填 Express Key；本人处理页面提示后点击连接会话，实际推理待验收 | `aps/模型ID` |
 | Codex | 官方设备码授权或本人的授权文件导入 | `codex/模型ID` |
 | OpenCode | 可选 Zen Key，匿名模式是否可用由服务方决定 | `opencode/模型ID` |
 | WorkBuddy | 官方账号授权；原生轮询与请求，不启动桌面客户端 | `workbuddy/模型ID` |
-| AIS | 隔离的官方页面完成本人授权与测试消息，Build、Playground 分别读取模型目录 | `aistudio/build/模型ID`、`aistudio/playground/模型ID` |
+| AIS | 本人授权后自动初始化会话；Build、Playground 分别读取模型，实际推理待验收 | `aistudio/build/模型ID`、`aistudio/playground/模型ID` |
 
 这是当前代码的接入方式，实际账号验证范围见[集成进度](docs/integration-progress.md)。模型目录能读取不代表当前账号一定能生成。来源失败会直接报错，不自动切换供应商或账号。
 
@@ -72,3 +72,5 @@ go build -o .ui-gateway ./cmd/mixed-api
 Windows 完整离线产物先运行 `scripts/prepare-webview2.ps1` 获取并核验构建资源，再用 `go build -tags bundled -ldflags "-H=windowsgui" ./cmd/mixed-api` 构建。未带 bundled 的开发构建依赖已安装的系统渲染器，不是完整交付包。
 
 工程按 [AGENTS.md](AGENTS.md) 与 [mattpocock/skills](https://github.com/mattpocock/skills) 的 TDD、深模块接口、规范/规格双轴审查开展。[上游核对](docs/upstream-audit-2026-10-17.md)、[第三方许可](THIRD_PARTY_NOTICES.md)、[验收规格](docs/spec-integrated-desktop.md)分别记录来源、许可和发布条件。
+
+Windows 来源授权使用默认 Edge / Chrome 的 MIXED 专用资料目录，主工作台仍为独立 EXE 窗口。v0.4.0 的 AIS / 无头V会话存在用户已确认的不可用问题，当前修复与验收范围见 [Windows 会话修复记录](docs/windows-session-repair-2026-10-17.md)。

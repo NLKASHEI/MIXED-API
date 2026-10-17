@@ -27,3 +27,4 @@ internal/desktop/resources/webview2.cab
 internal/desktop/resources/manifest.json
 .build/
 **/.mixed-accounts/
+**/browser-profiles/

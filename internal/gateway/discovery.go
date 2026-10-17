@@ -10,10 +10,11 @@ import (
 )
 
 type catalogModel struct {
-	ID       string `json:"id"`
-	Object   string `json:"object"`
-	OwnedBy  string `json:"owned_by"`
-	Original string `json:"original_id"`
+	ID       string       `json:"id"`
+	Object   string       `json:"object"`
+	OwnedBy  string       `json:"owned_by"`
+	Original string       `json:"original_id"`
+	Access   *modelAccess `json:"access,omitempty"`
 }
 
 type backendDiscovery struct {
@@ -116,7 +117,11 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 			continue
 		}
 		seen[id] = true
-		result.models = append(result.models, catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id})
+		model := catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id}
+		if b.ID == "opencode" && b.Kind == "builtin" {
+			model.Access = openCodeAccess(id)
+		}
+		result.models = append(result.models, model)
 	}
 	if len(result.models) == 0 {
 		return fail("empty_models", "上游返回空模型列表", "检查账号授权与上游模型配置；模型为空不能算接入成功。")

@@ -137,3 +137,44 @@ func TestStartingWindowDoesNotBlockOtherSessions(t *testing.T) {
 	close(release)
 	<-done
 }
+
+type initializingPage struct {
+	testPage
+	initialized, stopped bool
+}
+
+func (p *initializingPage) Eval(ctx context.Context, js string) (json.RawMessage, error) {
+	if strings.Contains(js, "initialize()") {
+		p.initialized = true
+		return json.RawMessage(`{"status":"initializing"}`), nil
+	}
+	if strings.Contains(js, "cancelInitialize()") {
+		p.stopped = true
+		return json.RawMessage(`true`), nil
+	}
+	if strings.Contains(js, "state()") {
+		return json.RawMessage(`{"status":"initializing"}`), nil
+	}
+	return p.testPage.Eval(ctx, js)
+}
+func TestInitializationCancellationReleasesLease(t *testing.T) {
+	page := &initializingPage{}
+	b := New(func(context.Context, string) (Page, error) { return page, nil })
+	defer b.Close()
+	if err := b.Open(context.Background(), "aistudio"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	state := b.Initialize(ctx, "aistudio")
+	if state.Status != "waiting" || !page.initialized || !page.stopped {
+		t.Fatalf("cancel state: %+v", state)
+	}
+	request, cancelRequest := context.WithTimeout(context.Background(), time.Second)
+	defer cancelRequest()
+	response, err := b.Send(request, "aistudio", Operation{Kind: "models"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+}

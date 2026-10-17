@@ -22,6 +22,12 @@ type State struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
 }
+
+// SetupError contains a fixed user-facing message, never a browser log or token.
+type SetupError struct{ Message string }
+
+func (e *SetupError) Error() string { return e.Message }
+
 type Sessions interface {
 	Open(context.Context, string) error
 	State(context.Context, string) State

@@ -21,6 +21,65 @@ import org.robolectric.annotation.Config;
 public class GoogleGatewayTest {
   private BridgeHttpServer server;
 
+  @Test
+  public void initializationRequiresAdminAndPreservesFailure() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger initialized =
+        new java.util.concurrent.atomic.AtomicInteger();
+    start(
+        new Fixture() {
+          public JSONObject initialize(String id) throws Exception {
+            initialized.incrementAndGet();
+            return GoogleProtocol.obj("status", "waiting", "message", "page not ready");
+          }
+        });
+    HttpURLConnection c = request("/api/accounts/aistudio/initialize", "client", "{}");
+    assertEquals(401, c.getResponseCode());
+    c.disconnect();
+    assertEquals(0, initialized.get());
+    c = request("/api/accounts/aistudio/initialize", "admin", "{}");
+    assertEquals(200, c.getResponseCode());
+    JSONObject result =
+        new JSONObject(new String(c.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+    assertEquals("waiting", result.getString("status"));
+    assertEquals(1, initialized.get());
+    c.disconnect();
+  }
+
+  @Test
+  public void disconnectCancelsInitialization() throws Exception {
+    java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1),
+        cancelled = new java.util.concurrent.CountDownLatch(1);
+    start(
+        new Fixture() {
+          public JSONObject initialize(String id) throws Exception {
+            entered.countDown();
+            try {
+              new java.util.concurrent.CountDownLatch(1).await();
+            } catch (InterruptedException e) {
+              cancelled.countDown();
+              throw e;
+            }
+            return state(id);
+          }
+        });
+    java.net.Socket client = new java.net.Socket("127.0.0.1", 8765);
+    client
+        .getOutputStream()
+        .write(
+            ("POST /api/accounts/aistudio/initialize HTTP/1.1\r\n"
+                 + "Host: 127.0.0.1:8765\r\n"
+                 + "Authorization: Bearer admin\r\n"
+                 + "Content-Length: 2\r\n\r\n"
+                 + "{}")
+                .getBytes(StandardCharsets.UTF_8));
+    client.getOutputStream().flush();
+    assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+    client.close();
+    assertTrue(
+        "initialization survived client disconnect",
+        cancelled.await(2, java.util.concurrent.TimeUnit.SECONDS));
+  }
+
   @After
   public void stop() {
     if (server != null) server.close();

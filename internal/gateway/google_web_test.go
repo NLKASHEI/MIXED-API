@@ -28,6 +28,39 @@ func (b *fixtureGoogleBrowser) Send(ctx context.Context, id string, op googleweb
 }
 func (*fixtureGoogleBrowser) Close() error { return nil }
 
+type initializingGoogleBrowser struct {
+	fixtureGoogleBrowser
+	initialized int
+}
+
+func (b *initializingGoogleBrowser) Initialize(context.Context, string) googleweb.State {
+	b.initialized++
+	return googleweb.State{Status: "waiting", Message: "官方页面未就绪"}
+}
+func TestGoogleInitializationUsesAdminBoundaryAndPreservesWaiting(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.AdminKey = "admin"
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	b := &initializingGoogleBrowser{}
+	app.SetGoogleSessions(b)
+	for _, key := range []string{"client", "admin"} {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:8765/api/accounts/aistudio/initialize", nil)
+		r.Header.Set("Authorization", "Bearer "+key)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, r)
+		if key == "client" {
+			if w.Code == 200 || b.initialized != 0 {
+				t.Fatal("client key initialized account")
+			}
+			continue
+		}
+		if w.Code != 200 || b.initialized != 1 || !strings.Contains(w.Body.String(), `"status":"waiting"`) {
+			t.Fatalf("initialization: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestGoogleWebIntegratedChat(t *testing.T) {
 	for _, tc := range []struct{ id, model, kind string }{{"aps", "gemini-2.5-flash", "aps"}, {"aistudio", "build/gemini-2.5-flash", "build"}, {"aistudio", "playground/gemini-2.5-flash", "playground"}} {
 		t.Run(tc.kind, func(t *testing.T) {

@@ -39,7 +39,7 @@ public class GoogleSessionsTest {
 
     @Override
     public void evaluateJavascript(String script, ValueCallback<String> callback) {
-      if (script.contains(".cancel(")) {
+      if (script.contains(".cancel(") || script.contains(".cancelInitialize(")) {
         abort = callback;
         return;
       }
@@ -105,6 +105,18 @@ public class GoogleSessionsTest {
   }
 
   @Test
+  public void initializationWithoutAbortAcknowledgementDestroysPage() throws Exception {
+    Renderer view = new Renderer();
+    install(view);
+    assertEquals("ready", finish(start(() -> sessions.initialize("aps"))).getString("status"));
+    shadowOf(Looper.getMainLooper()).idle();
+    assertNotNull(view.abort);
+    view.abort.onReceiveValue("null");
+    assertTrue("null is not an abort acknowledgement", view.destroyed);
+    assertEquals("none", finish(start(() -> sessions.state("aps"))).getString("status"));
+  }
+
+  @Test
   public void missingAbortCallbackRetiresPageBeforeAdmittingAnotherRequest() throws Exception {
     Renderer old = new Renderer();
     install(old);
@@ -137,7 +149,7 @@ public class GoogleSessionsTest {
       assertEquals(200, response.status);
     }
     shadowOf(Looper.getMainLooper()).idle();
-    replacement.abort.onReceiveValue("null");
+    replacement.abort.onReceiveValue("true");
     assertFalse(replacement.destroyed);
   }
 
@@ -149,14 +161,14 @@ public class GoogleSessionsTest {
     first.close();
     first.close();
     shadowOf(Looper.getMainLooper()).idle();
-    view.abort.onReceiveValue("null");
+    view.abort.onReceiveValue("true");
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
     assertFalse(view.destroyed);
     try (var response = send()) {
       assertEquals(200, response.status);
     }
     shadowOf(Looper.getMainLooper()).idle();
-    view.abort.onReceiveValue("null");
+    view.abort.onReceiveValue("true");
     assertEquals(2, view.starts);
   }
 }

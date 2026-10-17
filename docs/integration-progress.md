@@ -2,7 +2,7 @@
 
 开发分支 `feat/integrated-desktop-core`，2026-10-17。v0.4.0 发布 Windows 内置核心版与 Android 测试版，实际资产和对应构建见 [Release](https://github.com/NLKASHEI/MIXED-API/releases/tag/v0.4.0)。以下分别记录已验证范围与未完成事项。
 
-六个来源均已用 Go / Java 实现内置请求链，默认关闭。旧上游下载器、外部 EXE 导入与进程启动器已删除。用户配置账号或 Key，不选择上游运行版本；客户端共用 `http://127.0.0.1:8765/v1`。
+六个来源已有 Go / Java 协议模块，默认关闭。v0.4.0 的 AIS / 无头V官方页面初始化存在缺陷，用户已报告 Windows 实际不可用，不能称为六路完整可用交付。修复与验收范围见 [Windows 会话修复](windows-session-repair-2026-10-17.md)。旧上游下载器、外部 EXE 导入与进程启动器已删除。用户配置账号或 Key，不选择上游运行版本；客户端共用 `http://127.0.0.1:8765/v1`。
 
 | 来源 | Windows / Android 当前实现 | 验证范围 |
 | --- | --- | --- |

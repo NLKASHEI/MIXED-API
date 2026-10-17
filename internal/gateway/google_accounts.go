@@ -22,10 +22,28 @@ func (s *Server) handleGoogleAccount(w http.ResponseWriter, r *http.Request, id,
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
 		if err := s.google.Open(ctx, id); err != nil {
-			jsonError(w, 503, "无法打开来源授权窗口，请检查内置渲染资源")
+			message := "无法连接来源浏览器，请检查来源窗口与系统默认浏览器设置"
+			var setup *googleweb.SetupError
+			if errors.As(err, &setup) {
+				message = setup.Message
+			}
+			jsonError(w, 503, message)
 			return
 		}
-		jsonResult(w, 200, map[string]string{"status": "waiting", "message": "请在官方页面完成本人授权，并发送一条测试消息"})
+		jsonResult(w, 200, map[string]string{"status": "waiting", "message": "请在默认浏览器完成本人登录与页面提示，然后返回连接会话"})
+		return
+	}
+	if r.Method == "POST" && action == "initialize" {
+		initializer, ok := s.google.(interface {
+			Initialize(context.Context, string) googleweb.State
+		})
+		if !ok {
+			jsonError(w, 503, "当前环境无法初始化此来源页面")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+		defer cancel()
+		jsonResult(w, 200, initializer.Initialize(ctx, id))
 		return
 	}
 	if r.Method == "GET" && action == "" {
@@ -38,7 +56,7 @@ func (s *Server) handleGoogleAccount(w http.ResponseWriter, r *http.Request, id,
 }
 func (s *Server) googleWebModels(ctx context.Context, id string) ([]string, error) {
 	if s.google == nil || s.google.State(ctx, id).Status != "ready" {
-		return nil, errors.New("请先在来源窗口完成授权与测试消息")
+		return nil, errors.New("请先打开来源页面并连接会话")
 	}
 	if id == "aps" {
 		return []string{"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-3.1-flash-image", "gemini-3.5-flash"}, nil

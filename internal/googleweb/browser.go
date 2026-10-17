@@ -56,6 +56,12 @@ func (b *Browser) Open(ctx context.Context, id string) error {
 			return errors.New("browser closed")
 		}
 		if s := b.sessions[id]; s != nil && !s.broken.Load() {
+			if live, ok := s.page.(interface{ Alive() bool }); ok && !live.Alive() {
+				s.broken.Store(true)
+				b.mu.Unlock()
+				s.page.Close()
+				continue
+			}
 			b.mu.Unlock()
 			s.page.Show()
 			return nil
@@ -117,6 +123,47 @@ func (b *Browser) State(ctx context.Context, id string) State {
 	}
 	return result
 }
+
+// Initialize prepares the official page; it does not certify model inference.
+func (b *Browser) Initialize(ctx context.Context, id string) State {
+	s := b.session(id)
+	if s == nil {
+		return State{Status: "none", Message: "请先打开来源页面"}
+	}
+	select {
+	case s.gate <- struct{}{}:
+	case <-ctx.Done():
+		return State{Status: "waiting", Message: "连接会话已取消"}
+	case <-b.ctx.Done():
+		return State{Status: "none", Message: "应用正在关闭"}
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if _, err := s.page.Eval(cleanup, "window.__mixedGoogleWeb?.cancelInitialize()"); err != nil {
+			s.broken.Store(true)
+			s.page.Close()
+		}
+		<-s.gate
+	}()
+	work, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(b.ctx, cancel)
+	defer stop()
+	raw, err := s.page.Eval(work, "window.__mixedGoogleWeb?.initialize() || {status:'waiting',message:'请完成本人登录后再连接会话'}")
+	var result State
+	if err != nil || json.Unmarshal(raw, &result) != nil || result.Status == "" {
+		return State{Status: "waiting", Message: "无法连接来源页面，请重新打开"}
+	}
+	for result.Status == "initializing" {
+		if wait(work) != nil {
+			return State{Status: "waiting", Message: "连接会话超时或取消，请检查官方页面"}
+		}
+		result = b.State(work, id)
+	}
+	return result
+}
+
 func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Response, error) {
 	if (id == "aps" && op.Kind != "aps") || (id == "aistudio" && op.Kind != "build" && op.Kind != "playground" && op.Kind != "models" && op.Kind != "build_models") {
 		return nil, errors.New("operation does not match source")
