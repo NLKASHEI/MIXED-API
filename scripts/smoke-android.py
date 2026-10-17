@@ -75,20 +75,31 @@ try:
     assert "/.MainActivity" in activities and "/.GoogleSourceActivity" not in activities
     adb("shell", "cmd", "statusbar", "expand-notifications")
     time.sleep(2)
-    for attempt in range(3):
-        nodes = list(tree().iter("node"))
+    for attempt in range(8):
+        root = tree()
+        nodes = list(root.iter("node"))
         stop = next((node for node in nodes if node.attrib.get("text") == "停止服务"), None)
         if stop is not None:
             screenshot("notification.png")
             tap(stop)
             break
-        expand = next((node for node in nodes if node.attrib.get("content-desc", "").lower() in ("expand", "展开")), None)
+        parents = {child: parent for parent in root.iter() for child in parent}
+        own = next((node for node in nodes if "MIXED-API" in node.attrib.get("text", "")), None)
+        expand = None
+        while own is not None and own is not root:
+            expand = next((node for node in own.iter("node") if node.attrib.get("resource-id", "").endswith("/expand_button") and "collapse" not in node.attrib.get("content-desc", "").lower()), None)
+            if expand is not None:
+                break
+            own = parents.get(own)
         if expand is not None:
             tap(expand)
         else:
-            adb("shell", "input", "swipe", "180", "150", "180", "550", "400")
+            # Scroll the notification list upward to reveal later cards. A
+            # downward swipe expands quick settings and hides the target.
+            adb("shell", "input", "swipe", "160", "570", "160", "260", "400")
         time.sleep(1)
     else:
+        (OUTPUT / "notifications.xml").write_bytes(ET.tostring(root, encoding="utf-8"))
         raise AssertionError("Running notification has no accessible stop action")
 
     def stopped():
