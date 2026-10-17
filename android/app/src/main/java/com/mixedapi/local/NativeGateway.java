@@ -87,6 +87,44 @@ final class NativeGateway {
       serveOpenCode(out, path, backend, publicModel, model, input);
       return;
     }
+    if (id.equals("codex") && path.equals("/v1/responses")) {
+      if (input.optBoolean("store")) {
+        BridgeHttpServer.fail(out, 400, "此来源不提供 Responses 云端保存");
+        return;
+      }
+      JSONObject packet =
+          new JSONObject(input.toString())
+              .put("model", model)
+              .put("stream", true)
+              .put("store", false);
+      if (!packet.has("instructions")) packet.put("instructions", "");
+      NativeRelay relay =
+          new NativeRelay(out, id, publicModel, "responses", input.optBoolean("stream"));
+      try (GoogleSessions.Response response = accounts.request(id, "/responses", packet)) {
+        if (response.status != 200)
+          BridgeHttpServer.providerFailure(
+              out,
+              response.status >= 400 && response.status < 600 ? response.status : 502,
+              response.retryAfter);
+        else relay.read(response.body);
+      } catch (NativeAccounts.Failure e) {
+        BridgeHttpServer.fail(out, e.status, e.getMessage());
+      } catch (Exception e) {
+        relay.error();
+      }
+      return;
+    }
+    if (!path.equals("/v1/chat/completions")) {
+      ProtocolBridge.serve(
+          out,
+          path,
+          id,
+          publicModel,
+          input,
+          (target, chat) ->
+              serve(target, "/v1/chat/completions", backend, publicModel, model, chat));
+      return;
+    }
     if (NativeAccounts.source(id) && path.equals("/v1/chat/completions")) {
       serveAccountChat(out, id, publicModel, model, input);
       return;
@@ -258,9 +296,18 @@ final class NativeGateway {
     boolean converted =
         path.equals("/v1/chat/completions")
             && (protocol.equals("responses") || protocol.equals("messages"));
-    if ((!path.equals("/v1/" + protocol) && !converted)
-        || (input.optBoolean("stream") && !protocol.equals("chat/completions") && !converted)) {
-      BridgeHttpServer.fail(out, 501, "此协议转换尚未完成");
+    if (!path.equals("/v1/" + protocol) && !converted) {
+      if (path.equals("/v1/chat/completions")) BridgeHttpServer.fail(out, 501, "模型目录协议无效");
+      else
+        ProtocolBridge.serve(
+            out,
+            path,
+            "opencode",
+            publicModel,
+            input,
+            (targetOut, chatInput) ->
+                serveOpenCode(
+                    targetOut, "/v1/chat/completions", backend, publicModel, model, chatInput));
       return;
     }
     JSONObject packet = new JSONObject(input.toString()).put("model", model);
@@ -285,6 +332,7 @@ final class NativeGateway {
             stream,
             options != null && options.optBoolean("include_usage"),
             input.optInt("n", 1));
+    NativeRelay relay = new NativeRelay(out, "opencode", publicModel, protocol, stream);
     Map<String, String> headers = providerHeaders(backend);
     if (protocol.equals("messages")) headers.put("anthropic-version", "2023-06-01");
     try (GoogleSessions.Response response =
@@ -302,13 +350,15 @@ final class NativeGateway {
         return;
       }
       if (stream) {
-        if (converted && protocol.equals("messages"))
+        if (!converted && !protocol.equals("chat/completions")) relay.read(response.body);
+        else if (converted && protocol.equals("messages"))
           NativeMessagesStream.read(response.body, chat);
         else if (converted) NativeResponses.read(response.body, chat);
         else chat.read(response.body);
         return;
       }
       JSONObject result = readJSON(response.body);
+      NativeRelay.validate(result, protocol);
       if (!result.isNull("error")) {
         BridgeHttpServer.fail(out, 502, "服务方生成失败");
         return;
@@ -324,7 +374,8 @@ final class NativeGateway {
           "opencode");
     } catch (Exception e) {
       if (Thread.currentThread().isInterrupted()) return;
-      chat.error();
+      if (!converted && !protocol.equals("chat/completions")) relay.error();
+      else chat.error();
     }
   }
 

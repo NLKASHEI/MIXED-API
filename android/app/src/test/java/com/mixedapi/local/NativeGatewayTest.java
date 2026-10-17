@@ -81,6 +81,260 @@ public class NativeGatewayTest {
   }
 
   @Test
+  public void protocolStreamsKeepFragmentedToolsUsageAndExplicitTruncation() throws Exception {
+    java.util.concurrent.atomic.AtomicReference<String> finish =
+        new java.util.concurrent.atomic.AtomicReference<>("tool_calls");
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          JSONObject request = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          assertTrue(request.getBoolean("stream"));
+          assertTrue(request.getJSONObject("stream_options").getBoolean("include_usage"));
+          String args = finish.get().equals("length") ? "{" : "{}";
+          String data =
+              "data: "
+                  + GoogleProtocol.obj(
+                      "choices",
+                      GoogleProtocol.arr(
+                          GoogleProtocol.obj(
+                              "index",
+                              0,
+                              "delta",
+                              GoogleProtocol.obj(
+                                  "content",
+                                  "hello",
+                                  "tool_calls",
+                                  GoogleProtocol.arr(
+                                      GoogleProtocol.obj(
+                                          "index",
+                                          0,
+                                          "id",
+                                          "c1",
+                                          "function",
+                                          GoogleProtocol.obj("name", "wea", "arguments", "")))))))
+                  + "\n\n"
+                  + "data: "
+                  + GoogleProtocol.obj(
+                      "choices",
+                      GoogleProtocol.arr(
+                          GoogleProtocol.obj(
+                              "index",
+                              0,
+                              "delta",
+                              GoogleProtocol.obj(
+                                  "tool_calls",
+                                  GoogleProtocol.arr(
+                                      GoogleProtocol.obj(
+                                          "index",
+                                          0,
+                                          "function",
+                                          GoogleProtocol.obj("name", "ther", "arguments", args),
+                                          "thought_signature",
+                                          "signature"))))))
+                  + "\n\n"
+                  + "data: "
+                  + GoogleProtocol.obj(
+                      "choices",
+                      GoogleProtocol.arr(
+                          GoogleProtocol.obj(
+                              "index",
+                              0,
+                              "delta",
+                              new JSONObject(),
+                              "finish_reason",
+                              finish.get())),
+                      "usage",
+                      GoogleProtocol.obj(
+                          "prompt_tokens", 2, "completion_tokens", 3, "total_tokens", 5))
+                  + "\n\ndata: [DONE]\n\n";
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)));
+        });
+    for (String ending : new String[] {"tool_calls", "length", "unexpected"}) {
+      finish.set(ending);
+      for (String protocol : new String[] {"responses", "messages"}) {
+        JSONObject input =
+            GoogleProtocol.obj("model", "opencode/deepseek-v4-flash", "stream", true);
+        if (protocol.equals("responses")) input.put("input", "hi");
+        else
+          input
+              .put(
+                  "messages",
+                  GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")))
+              .put("max_tokens", 100);
+        String result = rawCall("/v1/" + protocol, input.toString());
+        assertTrue(result, result.contains("hello"));
+        if (ending.equals("unexpected")) {
+          assertFalse(
+              result,
+              result.contains("event: response.completed")
+                  || result.contains("event: message_stop"));
+          assertTrue(
+              result, result.contains("event: error") || result.contains("event: response.failed"));
+        } else {
+          assertTrue(
+              result,
+              result.contains("weather")
+                  && result.contains("signature")
+                  && result.contains("output_tokens"));
+          assertTrue(
+              result,
+              result.contains(
+                  protocol.equals("responses")
+                      ? (ending.equals("length")
+                          ? "event: response.incomplete"
+                          : "event: response.completed")
+                      : "event: message_stop"));
+          if (ending.equals("length"))
+            assertTrue(
+                result,
+                result.contains(protocol.equals("responses") ? "max_output_tokens" : "max_tokens"));
+        }
+      }
+    }
+  }
+
+  @Test
+  public void responsesAndMessagesClientsUseTheSelectedChatBackendWithoutLosingTools()
+      throws Exception {
+    java.util.concurrent.atomic.AtomicInteger count =
+        new java.util.concurrent.atomic.AtomicInteger();
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          count.incrementAndGet();
+          assertTrue(url.endsWith("/chat/completions"));
+          JSONObject packet = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          assertEquals("deepseek-v4-flash", packet.getString("model"));
+          assertEquals(
+              "weather",
+              packet
+                  .getJSONArray("tools")
+                  .getJSONObject(0)
+                  .getJSONObject("function")
+                  .getString("name"));
+          String reply =
+              "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"hello\",\"reasoning_content\":\"plan\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"weather\",\"arguments\":\"{}\"},\"thought_signature\":\"opaque-signature\"}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":5,\"total_tokens\":13}}";
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(reply.getBytes(StandardCharsets.UTF_8)));
+        });
+    for (String protocol : new String[] {"responses", "messages"}) {
+      JSONObject input = GoogleProtocol.obj("model", "opencode/deepseek-v4-flash");
+      if (protocol.equals("responses"))
+        input
+            .put("input", "hi")
+            .put("max_output_tokens", 100)
+            .put(
+                "tools",
+                GoogleProtocol.arr(
+                    GoogleProtocol.obj(
+                        "type",
+                        "function",
+                        "name",
+                        "weather",
+                        "parameters",
+                        GoogleProtocol.obj("type", "object"))));
+      else
+        input
+            .put(
+                "messages", GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")))
+            .put("max_tokens", 100)
+            .put(
+                "tools",
+                GoogleProtocol.arr(
+                    GoogleProtocol.obj(
+                        "name", "weather", "input_schema", GoogleProtocol.obj("type", "object"))));
+      JSONObject result = call("/v1/" + protocol, input.toString());
+      assertEquals("opencode/deepseek-v4-flash", result.getString("model"));
+      assertTrue(
+          result.toString(),
+          result.toString().contains("hello")
+              && result.toString().contains("plan")
+              && result.toString().contains("opaque-signature"));
+      assertEquals(5, result.getJSONObject("usage").getInt("output_tokens"));
+      if (protocol.equals("responses")) {
+        assertEquals("completed", result.getString("status"));
+        assertEquals(
+            "function_call", result.getJSONArray("output").getJSONObject(2).getString("type"));
+        input.put("previous_response_id", "missing-history");
+      } else {
+        assertEquals("tool_use", result.getString("stop_reason"));
+        assertEquals("tool_use", result.getJSONArray("content").getJSONObject(2).getString("type"));
+        input.put("mcp_servers", new JSONArray());
+      }
+      rawCall("/v1/" + protocol, input.toString(), 400);
+    }
+    assertEquals(2, count.get());
+  }
+
+  @Test
+  public void nativeResponsesAndMessagesStreamsPreserveProviderItemsAndRequireCompletion()
+      throws Exception {
+    java.util.concurrent.atomic.AtomicBoolean truncated =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    startSource(
+        "opencode",
+        (method, url, headers, body, deadline) -> {
+          JSONObject input = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          String events;
+          if (url.endsWith("/responses")) {
+            assertEquals("resp_previous", input.getString("previous_response_id"));
+            events =
+                "data:"
+                    + " {\"type\":\"response.created\",\"response\":{\"id\":\"r1\",\"model\":\"gpt-5.4\",\"status\":\"in_progress\"}}\n\n"
+                    + "data:"
+                    + " {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs1\",\"encrypted_content\":\"opaque-state\",\"summary\":[]}}\n\n"
+                    + (truncated.get()
+                        ? ""
+                        : "data:"
+                              + " {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"model\":\"gpt-5.4\",\"status\":\"completed\",\"output\":[{\"type\":\"reasoning\",\"encrypted_content\":\"opaque-state\",\"summary\":[]}]}}\n\n");
+          } else {
+            assertTrue(url.endsWith("/messages"));
+            assertEquals("2023-06-01", headers.get("anthropic-version"));
+            events =
+                "data:"
+                    + " {\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-opus-4-8\",\"content\":[]}}\n\n"
+                    + "data:"
+                    + " {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"redacted_thinking\",\"data\":\"opaque-state\"}}\n\n"
+                    + "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+                    + (truncated.get()
+                        ? ""
+                        : "data:"
+                              + " {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n"
+                              + "data: {\"type\":\"message_stop\"}\n\n");
+          }
+          return new GoogleSessions.Response(
+              200, new ByteArrayInputStream(events.getBytes(StandardCharsets.UTF_8)));
+        });
+    for (boolean missing : new boolean[] {false, true}) {
+      truncated.set(missing);
+      for (String protocol : new String[] {"responses", "messages"}) {
+        JSONObject request =
+            GoogleProtocol.obj(
+                "model",
+                "opencode/" + (protocol.equals("responses") ? "gpt-5.4" : "claude-opus-4-8"),
+                "stream",
+                true);
+        if (protocol.equals("responses"))
+          request.put("input", "hi").put("previous_response_id", "resp_previous");
+        else
+          request
+              .put(
+                  "messages",
+                  GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")))
+              .put("max_tokens", 100);
+        String result = rawCall("/v1/" + protocol, request.toString());
+        assertTrue(result, result.contains("opaque-state"));
+        assertTrue(result, result.replace("\\/", "/").contains(request.getString("model")));
+        String terminal =
+            protocol.equals("responses") ? "event: response.completed" : "event: message_stop";
+        assertEquals(result, !missing, result.contains(terminal));
+        assertEquals(result, missing, result.contains("event: error"));
+      }
+    }
+  }
+
+  @Test
   public void messagesModelsPreserveSignedThinkingAndToolResults() throws Exception {
     java.util.concurrent.atomic.AtomicInteger calls =
         new java.util.concurrent.atomic.AtomicInteger();
@@ -217,6 +471,16 @@ public class NativeGatewayTest {
 
   @Test
   public void disconnectedClientCancelsActualProviderHttpRead() throws Exception {
+    for (String path : new String[] {"/v1/chat/completions", "/v1/responses", "/v1/messages"}) {
+      try {
+        assertDisconnect(path);
+      } finally {
+        if (server != null) server.close();
+      }
+    }
+  }
+
+  private void assertDisconnect(String path) throws Exception {
     try (okhttp3.mockwebserver.MockWebServer upstream = new okhttp3.mockwebserver.MockWebServer()) {
       upstream.start(java.net.InetAddress.getByName("127.0.0.1"), 0);
       upstream.enqueue(
@@ -249,12 +513,18 @@ public class NativeGatewayTest {
           });
       try (java.net.Socket client = new java.net.Socket("127.0.0.1", 8765)) {
         client.setSoTimeout(3000);
-        byte[] body =
-            "{\"model\":\"opencode/deepseek-v4-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}"
-                .getBytes(StandardCharsets.UTF_8);
+        JSONObject input =
+            GoogleProtocol.obj("model", "opencode/deepseek-v4-flash", "stream", true);
+        if (path.equals("/v1/responses")) input.put("input", "hi");
+        else
+          input.put(
+              "messages", GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")));
+        byte[] body = input.toString().getBytes(StandardCharsets.UTF_8);
         java.io.OutputStream out = client.getOutputStream();
         out.write(
-            ("POST /v1/chat/completions HTTP/1.1\r\n"
+            ("POST "
+                    + path
+                    + " HTTP/1.1\r\n"
                     + "Host: 127.0.0.1:8765\r\n"
                     + "Authorization: Bearer client\r\n"
                     + "Content-Length: "

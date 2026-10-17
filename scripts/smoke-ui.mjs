@@ -132,6 +132,33 @@ try {
   await page.locator('[data-page="admin"]').click();await page.locator('#load-engine-settings').click();
   await page.locator('#engine-settings-form').waitFor({state:'visible'});await page.locator('#engine-retries').fill('1');await page.locator('#engine-timeout').fill('60');
   await page.locator('#engine-settings-form').getByRole('button').click();await page.locator('#engine-settings-message').filter({hasText:'已保存'}).waitFor();
+  // Account links must survive asynchronous HTTP authorization on mobile.
+  await page.unroute('**/api/assist/status');
+  await page.route('**/api/assist/status',route=>route.fulfill({contentType:'application/json',body:'{"platform":"android","builtin_backends":["codex","opencode","vertex","workbuddy","aps","aistudio"]}'}));
+  await page.route('**/api/accounts/codex/login',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({status:'pending',code:'ABCD-EFGH',url:'https://auth.openai.com/codex/device'})}));
+  await page.reload();await page.locator('#app').waitFor({state:'visible'});
+  await page.locator('[data-page="home"]').click();
+  await page.locator('#providers .card').filter({has:page.getByRole('heading',{name:'Codex',exact:true})}).getByRole('button').click();
+  await page.locator('#prepare-provider').click();await page.locator('#authorize-provider').waitFor({state:'visible'});
+  await page.locator('#authorize-provider').click();
+  await page.locator('#official-login-link').waitFor({state:'visible',timeout:5000});
+  assert.equal(await page.locator('#official-login-link').getAttribute('href'),'https://auth.openai.com/codex/device');
+  const auth={auth_mode:'chatgpt',tokens:{access_token:'fixture-private',account_id:'fixture-account'}};
+  let imported=false;
+  await page.route('**/api/accounts/codex/import',route=>{
+    assert.deepEqual(route.request().postDataJSON(),auth);imported=true;
+    return route.fulfill({contentType:'application/json',body:'{"status":"authorized"}'});
+  });
+  await page.locator('#account-file').setInputFiles({name:'auth.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(auth))});
+  await page.locator('#provider-progress').filter({hasText:'已授权'}).waitFor();
+  assert(imported,'selected authorization file was not imported');
+  assert(!(await page.locator('body').innerText()).includes('fixture-private'),'credential was rendered');
+  await page.keyboard.press('Escape');
+  await page.route('**/v1/models',route=>route.fulfill({contentType:'application/json',body:'{"data":[{"id":"pc/vertex/test-chat","owned_by":"pc"}]}'}));
+  await page.locator('#refresh').click();await page.locator('[data-page="models"]').click();
+  await page.locator('#open-alias').click();
+  assert.equal(await page.locator('#alias-target').inputValue(),'pc/vertex/test-chat','PC namespace duplicated');
+  await page.keyboard.press('Escape');
   await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.evaluate(()=>sessionStorage.getItem('mixed-admin')),null);
   assert.deepEqual(errors,[],'browser JavaScript errors');
   console.log('UI passed: authenticated bootstrap, provider setup, model search, alias inference, diagnostics, mobile layout and logout.');

@@ -86,6 +86,70 @@ public class NativeAccountsTest {
   }
 
   @Test
+  public void codexNativeResponsesPreserveOpaqueItemsAndCollectStreamingResult() throws Exception {
+    call(
+        "POST",
+        "/api/accounts/codex/import",
+        "admin",
+        auth("access-private", "refresh-private"),
+        200);
+    call("POST", "/api/assist/codex/activate", "admin", new JSONObject(), 200);
+    java.util.concurrent.atomic.AtomicInteger requests =
+        new java.util.concurrent.atomic.AtomicInteger();
+    transport =
+        (method, url, headers, body, deadline) -> {
+          requests.incrementAndGet();
+          assertTrue(url.endsWith("/responses"));
+          JSONObject request = new JSONObject(new String(body, StandardCharsets.UTF_8));
+          assertTrue(request.getBoolean("stream"));
+          assertFalse(request.getBoolean("store"));
+          assertEquals("gpt-5.4", request.getString("model"));
+          assertEquals(
+              "opaque-input",
+              request.getJSONArray("input").getJSONObject(0).getString("encrypted_content"));
+          JSONObject result =
+              GoogleProtocol.obj(
+                  "id",
+                  "r1",
+                  "model",
+                  "gpt-5.4",
+                  "status",
+                  "completed",
+                  "output",
+                  GoogleProtocol.arr(
+                      GoogleProtocol.obj(
+                          "id",
+                          "rs1",
+                          "type",
+                          "reasoning",
+                          "summary",
+                          new org.json.JSONArray(),
+                          "encrypted_content",
+                          "opaque-output")));
+          String data =
+              "data: "
+                  + GoogleProtocol.obj("type", "response.completed", "response", result)
+                  + "\n\n";
+          return new GoogleSessions.Response(
+              200, new java.io.ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)));
+        };
+    JSONObject request =
+        GoogleProtocol.obj(
+            "model",
+            "codex/gpt-5.4",
+            "input",
+            GoogleProtocol.arr(
+                GoogleProtocol.obj("type", "reasoning", "encrypted_content", "opaque-input")));
+    JSONObject result = call("POST", "/v1/responses", "client", request, 200);
+    assertEquals("codex/gpt-5.4", result.getString("model"));
+    assertEquals(
+        "opaque-output",
+        result.getJSONArray("output").getJSONObject(0).getString("encrypted_content"));
+    call("POST", "/v1/responses", "client", request.put("store", true), 400);
+    assertEquals(1, requests.get());
+  }
+
+  @Test
   public void nativeConfigurationStepsAdvertiseAndActivateBundledProviders() throws Exception {
     JSONObject capability = call("GET", "/api/assist/status", "admin", null, 200);
     org.json.JSONArray supported = capability.getJSONArray("builtin_backends");

@@ -17,3 +17,5 @@ Android 后续账号检查点：Codex 导入后的目录/生成走内置账号�
 进一步完成：Android WorkBuddy v2 授权状态、账号身份、刷新和 Chat 生成；Codex 设备授权和 PKCE 表单交换。均使用公共管理/推理接口及模拟服务方响应验证，未进行本人登录。真实本地 HTTP 服务另验证 PKCE Content-Type、读取挂起时的客户端断开、503/408/重定向不重复提交生成。传输取消从可阻塞的 HttpURLConnection.disconnect 改为 OkHttp Call.cancel；新增依赖和平台边界见 ADR-0005、第三方声明。
 
 2026-10-17 授权与网络检查点：Android Codex / WorkBuddy 授权、单次请求取消及六来源准备/启停入口的本机回归完成。AGP 8.13.2 + Gradle 8.13 修正 OkHttp Kotlin 元数据与旧 lint 的不兼容；assembleDebug、32 项 HTTP/平台测试、lintDebug 通过，lint 0 错误、13 警告（平台特性检查、备份策略和目标 API 等继续审查）。Go test ./...、go vet ./...、共享资源校验通过。此为开发检查点，真实账号和设备验收仍未通过，未发布。
+
+2026-10-17 协议/配置检查点：Android 新增原生 Responses / Messages SSE，Codex 原生 Responses 完整结果收集，及 Responses / Messages 到指定 Chat 来源的双向完整与增量转换；覆盖 AIS Build、Playground、无头V，无跨来源回退。工具名称分片、签名、用量、长度截断、缺少完成帧均有公共 HTTP 回归；三个客户端协议在真实 HTTP 挂起读取中均可先收到增量，再断开取消。跨协议不支持的状态/缓存选项先报错。配置 UI 增加可点击授权链接、本人 Codex 文件导入，修复电脑别名重复前缀；Android 系统文件选择与销毁取消经平台测试。Go test/vet、共享资源、真实浏览器桌面/390px 布局回归通过；Android assembleDebug + 38 项测试 + lintDebug 通过（0 错误、13 警告）。高级媒体、深层参数、系统服务/备份策略及本人账号/设备验收仍需完成，此记录不是 release 验收。

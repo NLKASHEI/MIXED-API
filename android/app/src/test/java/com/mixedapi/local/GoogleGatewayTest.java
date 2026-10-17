@@ -119,6 +119,48 @@ public class GoogleGatewayTest {
   }
 
   @Test
+  public void responsesAndMessagesReachEachGoogleCapabilityWithoutFallback() throws Exception {
+    Fixture fixture = new Fixture();
+    start(fixture);
+    for (String model :
+        new String[] {
+          "aps/gemini-test", "aistudio/build/gemini-test", "aistudio/playground/gemini-test"
+        })
+      for (String protocol : new String[] {"responses", "messages"})
+        for (boolean stream : new boolean[] {false, true}) {
+          JSONObject input = GoogleProtocol.obj("model", model, "stream", stream);
+          if (protocol.equals("responses")) input.put("input", "hi");
+          else
+            input
+                .put(
+                    "messages",
+                    GoogleProtocol.arr(GoogleProtocol.obj("role", "user", "content", "hi")))
+                .put("max_tokens", 100);
+          HttpURLConnection c = request("/v1/" + protocol, "client", input.toString());
+          try {
+            assertEquals(200, c.getResponseCode());
+            String result = new String(c.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(result, result.contains("hello"));
+            assertTrue(result, result.replace("\\/", "/").contains(model));
+            assertEquals(
+                model.startsWith("aps/")
+                    ? "aps"
+                    : model.contains("/build/") ? "build" : "playground",
+                fixture.operation.getString("kind"));
+            if (stream)
+              assertTrue(
+                  result,
+                  result.contains(
+                      protocol.equals("responses")
+                          ? "event: response.completed"
+                          : "event: message_stop"));
+          } finally {
+            c.disconnect();
+          }
+        }
+  }
+
+  @Test
   public void nativeGoogleSourcesUsePublicChatInterface() throws Exception {
     Fixture fixture = new Fixture();
     start(fixture);

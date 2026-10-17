@@ -172,7 +172,22 @@ final class GoogleGateway {
       return;
     }
     if (!"/v1/chat/completions".equals(path)) {
-      BridgeHttpServer.fail(out, 501, "该来源的此接口转换尚未完成");
+      String selectedModel = model;
+      ProtocolBridge.serve(
+          out,
+          path,
+          id,
+          publicModel,
+          input,
+          (target, chat) ->
+              serve(
+                  target,
+                  "/v1/chat/completions",
+                  backend,
+                  publicModel,
+                  selectedModel,
+                  chat,
+                  settings));
       return;
     }
     String kind = id;
@@ -336,10 +351,10 @@ final class GoogleGateway {
       if (!started) {
         out.write(
             ("HTTP/1.1 200 OK\r\n"
-                 + "Content-Type: text/event-stream\r\n"
-                 + "Cache-Control: no-store\r\n"
-                 + "Connection: close\r\n"
-                 + "X-Mixed-Backend: "
+                    + "Content-Type: text/event-stream\r\n"
+                    + "Cache-Control: no-store\r\n"
+                    + "Connection: close\r\n"
+                    + "X-Mixed-Backend: "
                     + backend
                     + "\r\n\r\n")
                 .getBytes(StandardCharsets.US_ASCII));
