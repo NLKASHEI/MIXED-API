@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +25,7 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "headless mode: run only the local gateway")
 	lan := flag.Bool("lan", false, "opt-in read-only LAN API listener at :8766; never exposes admin panel")
 	flag.Parse()
+	gui := runtime.GOOS == "windows" && !*noBrowser
 	// Double-clicking the EXE should work regardless of the Explorer or shortcut
 	// working directory. Keep the local config next to the portable Windows EXE.
 	if runtime.GOOS == "windows" && *file == "mixed-api.json" {
@@ -31,7 +35,7 @@ func main() {
 	}
 	cfg, err := gateway.LoadOrCreate(*file)
 	if err != nil {
-		log.Fatal(err)
+		startupFailure(gui, "无法读取或保存配置，请检查配置文件格式和目录写入权限。")
 	}
 	server := gateway.NewServer(*file, cfg)
 	if runtime.GOOS == "windows" && !*noBrowser {
@@ -46,15 +50,15 @@ func main() {
 	fmt.Println("Keys are saved in", *file, "; keep this file private.")
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		// Reopening the EXE focuses the existing dashboard only after checking
-		// the saved admin key against that process, never an unrelated listener.
+		// Reopen only an authenticated gateway with the same build version.
+		// Otherwise the new EXE would silently display an older implementation.
 		if runtime.GOOS == "windows" && !*noBrowser && existingGateway(url, cfg.AdminKey) {
 			if err := desktop.Run(url, cfg.AdminKey); err != nil {
-				log.Print(err)
+				startupFailure(gui, "应用窗口无法启动，请重新安装完整 Windows 版本。")
 			}
 			return
 		}
-		log.Fatalf("Cannot listen on %s: %v", cfg.Listen, err)
+		startupFailure(gui, "本机服务端口已被占用，或正在运行其他版本。请先完全退出已打开的 MIXED-API，再启动此版本；若仍无法启动，请检查端口占用。")
 	}
 	defer listener.Close()
 	var lanServer *http.Server
@@ -62,7 +66,7 @@ func main() {
 		const lanAddr = "0.0.0.0:8766"
 		listener, e := net.Listen("tcp4", lanAddr)
 		if e != nil {
-			log.Fatalf("Cannot start LAN API port 8766: %v", e)
+			startupFailure(gui, "无法启动局域网服务，端口 8766 已被占用。")
 		}
 		// Only inference routes on the LAN port, no administration.
 		apiOnly := gateway.APIOnly(server)
@@ -90,7 +94,8 @@ func main() {
 			_ = lanServer.Shutdown(ctx)
 		}
 		if err != nil {
-			log.Print(err)
+			log.Print("应用窗口无法启动")
+			desktop.ShowError("应用窗口无法启动，请重新安装完整 Windows 版本。")
 		}
 		return
 	}
@@ -112,5 +117,22 @@ func existingGateway(base, admin string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == 200 && strings.Contains(resp.Header.Get("Content-Type"), "application/json")
+	contentType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if resp.StatusCode != 200 || err != nil || contentType != "application/json" {
+		return false
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(raw) > 1<<20 {
+		return false
+	}
+	var status struct{ Service, Version string }
+	return json.Unmarshal(raw, &status) == nil && status.Service == "MIXED-API" && status.Version == gateway.BuildVersion
+}
+
+func startupFailure(gui bool, message string) {
+	log.Print(message)
+	if gui {
+		desktop.ShowError(message)
+	}
+	os.Exit(1)
 }

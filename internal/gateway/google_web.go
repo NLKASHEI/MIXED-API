@@ -57,6 +57,13 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		return
 	}
 	contract.prepare(body, kind == "playground")
+	if kind == "aps" {
+		body, err = apsPayload(body)
+		if err != nil {
+			jsonError(w, 400, err.Error())
+			return
+		}
+	}
 	if s.google == nil {
 		jsonError(w, 503, "来源会话不可用，请在应用内完成授权步骤")
 		return
@@ -68,6 +75,7 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 	op := googleweb.Operation{Kind: kind, Model: model, Body: raw}
 	var stream bool
 	json.Unmarshal(payload["stream"], &stream)
+	buildFreeUnary := false
 	if kind == "build" {
 		s.mu.RLock()
 		unary, known := s.googleBuildUnary[model]
@@ -75,6 +83,7 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		// Unknown models use the general unary method. Catalogued free models
 		// use the incremental RPC; subscription models require unary transport.
 		op.Unary = !stream || !known || unary
+		buildFreeUnary = op.Unary && known && !unary
 		if op.Unary {
 			kind = "build_unary"
 		}
@@ -87,6 +96,15 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		}
 	}
 	resp, err := s.sendGoogle(ctx, b.ID, op, settings.MaxRetries)
+	// Adapted from AIStudio2API build.go sendBuild (MIT): free Build
+	// models may support only ProxyStreamedCall. Retry only an explicit
+	// unsupported-method response, before generation; never change channel.
+	if err == nil && buildFreeUnary && ctx.Err() == nil && buildUnaryUnsupported(resp) {
+		resp.Body.Close()
+		op.Unary = false
+		kind = "build"
+		resp, err = s.sendGoogle(ctx, b.ID, op, settings.MaxRetries)
+	}
 	if err != nil {
 		jsonError(w, 503, "来源会话未就绪或已失效，请打开配置中的授权窗口")
 		return
@@ -305,6 +323,7 @@ func decodeGoogleWeb(ctx context.Context, kind string, source io.Reader, emit fu
 	if kind == "aps" {
 		return scanGoogleObjects(ctx, source, func(raw []byte) error {
 			var obj struct {
+				Errors  []json.RawMessage `json:"errors"`
 				Results []struct {
 					Errors []json.RawMessage `json:"errors"`
 					Data   struct {
@@ -316,6 +335,9 @@ func decodeGoogleWeb(ctx context.Context, kind string, source io.Reader, emit fu
 			}
 			if json.Unmarshal(raw, &obj) != nil {
 				return errors.New("invalid GraphQL frame")
+			}
+			if len(obj.Errors) > 0 {
+				return errors.New("GraphQL generation failed")
 			}
 			for _, result := range obj.Results {
 				if len(result.Errors) > 0 {

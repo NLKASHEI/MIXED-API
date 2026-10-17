@@ -180,11 +180,12 @@
     if (!snapshot || !service) throw Error('authorization_required');
     const textarea=[...document.querySelectorAll('ms-prompt-box textarea')].find(e=>e.getClientRects().length>0);
     if (!textarea) throw Error('authorization_required');
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,prompt);
-    textarea.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:prompt}));
-    textarea.dispatchEvent(new Event('change',{bubbles:true}));
-    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
-    return await snapshot(service,[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join(''));
+    const previous=promptValue(textarea);
+    setPrompt(textarea,prompt);
+    try {
+      const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
+      return await snapshot(service,[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join(''));
+    } finally {if(promptValue(textarea)===prompt)setPrompt(textarea,previous)}
   }
   async function authHeaders() {
     const h={...headers,'content-type':'application/json+protobuf'};
@@ -219,9 +220,9 @@
     start(id,op){
       if (invalidated || bootstrap || requests.size || !/^[a-f0-9]{48}$/.test(id) || !op || typeof op.model!=='string' && !['models','build_models'].includes(op.kind)) return false;
       if(op.model && !/^[A-Za-z0-9._-]+$/.test(op.model)) return false;
-      const s={controller:new AbortController(),status:0,headers:{},chunks:[],done:false,error:''};requests.set(id,s);
+      const s={controller:new AbortController(),preparing:true,status:0,headers:{},chunks:[],done:false,error:''};requests.set(id,s);
       (async()=>{try{
-        const q=await request(op);if(s.controller.signal.aborted)throw Error('cancelled');
+        const q=await request(op);if(s.controller.signal.aborted)throw Error('cancelled');s.preparing=false;
         const response=await originalFetch(q.url,{method:'POST',headers:q.headers,body:q.body,credentials:'include',redirect:'error',signal:s.controller.signal});
         s.status=response.status;if(s.status===401||s.status===403){observedSuccess=false;initialized=false;initializationMessage="来源拒绝请求，请检查本人授权与权限";}for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
         if(!response.body)return;
@@ -234,6 +235,8 @@
       }catch(_){s.error='会话请求失败，请检查官方页面的授权与验证状态'}finally{s.done=true}})();return true;
     },
     read(id){const s=requests.get(id);if(!s)return {error:'请求已结束',done:true};return {status:s.status,headers:s.headers,chunk:s.chunks.shift()||'',done:s.done&&s.chunks.length===0,error:s.error}},
-    cancel(id){const s=requests.get(id);if(s)s.controller.abort();requests.delete(id);return true}
+    cancel(id){const s=requests.get(id);if(!s)return true;s.controller.abort();requests.delete(id);
+      if(s.preparing&&!s.done){invalidated=true;initialized=false;observedSuccess=false;initializationMessage='请求准备已中止，请重新打开来源页面';return false}
+      return true}
   };
 })();

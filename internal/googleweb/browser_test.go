@@ -17,6 +17,7 @@ type testPage struct {
 	polls        int
 	closed       bool
 	refuseCancel bool
+	cancelReply  json.RawMessage
 }
 
 func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error) {
@@ -30,6 +31,9 @@ func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error)
 			return nil, errors.New("window unresponsive")
 		}
 		p.cancelled++
+		if p.cancelReply != nil {
+			return p.cancelReply, nil
+		}
 		return json.RawMessage(`true`), nil
 	}
 	if strings.Contains(js, "start(") {
@@ -41,6 +45,25 @@ func (p *testPage) Eval(ctx context.Context, js string) (json.RawMessage, error)
 		return json.RawMessage(`{"status":200,"chunk":"aGk=","done":true}`), nil
 	}
 	return nil, errors.New("extra poll")
+}
+
+func TestUnconfirmedCancellationCannotReuseSession(t *testing.T) {
+	for _, reply := range []string{"false", "null"} {
+		p := &testPage{cancelReply: json.RawMessage(reply)}
+		b := New(func(context.Context, string) (Page, error) { return p, nil })
+		if err := b.Open(context.Background(), "aistudio"); err != nil {
+			t.Fatal(err)
+		}
+		r, err := b.Send(context.Background(), "aistudio", Operation{Kind: "build", Model: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if !p.closed || b.State(context.Background(), "aistudio").Status != "none" {
+			t.Errorf("cancel reply %s allowed another request into unconfirmed page", reply)
+		}
+		b.Close()
+	}
 }
 
 func TestFailedCancellationClosesPageAndAllowsExplicitReopen(t *testing.T) {

@@ -13,7 +13,7 @@ func advancedBridge(t *testing.T, handler func(*http.Request) string) *Server {
 	t.Helper()
 	cfg := Defaults()
 	cfg.APIKey = "client"
-	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(handler(r)))}, nil

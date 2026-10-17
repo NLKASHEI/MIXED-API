@@ -9,7 +9,7 @@ These definitions describe the v0.4.0 integrated core. Windows packages and a se
 - **Client API Key**: Secret granted solely to `/v1/*` routes, not admin configuration.
 - **Admin Key**: Independent secret for `/api/*`, including sensitive source settings and account setup.
 - **Legacy process settings**: Old command/workdir fields retained for configuration compatibility; the application never executes them.
-- **Release**: A CI-produced GitHub release containing separate Windows and Android artifacts.
+- **Release**: A CI-produced GitHub release. Platform assets follow `packaging/release-targets.json`; Android can be deferred independently of Windows.
 
 - **快速V**: The user-facing name of the vertex Express adapter; requires the user's Google Express API Key.
 - **无头V**: The user-facing name of the aps source; same-family runtime implementations remain internal.
@@ -19,5 +19,5 @@ These definitions describe the v0.4.0 integrated core. Windows packages and a se
 - **Integrated core module**: Provider protocol and reverse-proxy logic owned by the application, using shared routing, streaming and credential boundaries; not an installer or launcher for an upstream application.
 
 - **AIS capabilities**: Build and Playground are distinct RPC protocols under the same aistudio source. Models are `aistudio/build/original` or `aistudio/playground/original`.
-- **Provider window**: Isolated official website session owned by the native app; only the user completes sign-in, consent, challenges and the first test message. It has no admin bridge or client credentials.
+- **Provider window**: Isolated official website session; only the user completes sign-in, consent and challenges. Windows uses the system default Edge/Chrome with a dedicated profile. The connection step initializes the session without requiring a manual test message; a separate API test verifies inference. It has no admin bridge or client credentials. See ADR-0006.
 - **Android PC bridge**: Explicit `pc/original` namespace, including a desktop namespace inside original. No implicit fallback to the PC.

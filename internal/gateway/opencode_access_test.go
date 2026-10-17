@@ -48,3 +48,44 @@ func TestOpenCodeCatalogExplainsAccessWithoutClaimingInference(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeAnonymousKeyAndFreeTierRejection(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	calls := 0
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Header.Get("Authorization") != "Bearer public" || !strings.HasPrefix(r.Header.Get("User-Agent"), "MIXED-API/") {
+			t.Error("anonymous request lacks public credential or uses another client's identity")
+		}
+		if r.URL.Path == "/inference/v1/models" {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"big-pickle"}]}`))}, nil
+		}
+		return &http.Response{StatusCode: 403, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"type":"FreeTierError","message":"fixture private upstream details"}`))}, nil
+	})
+	list := accountTestCall(app, "GET", "/v1/models", "client", "")
+	if list.Code != 200 || !strings.Contains(list.Body.String(), "opencode/big-pickle") {
+		t.Fatalf("model request failed: %d", list.Code)
+	}
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"opencode/big-pickle","messages":[{"role":"user","content":"hello"}]}`)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "FreeTierError") || strings.Contains(w.Body.String(), "private upstream") || calls != 2 {
+		t.Fatalf("free rejection hidden or rerouted: %d calls=%d %s", w.Code, calls, w.Body.String())
+	}
+}
+
+func TestOpenCodePaidModelRequiresUserKeyBeforeUpstreamRequest(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Error("paid request was sent without a user key")
+		return &http.Response{StatusCode: 401, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("denied"))}, nil
+	})
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"opencode/gpt-5.5","messages":[{"role":"user","content":"hello"}]}`)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "付费模型") {
+		t.Fatalf("missing paid-model setup instruction: %d %s", w.Code, w.Body.String())
+	}
+}

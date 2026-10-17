@@ -11,7 +11,7 @@ The integrated gateway implements provider protocols inside the Go process. Thes
 - Desktop loader: wailsapp/go-webview2 v1.0.23 (MIT), jchv/go-winloader, and golang.org/x/sys (BSD-3-Clause). The narrow COM binding follows Microsoft's WebView2 SDK ABI.
 - Embedded Microsoft WebView2 Fixed Runtime: proprietary Microsoft redistributable, version and hashes pinned in packaging/windows/webview2.json. Microsoft terms: https://developer.microsoft.com/en-us/microsoft-edge/webview2/ . Distribution instructions: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution . Runtime files and embedded third-party notices are preserved.
 
-Upstream programs and user credentials are not shipped as provider executables or account data. AIS Build / Playground protocol fields and page proof discovery derive from Mag1cFall/AIStudio2API at 2cbe310ce6ebab093bf83e5078de8296f03770a9 (MIT). The Google web session implementation and its validation limits are documented in docs/third-party/google-web.md.
+Upstream programs and user credentials are not shipped as provider executables or account data. AIS Build / Playground protocol fields, page proof discovery, and Windows Build unary compatibility/error decoding derive from Mag1cFall/AIStudio2API at 2cbe310ce6ebab093bf83e5078de8296f03770a9 (MIT). The Google web session implementation and its validation limits are documented in docs/third-party/google-web.md.
 
 ## codex-Apache-2.0.txt
 

@@ -1,5 +1,7 @@
 # 新增上游核对
 
+本日后续 Windows 修复快照：AIStudio2API `2cbe310ce6ebab093bf83e5078de8296f03770a9`、OpenCode `27626a9d192b988938bb3d5f0e4fa241af7ae309`、APS2api `01328896c435b4b172b1d25f9fc04ff86b40df31`、DeconstructedCube AIS `9bd5a20f25bbfae60c84b59b6a9f167b85c7d1a3`。采用范围、源码文件校验与限制见 [Google 协议来源](third-party/google-web.md) 和 [Windows 修复](windows-session-repair-2026-10-17.md)。下文保留此前各次快照，版本号不表示当前最新版。
+
 补充核对：OpenCode 当前 [v63 提交 8895290](https://github.com/zkygwxf-bot/opencode-proxy/commit/889529028cabe8b8a463ee17c24fd56bbce20ce1)；AIStudio2API 当前 [54faed2](https://github.com/Mag1cFall/AIStudio2API/commit/54faed274d328c377272d6085d35133742d94085)。前者的工具流整理、反向协议转换及取消清理作为本轮测试依据；重新实现于 Go/Java 共享核心，不采用伪装工具或客户端身份的授权门槛处理，也不把孤儿参数丢弃后标成成功。新增搜索循环仍需独立能力和安全审查。后者新增代理池、Build 参数错误回退与 worker 修复，核心 JSPB 字段未变；不采用自动 Build → Playground 回退，继续保留明确能力路由。WorkBuddy `4354f83`、DeconstructedCube AIS `6d1f243` 在此次复查中未变。
 
 核对时间：2026-10-17。原六个项目的历史快照见 `upstream-audit-2026-10-16.json`。下列项目融入原有来源，不增加第七个来源，也不增加用户运行版本选择。

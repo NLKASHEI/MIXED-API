@@ -17,7 +17,7 @@ func TestAnthropicSignedThinkingRoundTrip(t *testing.T) {
 		t.Run(map[bool]string{false: "full", true: "stream"}[stream], func(t *testing.T) {
 			cfg := Defaults()
 			cfg.APIKey = "client"
-			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Auth: "none", Enabled: true}}
+			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Auth: "none", Enabled: true}}
 			app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 			calls := 0
 			app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -114,7 +114,7 @@ func TestAnthropicThinkingUsesModelCapability(t *testing.T) {
 		t.Run(tc.model, func(t *testing.T) {
 			cfg := Defaults()
 			cfg.APIKey = "client"
-			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Auth: "none", Enabled: true}}
+			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Auth: "none", Enabled: true}}
 			app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 			sent := false
 			app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {

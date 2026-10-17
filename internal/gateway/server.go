@@ -407,7 +407,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 			out[k] = v
 		}
 		s.mu.RUnlock()
-		jsonResult(w, 200, map[string]any{"processes": out, "backends": c.Backends})
+		jsonResult(w, 200, map[string]any{"service": "MIXED-API", "version": BuildVersion, "processes": out, "backends": c.Backends})
 	case strings.HasPrefix(r.URL.Path, "/api/process/") && r.Method == "POST":
 		target := strings.TrimPrefix(r.URL.Path, "/api/process/")
 		id, action, ok := strings.Cut(target, "/")

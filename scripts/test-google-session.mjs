@@ -42,7 +42,7 @@ assert.equal(session.start('b'.repeat(48),{kind:'models'}),false,'overlapping pr
 let result;for(let i=0;i<100;i++){result=session.read(id);if(result.done)break;await delay(10)}
 assert.equal(result.error,'');assert.equal(result.status,200);
 const request=sent.at(-1);assert.equal(request.url,rpc+'ProxyUnaryCall');
-const body=JSON.parse(request.options.body);assert.equal(body[0],'/v1beta/models/gemini-test:generateContent');assert.equal(body[3],'POST');assert(body[2].startsWith('proof-'));assert.equal(textarea.text,'hello');
+const body=JSON.parse(request.options.body);assert.equal(body[0],'/v1beta/models/gemini-test:generateContent');assert.equal(body[3],'POST');assert(body[2].startsWith('proof-'));assert.equal(textarea.text,'','request left its prompt in the page and blocks reconnection');
 assert(!JSON.stringify(request).includes('attacker.invalid'));
 session.cancel(id);assert.equal(session.start(id,{kind:'build',model:'../../invalid',body:{}}),false);
 assert.equal(session.start(id,{kind:'build_models',page_token:'page-2'}),true);await delay(20);
@@ -95,4 +95,21 @@ lateWindow.__mixedGoogleWeb.cancelInitialize();releaseProof();await delay(20);
 assert.equal(lateSent,0,'cancelled initialization leaked a delayed generation');
 assert.equal(lateWindow.__mixedGoogleWeb.state().status,'waiting');
 assert.equal(lateWindow.__mixedGoogleWeb.start(id,{kind:'models'}),false,'invalidated page allowed a new request');
+// Cancellation while the official page is still preparing a request cannot
+// acknowledge a released lease and permit another concurrent page operation.
+let holdRequest=false,releaseRequest,preparingSent=0;
+const requestWait=new Promise(resolve=>releaseRequest=resolve);
+const preparingWindow={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */if(holdRequest)await requestWait;return 'proof'}},fetch:async()=>{preparingSent++;return new Response(valid)}};
+const preparingField=new Textarea();
+runInNewContext(script,{...globals,window:preparingWindow,XMLHttpRequest:class extends FakeXHR{},document:{cookie:'',querySelectorAll:s=>s==='ms-prompt-box textarea'?[preparingField]:[]}});
+const preparingSession=preparingWindow.__mixedGoogleWeb;
+preparingSession.state();await preparingWindow.default_MakerSuite.native({},'fixture');
+await preparingWindow.fetch(rpc+'GenerateContent',{headers:{'x-goog-api-key':'fixture'},body:'[]'});await delay(20);
+holdRequest=true;
+assert.equal(preparingSession.start(id,{kind:'playground',model:'gemini-test',body:[],binding:'hello',prompt:'hello'}),true);await delay(20);
+assert.equal(preparingSession.cancel(id),false,'in-flight preparation reported safely cancelled');
+assert.equal(preparingSession.start('c'.repeat(48),{kind:'models'}),false,'cancelled preparation overlaps the next request');
+releaseRequest();await delay(20);
+assert.equal(preparingSent,1,'cancelled generation was sent after preparation finished');
+assert.equal(preparingField.text,'','cancelled request left page content behind');
 console.log('Google official-session bootstrap, rejection, unary RPC, catalog, GraphQL framing, cancellation, origin and serialization checks passed.');

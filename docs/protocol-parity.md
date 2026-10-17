@@ -39,4 +39,8 @@ Google Chat 可使用 `modalities:["text","audio"]` 和 `audio:{"voice":"Kore","
 - Build 使用 unary 的模型会先收集响应再发送 SSE；SSE 格式不等于来源支持逐 token 生成。
 - API 35 / Robolectric、HTTP 夹具、CI 构建不能替代本人账号生成、Android 实体设备和干净 Windows 的实际产物验收。
 
-当前本地 55 项 Android 测试和 Go tests/vet 已通过；CI 及最终验收以[重构进度](integration-progress.md)和对应 Actions 为准。
+## Windows 优先期间的差异
+
+用户于 2026-10-17 暂停 Android 开发和发布。以下新修复只在 Windows Go 核心生效：无头V的 GraphQL Schema 转换及外层错误检查、Build 同模型的 unary 兼容重试、OpenCode 匿名 `public` 鉴权及付费模型 Key 前置检查、FreeTierError 说明。Android Java 尚未同步，不能把旧 APK 当作本次修复包。
+
+AIS 请求准备阶段取消、输入框恢复仍通过共享脚本同步；Windows 取消确认必须为 true，否则先关闭失效页面。构建继续检查共享资源一致与 Android Gradle，设备验收暂停。具体 CI 及真实账号验收以[重构进度](integration-progress.md)和对应 Actions 为准。

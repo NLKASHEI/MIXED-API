@@ -63,9 +63,13 @@ type host struct {
 	handlers         []*comHandler
 	provider         *providerPage
 	pumping          bool
+	destroyed        bool
 }
 
 func (h *host) EnvironmentCompleted(code webviewloader.HRESULT, env *webviewloader.ICoreWebView2Environment) webviewloader.HRESULT {
+	if h.destroyed {
+		return 0
+	}
 	if code < 0 || env == nil {
 		h.fail(errors.New("无法初始化应用渲染环境"))
 		return 0
@@ -80,6 +84,9 @@ func (h *host) EnvironmentCompleted(code webviewloader.HRESULT, env *webviewload
 	return 0
 }
 func (h *host) controllerReady(code uintptr, c *comObject) uintptr {
+	if h.destroyed {
+		return 0
+	}
 	if int32(code) < 0 || c == nil {
 		h.fail(errors.New("无法创建应用窗口内容"))
 		return 0
@@ -235,6 +242,7 @@ func (h *host) proc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		user32.NewProc("DestroyWindow").Call(hwnd)
 		return 0
 	case 0x2:
+		h.destroyed = true
 		if h.pumping {
 			user32.NewProc("PostQuitMessage").Call(0)
 		}
@@ -314,8 +322,10 @@ func runHost(h *host, class, caption, profileName string) error {
 		return errors.New("应用渲染器无法启动，请使用包含渲染资源的完整发布包")
 	}
 	var msg message
-	h.pumping = true
-	for {
+	h.pumping = !h.destroyed
+	// WebView2 environment creation can pump Win32 messages before this loop.
+	// Closing during initialization must not leave us waiting on a dead HWND.
+	for h.pumping {
 		ret, _, e := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(ret) == -1 {
 			h.err = e
@@ -340,5 +350,7 @@ func runHost(h *host, class, caption, profileName string) error {
 // NewGoogleSessions creates provider windows lazily, only after the user opens
 // the corresponding authorization step. It never opens a terminal/process.
 func NewGoogleSessions(root string) *googleweb.Browser {
-	return googleweb.New(func(ctx context.Context, id string) (googleweb.Page, error) { return newSystemBrowserPage(ctx, id, root) })
+	return googleweb.New(func(ctx context.Context, id string) (googleweb.Page, error) {
+		return newSystemBrowserPage(ctx, id, root)
+	})
 }

@@ -39,9 +39,7 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 		if err != nil {
 			return nil, err
 		}
-		if b.ProviderKey != "" {
-			r.Header.Set("Authorization", "Bearer "+b.ProviderKey)
-		}
+		r.Header.Set("Authorization", openCodeAuthorization(b))
 		r.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
 		resp, err := s.client.Do(r)
 		if err != nil {

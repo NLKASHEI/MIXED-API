@@ -4,6 +4,8 @@
 
 `packaging/release-targets.json` 明确选择 Android 发布类型：`signed` 必须具备固定密钥，缺失则失败；`preview` 生成一次性 CI 密钥，产物命名为 `MIXED-API-Android-preview.apk`，并在 Release 中说明升级限制。两种类型均执行 APK 签名校验、单元测试、Lint 和模拟器验收；不回退到 Debug 构建。临时私钥不保存在仓库、构建附件或 GitHub Secrets 中。
 
+`none` 表示暂停 Android 发布，只发布 Windows。此时仍执行 Gradle 构建、单元测试和 Lint，但不准备签名、不构建升级基线、不上传 APK、不执行设备验收。2026-10-17 用户要求电脑优先，当前采用此模式；恢复 Android 发布时必须重新通过对应签名与设备门禁。
+
 仓库维护者在 GitHub Actions 配置以下值。密钥只用于非 PR 构建，勿提交到仓库、日志或 Release。
 
 | 设置 | 类型 | 内容 |

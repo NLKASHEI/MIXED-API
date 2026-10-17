@@ -26,7 +26,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$version"; fi
           echo "number=$version" >> "$GITHUB_OUTPUT"
-          android="$(jq -er '.android | select(. == "signed" or . == "preview")' packaging/release-targets.json)"
+          android="$(jq -er '.android | select(. == "signed" or . == "preview" or . == "none")' packaging/release-targets.json)"
           echo "android=$android" >> "$GITHUB_OUTPUT"
 
   verify:
@@ -123,6 +123,7 @@ jobs:
         with:
           gradle-version: '8.13'
       - name: Prepare Android signing
+        if: needs.version.outputs.android != 'none'
         shell: bash
         env:
           APK_KEYSTORE_B64: ${{ github.event_name != 'pull_request' && needs.version.outputs.android == 'signed' && secrets.MIXED_API_ANDROID_KEYSTORE_B64 || '' }}
@@ -147,6 +148,7 @@ jobs:
           chmod 600 "$MIXED_ANDROID_KEYSTORE"
           keytool -list -keystore "$MIXED_ANDROID_KEYSTORE" -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api >/dev/null
       - name: Build preceding version for update acceptance
+        if: needs.version.outputs.android != 'none'
         run: |
           set -euo pipefail
           export MIXED_ANDROID_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER - 1))
@@ -157,14 +159,17 @@ jobs:
         run: |
           set -euo pipefail
           gradle -p android --no-daemon :app:assembleRelease :app:testDebugUnitTest :app:lintRelease --stacktrace
+          if [[ "$ANDROID_RELEASE_MODE" == none ]]; then exit 0; fi
           cp android/app/build/outputs/apk/release/app-release.apk MIXED-API-Android.apk
           python3 scripts/check-android-apk.py MIXED-API-Android.apk --signer-sha256 "$MIXED_ANDROID_SIGNER_SHA256" --version-code "$((1000 + GITHUB_RUN_NUMBER))" > android-package.json
       - uses: actions/upload-artifact@v4
+        if: needs.version.outputs.android != 'none'
         with:
           name: ${{ needs.version.outputs.android == 'signed' && 'android-release' || 'android-preview' }}
           path: MIXED-API-Android.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: needs.version.outputs.android != 'none'
         with:
           name: android-update-test
           path: |
@@ -180,6 +185,7 @@ jobs:
           path: android/app/build/reports/
 
   android-device:
+    if: needs.version.outputs.android != 'none'
     needs: [version, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -233,7 +239,12 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/v') &&
+      needs.version.result == 'success' && needs.verify.result == 'success' &&
+      needs.windows.result == 'success' && needs.android.result == 'success' &&
+      (needs.android-device.result == 'success' ||
+       (needs.version.outputs.android == 'none' && needs.android-device.result == 'skipped'))
     needs: [version, verify, windows, android, android-device]
     permissions:
       contents: write

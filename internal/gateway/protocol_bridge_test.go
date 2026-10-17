@@ -92,7 +92,7 @@ func TestResponsesStreamDeliversBeforeCompletionAndCancelsProvider(t *testing.T)
 func TestMessagesClientUsesOpenCodeChatWithTools(t *testing.T) {
 	cfg := Defaults()
 	cfg.APIKey = "client"
-	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 	calls := 0
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -129,7 +129,7 @@ func TestMessagesStreamKeepsToolDeltasAndRejectsTruncatedArguments(t *testing.T)
 		t.Run(args, func(t *testing.T) {
 			cfg := Defaults()
 			cfg.APIKey = "client"
-			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+			cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 			app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 			app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				var body map[string]any
@@ -176,7 +176,7 @@ func TestResponsesPreservesLengthAndRejectsUnknownFinish(t *testing.T) {
 			t.Run(fmt.Sprintf("%v/%s", stream, finish), func(t *testing.T) {
 				cfg := Defaults()
 				cfg.APIKey = "client"
-				cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+				cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 				app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 				app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					var packet map[string]any
@@ -261,7 +261,7 @@ func TestResponsesGeminiToolSignatureSurvivesRoundTrip(t *testing.T) {
 func TestResponsesStreamAcceptsFragmentedToolNames(t *testing.T) {
 	cfg := Defaults()
 	cfg.APIKey = "client"
-	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		data := "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_\",\"arguments\":\"\"}}]}}]}\n\n" +
@@ -282,7 +282,7 @@ func TestResponsesStreamAcceptsFragmentedToolNames(t *testing.T) {
 func TestChatRejectsMalformedResponsesToolCompletion(t *testing.T) {
 	cfg := Defaults()
 	cfg.APIKey = "client"
-	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		data := "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc1\",\"call_id\":\"call1\",\"name\":\"weather\",\"arguments\":\"\"}}\n\n" +
@@ -302,7 +302,7 @@ func TestChatRejectsMalformedResponsesToolCompletion(t *testing.T) {
 func TestNonStreamingMessagesDoesNotInventTruncatedToolInput(t *testing.T) {
 	cfg := Defaults()
 	cfg.APIKey = "client"
-	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), Enabled: true}}
+	cfg.Backends = []Backend{{ID: "opencode", Kind: "builtin", URL: builtinBase("opencode"), ProviderKey: "fixture-paid-key", Enabled: true}}
 	app := NewServer(filepath.Join(t.TempDir(), "config.json"), cfg)
 	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"tool_calls":[{"id":"call1","function":{"name":"weather","arguments":"{\"city\":"}}]},"finish_reason":"length"}]}`))}, nil

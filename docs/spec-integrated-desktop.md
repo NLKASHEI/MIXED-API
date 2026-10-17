@@ -4,6 +4,8 @@
 
 跟踪：[GitHub Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)。
 
+2026-10-17 后续范围调整：用户要求暂停 Android，优先修复 Windows。当前 Android 发布目标为 `none`，保留共享代码的 Gradle 构建、单元测试与 lint；模拟器问题暂不修复、不计为通过、不阻塞只含 Windows 的交付。Android 真机与账号验收仍保留。
+
 ## 用户最终拿到什么
 
 一个安装包或完整便携包。双击 EXE 后出现 MIXED 自己的应用窗口，保留简约、大字号界面、后台和配置每一步的指引。用户无需先安装 Go、Node、Python、上游代理程序或额外浏览器运行资源。

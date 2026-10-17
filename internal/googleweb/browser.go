@@ -140,7 +140,7 @@ func (b *Browser) Initialize(ctx context.Context, id string) State {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if _, err := s.page.Eval(cleanup, "window.__mixedGoogleWeb?.cancelInitialize()"); err != nil {
+		if ack, err := s.page.Eval(cleanup, "window.__mixedGoogleWeb?.cancelInitialize()"); err != nil || string(ack) != "true" {
 			s.broken.Store(true)
 			s.page.Close()
 		}
@@ -319,7 +319,7 @@ func (b *browserBody) Close() error {
 		b.cancel()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if _, err := b.session.page.Eval(ctx, "window.__mixedGoogleWeb?.cancel('"+b.key+"')"); err != nil {
+		if ack, err := b.session.page.Eval(ctx, "window.__mixedGoogleWeb?.cancel('"+b.key+"')"); err != nil || string(ack) != "true" {
 			// Do not leave an unbounded provider fetch alive when its UI cannot
 			// process the abort. A subsequent explicit Open creates a new page.
 			b.session.broken.Store(true)

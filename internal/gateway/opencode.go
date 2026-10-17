@@ -84,6 +84,10 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		jsonError(w, 400, "OpenCode 内置核心必须连接官方端点")
 		return
 	}
+	if (b.ProviderKey == "" || b.ProviderKey == "public") && openCodeAccess(model).Kind == "key_paid" {
+		jsonError(w, 400, "这是 OpenCode Key 付费模型，请先在 OpenCode 配置中填写本人的 Key")
+		return
+	}
 	target, err := s.openCodeModelRoute(r.Context(), model)
 	if err != nil {
 		jsonError(w, 503, err.Error())
@@ -95,10 +99,7 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		s.serveProtocolBridge(w, r, b, publicModel, model, payload)
 		return
 	}
-	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion}
-	if b.ProviderKey != "" {
-		headers["Authorization"] = "Bearer " + b.ProviderKey
-	}
+	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion, "Authorization": openCodeAuthorization(b)}
 	if _, ok := openCodePinned[model]; ok {
 		w.Header().Set("X-Mixed-Protocol-Catalog", "models.dev/f4088b386739")
 	}
@@ -129,9 +130,6 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 	if protocol == "messages" {
 		headers["Anthropic-Version"] = "2023-06-01"
 	}
-	if b.ProviderKey != "" {
-		headers["Authorization"] = "Bearer " + b.ProviderKey
-	}
 	resp, err := providerJSON(s.client, r, target.Base+"/"+protocol, body, headers)
 	if err != nil {
 		jsonError(w, 502, "无法连接 OpenCode 服务")
@@ -139,7 +137,7 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		providerFailure(w, resp)
+		openCodeFailure(w, resp)
 		return
 	}
 	w.Header().Set("X-Mixed-Backend", b.ID)
@@ -175,6 +173,29 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		return
 	}
 	copyProvider(w, resp)
+}
+
+func openCodeAuthorization(b Backend) string {
+	if b.ProviderKey == "" {
+		return "Bearer public"
+	}
+	return "Bearer " + b.ProviderKey
+}
+
+func openCodeFailure(w http.ResponseWriter, resp *http.Response) {
+	if resp.StatusCode == http.StatusForbidden {
+		var failure struct {
+			Type  string `json:"type"`
+			Error struct {
+				Type string `json:"type"`
+			} `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&failure) == nil && (failure.Type == "FreeTierError" || failure.Error.Type == "FreeTierError") {
+			jsonError(w, 403, "OpenCode 免费层拒绝了当前请求（FreeTierError）；此免费模型目前不能通过该连接使用，不会切换付费模型")
+			return
+		}
+	}
+	providerFailure(w, resp)
 }
 
 func copyProvider(w http.ResponseWriter, resp *http.Response) {

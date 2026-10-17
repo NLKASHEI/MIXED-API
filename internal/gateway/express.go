@@ -390,7 +390,11 @@ func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backe
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		providerFailure(w, resp)
+		if b.ID == "opencode" {
+			openCodeFailure(w, resp)
+		} else {
+			providerFailure(w, resp)
+		}
 		return
 	}
 	w.Header().Set("X-Mixed-Backend", b.ID)
