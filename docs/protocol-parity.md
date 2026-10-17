@@ -44,3 +44,5 @@ Google Chat 可使用 `modalities:["text","audio"]` 和 `audio:{"voice":"Kore","
 用户于 2026-10-17 暂停 Android 开发和发布。以下新修复只在 Windows Go 核心生效：无头V的 GraphQL Schema 转换及外层错误检查、Build 同模型的 unary 兼容重试、OpenCode 匿名 `public` 鉴权及付费模型 Key 前置检查、FreeTierError 说明。Android Java 尚未同步，不能把旧 APK 当作本次修复包。
 
 AIS 请求准备阶段取消、输入框恢复仍通过共享脚本同步；Windows 取消确认必须为 true，否则先关闭失效页面。构建继续检查共享资源一致与 Android Gradle，设备验收暂停。具体 CI 及真实账号验收以[重构进度](integration-progress.md)和对应 Actions 为准。
+
+Windows v0.4.2 新增系统/手动代理、快速V项目区域、扩展连接当前浏览器、详细网络诊断、OpenCode免费清单过滤。Android Java尚未移植；共享HTML隐藏Windows代理与区域入口，APK不随本次发布。

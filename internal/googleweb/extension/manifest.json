@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "MIXED 浏览器连接",
+  "version": "0.4.2",
+  "minimum_chrome_version": "116",
+  "description": "在当前浏览器中连接 MIXED 的 AIS 和无头V官方页面会话。",
+  "permissions": ["scripting"],
+  "host_permissions": ["http://127.0.0.1/*", "https://aistudio.google.com/*", "https://console.cloud.google.com/*"],
+  "background": {"service_worker": "worker.js"},
+  "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["connect.js"], "run_at": "document_idle"}]
+}

@@ -18,7 +18,7 @@ import (
 //go:embed runtime.js
 var RuntimeScript string
 
-// Page is implemented by the platform-owned isolated official browser window.
+// Page is implemented by the platform-owned official browser session.
 // Eval is not reachable from an HTTP payload or the management web page.
 type Page interface {
 	Eval(context.Context, string) (json.RawMessage, error)
@@ -26,6 +26,20 @@ type Page interface {
 	Close() error
 }
 type Factory func(context.Context, string) (Page, error)
+
+// SessionError carries only fixed diagnostic codes, never browser exceptions.
+type SessionError struct{ Code string }
+
+func (e *SessionError) Error() string { return e.Code }
+func sessionFailure(code string) error {
+	switch code {
+	case "authorization_required", "session_lost", "page_rejected", "page_preparation", "browser_network", "cancelled":
+	default:
+		code = "page_request_failed"
+	}
+	return &SessionError{Code: code}
+}
+
 type browserSession struct {
 	page   Page
 	gate   chan struct{}
@@ -116,7 +130,7 @@ func (b *Browser) State(ctx context.Context, id string) State {
 	if s == nil {
 		return State{Status: "none", Message: "请打开来源授权窗口"}
 	}
-	raw, err := s.page.Eval(ctx, "window.__mixedGoogleWeb?.state() || {status:'waiting'}")
+	raw, err := callPage(ctx, s.page, "state")
 	var result State
 	if err != nil || json.Unmarshal(raw, &result) != nil || result.Status == "" {
 		return State{Status: "waiting", Message: "请在官方页面完成本人授权"}
@@ -140,7 +154,7 @@ func (b *Browser) Initialize(ctx context.Context, id string) State {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if ack, err := s.page.Eval(cleanup, "window.__mixedGoogleWeb?.cancelInitialize()"); err != nil || string(ack) != "true" {
+		if ack, err := callPage(cleanup, s.page, "cancelInitialize"); err != nil || string(ack) != "true" {
 			s.broken.Store(true)
 			s.page.Close()
 		}
@@ -150,7 +164,7 @@ func (b *Browser) Initialize(ctx context.Context, id string) State {
 	defer cancel()
 	stop := context.AfterFunc(b.ctx, cancel)
 	defer stop()
-	raw, err := s.page.Eval(work, "window.__mixedGoogleWeb?.initialize() || {status:'waiting',message:'请完成本人登录后再连接会话'}")
+	raw, err := callPage(work, s.page, "initialize")
 	var result State
 	if err != nil || json.Unmarshal(raw, &result) != nil || result.Status == "" {
 		return State{Status: "waiting", Message: "无法连接来源页面，请重新打开"}
@@ -170,7 +184,7 @@ func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Resp
 	}
 	s := b.session(id)
 	if s == nil {
-		return nil, errors.New("authorization required")
+		return nil, sessionFailure("authorization_required")
 	}
 	select {
 	case s.gate <- struct{}{}:
@@ -189,18 +203,13 @@ func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Resp
 		return nil, err
 	}
 	key := hex.EncodeToString(data)
-	input, err := json.Marshal(op)
-	if err != nil {
-		<-s.gate
-		return nil, err
-	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(b.ctx, cancel)
 	body := &browserBody{ctx: requestCtx, cancel: func() { stop(); cancel() }, session: s, key: key}
-	raw, err := s.page.Eval(requestCtx, "window.__mixedGoogleWeb?.start('"+key+"',"+string(input)+") || false")
+	raw, err := callPage(requestCtx, s.page, "start", key, op)
 	if err != nil || string(raw) != "true" {
 		body.Close()
-		return nil, errors.New("provider session not ready")
+		return nil, sessionFailure("page_rejected")
 	}
 	for {
 		state, err := body.poll()
@@ -220,7 +229,7 @@ func (b *Browser) Send(ctx context.Context, id string, op Operation) (*http.Resp
 		}
 		if state.Done || state.Error != "" {
 			body.Close()
-			return nil, errors.New("provider authorization failed")
+			return nil, sessionFailure(state.Error)
 		}
 		if err := wait(ctx); err != nil {
 			body.Close()
@@ -264,9 +273,9 @@ type browserBody struct {
 
 func (b *browserBody) poll() (browserRead, error) {
 	var state browserRead
-	raw, err := b.session.page.Eval(b.ctx, "window.__mixedGoogleWeb?.read('"+b.key+"') || {done:true,error:'session_lost'}")
+	raw, err := callPage(b.ctx, b.session.page, "read", b.key)
 	if err != nil {
-		return state, err
+		return state, sessionFailure("session_lost")
 	}
 	if json.Unmarshal(raw, &state) != nil {
 		return state, errors.New("invalid browser frame")
@@ -295,7 +304,7 @@ func (b *browserBody) Read(p []byte) (int, error) {
 		}
 		if b.done {
 			if b.failed {
-				return 0, errors.New("provider browser request failed")
+				return 0, sessionFailure("page_request_failed")
 			}
 			return 0, io.EOF
 		}
@@ -319,7 +328,7 @@ func (b *browserBody) Close() error {
 		b.cancel()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if ack, err := b.session.page.Eval(ctx, "window.__mixedGoogleWeb?.cancel('"+b.key+"')"); err != nil || string(ack) != "true" {
+		if ack, err := callPage(ctx, b.session.page, "cancel", b.key); err != nil || string(ack) != "true" {
 			// Do not leave an unbounded provider fetch alive when its UI cannot
 			// process the abort. A subsequent explicit Open creates a new page.
 			b.session.broken.Store(true)
@@ -338,4 +347,26 @@ func wait(ctx context.Context) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// Native legacy pages use private evaluation; the extension accepts only typed
+// commands and never exposes an arbitrary evaluation endpoint.
+func callPage(ctx context.Context, p Page, method string, args ...any) (json.RawMessage, error) {
+	if typed, ok := p.(interface {
+		Call(context.Context, string, ...any) (json.RawMessage, error)
+	}); ok {
+		return typed.Call(ctx, method, args...)
+	}
+	input := ""
+	for i, arg := range args {
+		raw, err := json.Marshal(arg)
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 {
+			input += ","
+		}
+		input += string(raw)
+	}
+	return p.Eval(ctx, "window.__mixedGoogleWeb?."+method+"("+input+")")
 }

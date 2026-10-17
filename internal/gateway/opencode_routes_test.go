@@ -24,7 +24,11 @@ func TestOpenCodeUsesReviewedCurrentEndpoints(t *testing.T) {
 			calls := 0
 			app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				calls++
-				if r.URL.Host != "opencode.ai" || r.URL.Path != example.path || r.Header.Get("Authorization") != "Bearer zen-key" {
+				auth := "Bearer zen-key"
+				if example.model == "mimo-v2.6-flash-free" {
+					auth = "Bearer public"
+				}
+				if r.URL.Host != "opencode.ai" || r.URL.Path != example.path || r.Header.Get("Authorization") != auth {
 					t.Errorf("incorrect route: %s", r.URL)
 				}
 				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(example.response))}, nil

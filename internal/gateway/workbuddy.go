@@ -68,7 +68,11 @@ func collectChatStream(r *http.Request, body io.Reader, model string) (map[strin
 			Usage any             `json:"usage"`
 			Error json.RawMessage `json:"error"`
 		}
-		if json.Unmarshal(raw, &chunk) != nil || len(chunk.Error) > 0 {
+		decodeErr := json.Unmarshal(raw, &chunk)
+		if len(chunk.Error) > 0 {
+			recordProviderErrorBody(r, raw)
+		}
+		if decodeErr != nil || len(chunk.Error) > 0 {
 			return errors.New("invalid stream")
 		}
 		if chunk.Usage != nil {

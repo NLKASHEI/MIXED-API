@@ -351,7 +351,15 @@ func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend,
 		jsonError(w, 401, "请先填写本人的 Express API Key")
 		return
 	}
-	s.serveGeminiHTTP(w, r, b, publicModel, model, payload, builtinBase("vertex")+"/v1/publishers/google/models/", map[string]string{"x-goog-api-key": b.ProviderKey})
+	modelBase := builtinBase("vertex") + "/v1/publishers/google/models/"
+	if b.ExpressProject != "" || b.ExpressLocation != "" {
+		if !expressResourcePart.MatchString(b.ExpressProject) || !expressResourcePart.MatchString(b.ExpressLocation) {
+			jsonError(w, 400, "快速V的项目 ID 与区域无效")
+			return
+		}
+		modelBase = builtinBase("vertex") + "/v1/projects/" + b.ExpressProject + "/locations/" + b.ExpressLocation + "/publishers/google/models/"
+	}
+	s.serveGeminiHTTP(w, r, b, publicModel, model, payload, modelBase, map[string]string{"x-goog-api-key": b.ProviderKey})
 }
 
 // Shared Gemini wire implementation, also used for OpenCode's Google family.

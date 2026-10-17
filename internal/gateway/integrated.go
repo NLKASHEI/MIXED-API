@@ -41,7 +41,7 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 		}
 		r.Header.Set("Authorization", openCodeAuthorization(b))
 		r.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
-		resp, err := s.client.Do(r)
+		resp, err := providerDo(s.client, r)
 		if err != nil {
 			return nil, errors.New("无法连接 OpenCode 模型目录")
 		}
@@ -174,12 +174,17 @@ func providerJSON(client *http.Client, r *http.Request, endpoint string, body an
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	return client.Do(req)
+	resp, err := providerDo(client, req)
+	if resp != nil && resp.Request == nil {
+		resp.Request = req
+	}
+	return resp, err
 }
 
 // Do not echo arbitrary provider error bodies: some echo request headers or
 // credential-bearing URLs. Preserve the status and useful quota metadata.
 func providerFailure(w http.ResponseWriter, resp *http.Response) {
+	recordProviderFailure(resp)
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if v := resp.Header.Get("Retry-After"); v != "" {
 		w.Header().Set("Retry-After", v)

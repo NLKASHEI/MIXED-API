@@ -165,7 +165,7 @@ func (s *Server) exchangeRefresh(ctx context.Context, id string, old accountCred
 			r.Header.Set(key, value)
 		}
 	}
-	resp, err := s.client.Do(r)
+	resp, err := providerDo(s.client, r)
 	failure := &accountRequestError{503, "账号刷新暂时失败，请稍后重试"}
 	if err != nil {
 		return accountCredential{}, false, failure

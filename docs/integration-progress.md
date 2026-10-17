@@ -29,3 +29,9 @@ Android 为纯 Java 本地核心，共享管理 HTML 与配置。电脑共享只
 用户明确暂不登录，实际本人账号生成继续保留为未验证。后续仍需完成兼容性收尾、干净系统/设备证据与最终资产核验；不关闭 [Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)，不将测试夹具当成全部上游能力已交付。
 
 来源、许可与采用范围见[上游核对](upstream-audit-2026-10-17.md)、[Google 协议来源](third-party/google-web.md)；实质缺陷和无需整改的提示分别记录在[审查记录](review-integrated-core.md)。
+
+## v0.4.2 Windows修复
+
+系统/手动出站代理、快速V项目区域、当前浏览器连接扩展、详细诊断与免费OpenCode列表已实现，WorkBuddy积分注意事项加入配置步骤。移除旧CDP独立profile启动。见ADR-0007和upstream-network-session-audit.md。
+
+本地 Go 全量测试/vet、会话JS、扩展命令顺序、共享资源检查通过；真实本机CONNECT+TLS夹具验证快速V流式/普通生成经过代理。真实Chromium加载扩展并通过公开HTTP完成合成Build生成，未登录本人Google账号。需求轴发现免费过滤与业务码丢失已修；标准轴发现取消抢跑、发送取消期限、系统代理快照和PAC直连已修复复核。实际Google生成仍不作已验收声明。

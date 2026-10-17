@@ -18,13 +18,14 @@ type catalogModel struct {
 }
 
 type backendDiscovery struct {
-	ID         string `json:"id"`
-	State      string `json:"state"`
-	Code       string `json:"code,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Next       string `json:"next"`
-	ModelCount int    `json:"model_count"`
-	DurationMs int64  `json:"duration_ms"`
+	Details    *RequestDetails `json:"details,omitempty"`
+	ID         string          `json:"id"`
+	State      string          `json:"state"`
+	Code       string          `json:"code,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	Next       string          `json:"next"`
+	ModelCount int             `json:"model_count"`
+	DurationMs int64           `json:"duration_ms"`
 	models     []catalogModel
 }
 
@@ -52,8 +53,18 @@ func (s *Server) discover(ctx context.Context, cfg Config) []backendDiscovery {
 	return results
 }
 
-func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
-	result := backendDiscovery{ID: b.ID, State: "disabled", Next: "启用来源后检查模型；Windows 可点击一键接入。"}
+func (s *Server) probeBackend(ctx context.Context, b Backend) (result backendDiscovery) {
+	detail := &requestDiagnostic{}
+	ctx = context.WithValue(ctx, diagnosticKey{}, detail)
+	defer func() {
+		detail.mu.Lock()
+		snapshot := detail.details
+		detail.mu.Unlock()
+		if snapshot.Target != "" {
+			result.Details = &snapshot
+		}
+	}()
+	result = backendDiscovery{ID: b.ID, State: "disabled", Next: "启用来源后检查模型；Windows 可点击一键接入。"}
 	if !b.Enabled {
 		return result
 	}
@@ -84,7 +95,7 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 		if err != nil {
 			return fail("invalid_url", "上游地址无效", "填写上游 API Base URL，例如 http://127.0.0.1:8080/v1。")
 		}
-		resp, err := s.client.Do(req)
+		resp, err := providerDo(s.client, req)
 		if err != nil {
 			return fail("unreachable", "无法连接上游或请求超时", "确认上游已启动、端口正确且可访问，再检查网络。")
 		}
@@ -118,8 +129,11 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 		}
 		seen[id] = true
 		model := catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id}
-		if b.ID == "opencode" && b.Kind == "builtin" {
+		if b.ID == "opencode" {
 			model.Access = openCodeAccess(id)
+			if model.Access.Kind != "free_candidate" {
+				continue
+			}
 		}
 		result.models = append(result.models, model)
 	}

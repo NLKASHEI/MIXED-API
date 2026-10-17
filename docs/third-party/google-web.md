@@ -10,7 +10,7 @@
 
 相关模块：`internal/googleweb/`、`internal/gateway/google_*.go`、`internal/desktop/system_browser_windows.go` 与 `android/app/src/main/java/com/mixedapi/local/Google*.java`。
 
-Windows 的 AIS 与无头V使用系统默认 Edge / Chrome 的 MIXED 专用 profile（ADR-0006）；Android 使用 AndroidX WebKit 1.12.1 的系统 WebView profile。网页只负责其自身官方会话的授权、验证及请求传输；Go/Java 负责公开 API、协议转换、错误处理、取消与背压。应用不下载或执行上游项目，也不使用本地未知修改版 EXE。官方网站正常加载的页面资源仍需网络。
+Windows 的 AIS 与无头V使用当前默认 Edge / Chrome 的普通 profile 与内置连接扩展（ADR-0007）；Android 使用 AndroidX WebKit 1.12.1 的系统 WebView profile。网页只负责其自身官方会话的授权、验证及请求传输；Go/Java 负责公开 API、协议转换、错误处理、取消与背压。应用不下载或执行上游项目，也不使用本地未知修改版 EXE。官方网站正常加载的页面资源仍需网络。
 
 测试：公开 HTTP 完整/流式请求、RPC 尾部错误、GraphQL 截断、输出上限、客户端取消，以及浏览器会话排队和窗口启动取消。Windows 已实测独立来源窗口进入官方登录页；个人账号推理、干净系统与 Android 真机仍需分别验证。此记录不能作为“所有上游功能已完整交付”的结论。
 

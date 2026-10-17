@@ -14,14 +14,14 @@
       "repo": "bad-woman/vertex2openai",
       "revision": "53a45b63bfef39e783edf8ea9c1e06800fc17496",
       "license": "MIT",
-      "note": "Express REST 已内置；无需 Python。使用本人的 Express API Key。"
+      "note": "Express REST 已内置；默认跟随系统代理，可手动指定 HTTP / SOCKS5。使用本人 Express API Key，项目与区域可选。"
     },
     {
       "id": "opencode",
       "repo": "zkygwxf-bot/opencode-proxy",
       "revision": "27626a9d192b988938bb3d5f0e4fa241af7ae309",
       "license": "MIT",
-      "note": "免费无头与 Key 计费模型分开标注。上游免费模式含客户端身份处理，MIXED 尚未验证无 Key 生成可用；不填 Key 不代表可用。",
+      "note": "模型列表只显示当前目录与上游免费清单的交集。免费层仍可能限流、下线或限制客户端；FreeTierError 会直接说明原因。",
       "free_models": [
         "muse-spark-1.2-contributor-free",
         "mimo-v2.6-flash-free",
@@ -51,19 +51,19 @@
     {
       "id": "aps",
       "repo": "DeconstructedCube/APS2api",
-      "revision": "v1.2.0",
+      "revision": "01328896c435b4b172b1d25f9fc04ff86b40df31",
       "url": "https://github.com/DeconstructedCube/APS2api/releases/download/v1.2.0/vertex-proxy-windows-amd64.zip",
       "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
       "entry": "vertex-proxy.exe",
       "license": "PolyForm-Noncommercial-1.0.0",
-      "note": "无头V：协议模块已有实现，网页会话接入存在兼容问题，尚不能保证可用。准备成功不代表能生成。"
+      "note": "Windows 使用当前 Edge / Chrome 的内置连接扩展；首次按配置步骤加载。官方登录与验证由本人完成；实际生成需本人账号验收。"
     },
     {
       "id": "aistudio",
       "repo": "Mag1cFall/AIStudio2API",
       "revision": "2cbe310ce6ebab093bf83e5078de8296f03770a9",
       "license": "MIT",
-      "note": "AIS Build / Playground：协议模块已有实现，网页会话接入存在兼容问题，尚不能保证可用。登录成功不代表反代接通。"
+      "note": "Windows 使用当前 Edge / Chrome 的内置连接扩展；首次按配置步骤加载。官方登录与验证由本人完成；实际生成需本人账号验收。"
     }
   ]
 }

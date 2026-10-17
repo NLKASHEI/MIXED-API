@@ -23,7 +23,7 @@ func (s *Server) beginCodexLogin(ctx context.Context) (loginAttempt, error) {
 	defer cancel()
 	r, _ := http.NewRequestWithContext(probe, "POST", codexIssuer+"/api/accounts/deviceauth/usercode", strings.NewReader(`{"client_id":"`+codexOAuthClient+`"}`))
 	r.Header.Set("Content-Type", "application/json")
-	resp, err := s.client.Do(r)
+	resp, err := providerDo(s.client, r)
 	if err != nil {
 		return loginAttempt{}, errors.New("无法发起 Codex 授权")
 	}
@@ -80,7 +80,7 @@ func (s *Server) pollCodexLogin(ctx context.Context, flow *loginAttempt, device,
 		raw, _ := json.Marshal(map[string]string{"device_auth_id": device, "user_code": code})
 		r, _ := http.NewRequestWithContext(ctx, "POST", codexIssuer+"/api/accounts/deviceauth/token", strings.NewReader(string(raw)))
 		r.Header.Set("Content-Type", "application/json")
-		resp, err := s.client.Do(r)
+		resp, err := providerDo(s.client, r)
 		if err == nil {
 			status := resp.StatusCode
 			var token struct {
@@ -111,7 +111,7 @@ func (s *Server) pollCodexLogin(ctx context.Context, flow *loginAttempt, device,
 func (s *Server) exchangeCodexToken(ctx context.Context, form url.Values) (accountCredential, error) {
 	r, _ := http.NewRequestWithContext(ctx, "POST", codexIssuer+"/oauth/token", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := s.client.Do(r)
+	resp, err := providerDo(s.client, r)
 	if err != nil {
 		return accountCredential{}, errors.New("Codex 授权交换失败")
 	}

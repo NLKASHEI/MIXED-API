@@ -280,7 +280,40 @@ func validateGoogleOptions(payload map[string]json.RawMessage) error {
 // lost connection or partially delivered generation. Respect Retry-After.
 func (s *Server) sendGoogle(ctx context.Context, id string, op googleweb.Operation, retries int) (*http.Response, error) {
 	for attempt := 0; ; attempt++ {
+		d, _ := ctx.Value(diagnosticKey{}).(*requestDiagnostic)
+		target := "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/" + map[string]string{"build": "ProxyStreamedCall", "playground": "GenerateContent", "models": "ListModels", "build_models": "ProxyUnaryCall"}[op.Kind]
+		if op.Kind == "build" && op.Unary {
+			target = "https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/ProxyUnaryCall"
+		}
+		if id == "aps" {
+			target = "https://cloudconsole-pa.clients6.google.com/v3/entityServices/AiplatformEntityService/schemas/AIPLATFORM_GRAPHQL:batchGraphql"
+		}
+		d.set(func(v *RequestDetails) {
+			*v = RequestDetails{Stage: "浏览器来源会话", Target: target, Proxy: "由浏览器管理（实际出口请查看浏览器代理设置）", ProxySource: "浏览器", Attempt: v.Attempt + 1}
+		})
 		resp, err := s.google.Send(ctx, id, op)
+		if err != nil {
+			d.set(func(v *RequestDetails) {
+				v.ErrorType = "browser_session"
+				v.Cause = "浏览器会话请求失败"
+				v.Hint = "保持来源标签页打开，检查官方页面状态及浏览器代理；应用手动代理不更改浏览器。"
+				var failure *googleweb.SessionError
+				if errors.As(err, &failure) {
+					v.UpstreamCode = failure.Code
+					v.Cause = map[string]string{"authorization_required": "尚未连接官方会话", "session_lost": "浏览器标签页或扩展连接已断开", "page_rejected": "官方页面未接受请求，请重新连接会话", "page_preparation": "官方页面请求准备失败，检查登录、条款与验证提示", "browser_network": "浏览器发送或读取上游请求失败", "cancelled": "请求已取消", "page_request_failed": "官方页面请求未完成"}[failure.Code]
+				}
+				if ctx.Err() != nil {
+					v.ErrorType, v.Cause, v.Hint = networkCause(ctx.Err(), "")
+				}
+			})
+		} else {
+			resp.Request, _ = http.NewRequestWithContext(ctx, "POST", target, nil)
+			d.set(func(v *RequestDetails) {
+				v.Stage = "读取浏览器上游响应"
+				v.UpstreamStatus = resp.StatusCode
+				v.RetryAfter = safeRetryAfter(resp.Header.Get("Retry-After"))
+			})
+		}
 		if err != nil || attempt >= retries || resp.StatusCode != 429 && resp.StatusCode != 503 {
 			return resp, err
 		}

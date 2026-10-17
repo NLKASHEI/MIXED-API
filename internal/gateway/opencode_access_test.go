@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestOpenCodeCatalogExplainsAccessWithoutClaimingInference(t *testing.T) {
+func TestOpenCodeCatalogOnlyListsConfirmedFreeCandidates(t *testing.T) {
 	cfg := Defaults()
 	cfg.APIKey = "client"
 	cfg.AdminKey = "admin"
@@ -38,10 +38,10 @@ func TestOpenCodeCatalogExplainsAccessWithoutClaimingInference(t *testing.T) {
 			} `json:"access"`
 		} `json:"data"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&body) != nil || len(body.Data) != 5 {
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || len(body.Data) != 1 {
 		t.Fatal("invalid catalog")
 	}
-	want := []string{"free_candidate", "key_paid", "retired", "unknown", "key_paid"}
+	want := []string{"free_candidate"}
 	for i, m := range body.Data {
 		if m.Access.Kind != want[i] || m.Access.Verified {
 			t.Errorf("%s access=%+v, want %s unverified", m.ID, m.Access, want[i])

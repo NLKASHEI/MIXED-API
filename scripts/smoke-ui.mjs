@@ -100,7 +100,7 @@ try {
   await page.locator('#backend-url').fill('http://127.0.0.1:1/v1');
   await page.locator('#save-provider').click();await page.locator('#next-provider').waitFor();
   await page.locator('#back-provider').click();await page.locator('#prepare-provider').click();
-  await page.locator('#official-field').waitFor({state:'visible',timeout:10000});
+  await page.locator('#next-provider').waitFor({state:'visible',timeout:10000});assert(await page.locator('#official-field').isHidden(),'OpenCode free setup still asks for paid Key');
   await page.locator('#next-provider').click();await page.locator('#verify-provider').waitFor();
   const switched=await(await fetch(base+'/api/config',{headers:{Authorization:'Bearer ui-test-admin'}})).json();
   assert.equal(switched.backends.find(b=>b.id==='opencode').kind,'builtin');

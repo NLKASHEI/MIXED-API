@@ -26,7 +26,7 @@ func (s *Server) openCodeModelRoute(ctx context.Context, model string) (openCode
 	defer cancel()
 	req, _ := http.NewRequestWithContext(probe, "GET", "https://models.opencode.ai/api.json", nil)
 	req.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
-	resp, err := s.client.Do(req)
+	resp, err := providerDo(s.client, req)
 	if err != nil {
 		return openCodeTarget{}, errors.New("无法读取 OpenCode 模型协议目录")
 	}
@@ -99,7 +99,7 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 		s.serveProtocolBridge(w, r, b, publicModel, model, payload)
 		return
 	}
-	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion, "Authorization": openCodeAuthorization(b)}
+	headers := map[string]string{"User-Agent": "MIXED-API/" + BuildVersion, "Authorization": openCodeAuthorization(b, model)}
 	if _, ok := openCodePinned[model]; ok {
 		w.Header().Set("X-Mixed-Protocol-Catalog", "models.dev/f4088b386739")
 	}
@@ -175,7 +175,10 @@ func (s *Server) serveOpenCode(w http.ResponseWriter, r *http.Request, b Backend
 	copyProvider(w, resp)
 }
 
-func openCodeAuthorization(b Backend) string {
+func openCodeAuthorization(b Backend, model ...string) string {
+	if len(model) > 0 && openCodeAccess(model[0]).Kind == "free_candidate" {
+		return "Bearer public"
+	}
 	if b.ProviderKey == "" {
 		return "Bearer public"
 	}
@@ -191,6 +194,10 @@ func openCodeFailure(w http.ResponseWriter, resp *http.Response) {
 			} `json:"error"`
 		}
 		if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&failure) == nil && (failure.Type == "FreeTierError" || failure.Error.Type == "FreeTierError") {
+			diagnostic(resp.Request).set(func(d *RequestDetails) {
+				d.UpstreamCode = "FreeTierError"
+				d.Hint = "服务方限制免费层客户端；请使用官方 OpenCode。更换代理或填写付费 Key 不保证解决。"
+			})
 			jsonError(w, 403, "OpenCode 免费层拒绝了当前请求（FreeTierError）；此免费模型目前不能通过该连接使用，不会切换付费模型")
 			return
 		}

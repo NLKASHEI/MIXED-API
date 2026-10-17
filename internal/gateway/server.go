@@ -42,12 +42,21 @@ type Server struct {
 	refreshes         map[string]*accountRefresh
 	google            googleweb.Sessions
 	googleBuildUnary  map[string]bool
+	systemProxyAt     time.Time
+	systemProxy       func(*http.Request) (*url.URL, error)
 }
 
 func NewServer(path string, cfg Config) *Server {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyFromEnvironment
-	return &Server{cfg: cfg, path: path, client: &http.Client{Transport: transport, Timeout: 0, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, status: make(map[string]string)}
+	s := &Server{cfg: cfg, path: path, systemProxy: systemProxyFunc(), systemProxyAt: time.Now(), status: make(map[string]string)}
+	transport.Proxy = s.requestProxy
+	transport.OnProxyConnectResponse = func(ctx context.Context, _ *url.URL, req *http.Request, resp *http.Response) error {
+		d, _ := ctx.Value(diagnosticKey{}).(*requestDiagnostic)
+		d.set(func(v *RequestDetails) { v.ProxyStatus = resp.StatusCode })
+		return nil
+	}
+	s.client = &http.Client{Transport: transport, Timeout: 0, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return s
 }
 func (s *Server) config() Config {
 	s.mu.RLock()
@@ -194,7 +203,7 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request, c Config) {
 		models = append(models, result.models...)
 		if result.Error != "" {
 			errorsByBackend[result.ID] = result.Error
-			s.addLog(RequestLog{Time: time.Now().Format(time.RFC3339), Method: "GET", Path: "/v1/models", Backend: result.ID, Status: 502, Error: result.Error})
+			s.addLog(RequestLog{Time: time.Now().Format(time.RFC3339), Method: "GET", Path: "/v1/models", Backend: result.ID, Status: 502, Error: result.Error, Details: result.Details})
 		}
 	}
 	available := map[string]bool{}
@@ -254,6 +263,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 	}
 	if observed, ok := w.(*observedResponse); ok {
 		observed.backend = id
+		observed.model = model
 	}
 	if b.Kind == "builtin" {
 		s.serveIntegrated(w, r, *b, model, upstreamModel, payload)
@@ -282,7 +292,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, c Config) {
 			req.Header.Set(header, v)
 		}
 	}
-	upstream, e := s.client.Do(req)
+	upstream, e := providerDo(s.client, req)
 	if e != nil {
 		log.Printf("backend %s: %s", id, e)
 		jsonError(w, 502, "Backend unavailable: "+id)
@@ -326,6 +336,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, c Config) {
 		jsonResult(w, 200, upstreamCatalog)
 	case r.URL.Path == "/api/logs" && (r.Method == http.MethodGet || r.Method == http.MethodDelete):
 		s.writeLogs(w, r)
+	case r.URL.Path == "/api/network":
+		s.handleNetwork(w, r)
 	case r.URL.Path == "/api/config" && r.Method == "GET":
 		jsonResult(w, 200, c)
 	case r.URL.Path == "/api/guides" && r.Method == "GET":

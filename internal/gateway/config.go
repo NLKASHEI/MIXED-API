@@ -15,18 +15,21 @@ import (
 )
 
 type Backend struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind,omitempty"`
-	Name        string `json:"name"`
-	URL         string `json:"url"`
-	Key         string `json:"key,omitempty"`
-	ProviderKey string `json:"provider_key,omitempty"`
-	Auth        string `json:"auth"`
-	Enabled     bool   `json:"enabled"`
-	Command     string `json:"command,omitempty"`
-	Workdir     string `json:"workdir,omitempty"`
+	ExpressProject  string `json:"express_project,omitempty"`
+	ExpressLocation string `json:"express_location,omitempty"`
+	ID              string `json:"id"`
+	Kind            string `json:"kind,omitempty"`
+	Name            string `json:"name"`
+	URL             string `json:"url"`
+	Key             string `json:"key,omitempty"`
+	ProviderKey     string `json:"provider_key,omitempty"`
+	Auth            string `json:"auth"`
+	Enabled         bool   `json:"enabled"`
+	Command         string `json:"command,omitempty"`
+	Workdir         string `json:"workdir,omitempty"`
 }
 type Config struct {
+	Network        NetworkSettings           `json:"network,omitempty"`
 	Listen         string                    `json:"listen"`
 	APIKey         string                    `json:"api_key"`
 	AdminKey       string                    `json:"admin_key"`
@@ -62,6 +65,9 @@ func newKey(prefix string) string {
 	return prefix + hex.EncodeToString(b)
 }
 func Validate(c Config) error {
+	if err := c.Network.validate(); err != nil {
+		return err
+	}
 	if c.APIKey == "" || c.AdminKey == "" || c.APIKey == c.AdminKey {
 		return errors.New("distinct nonempty api_key and admin_key required")
 	}
@@ -81,6 +87,11 @@ func Validate(c Config) error {
 			return fmt.Errorf("duplicate backend id %q", b.ID)
 		}
 		ids[b.ID] = true
+		if b.ExpressProject != "" || b.ExpressLocation != "" {
+			if b.ID != "vertex" || b.Kind != "builtin" || !expressResourcePart.MatchString(b.ExpressProject) || !expressResourcePart.MatchString(b.ExpressLocation) {
+				return errors.New("快速V的项目 ID 和区域须同时填写，仅限字母、数字和连字符")
+			}
+		}
 		if b.Kind != "" && b.Kind != "http" && !(b.Kind == "builtin" && knownBuiltin(b.ID)) {
 			return fmt.Errorf("invalid backend kind for %s", b.ID)
 		}
@@ -107,6 +118,8 @@ func Validate(c Config) error {
 	}
 	return nil
 }
+
+var expressResourcePart = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 var aliasName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 

@@ -49,7 +49,7 @@ APK 使用纯 Java 本地服务，六个来源均有内置请求模块，配置�
 
 正式版从 [Release](https://github.com/NLKASHEI/MIXED-API/releases) 获取，发布资产必须来自通过检查的 Actions。`Install-MIXED-API.ps1` 只安装正式版，支持 `-Destination 'D:\Apps\MIXED-API'`；不会安装本分支的开发产物。
 
-配置在 `mixed-api.json`，原生账号数据在同目录 `.mixed-accounts`；Windows 使用 DPAPI 保护账号令牌。官方页面会话在 `%LOCALAPPDATA%\MIXED-API\provider-*`，主窗口数据在 `desktop-profile`，可重新展开的渲染资源在 `renderer`。备份配置与私密会话时自行保管，不能提交或上传到仓库。
+配置在 `mixed-api.json`，原生账号数据在同目录 `.mixed-accounts`；Windows 使用 DPAPI 保护账号令牌。Windows 官方页面会话保留在当前浏览器中，内置连接扩展释放到配置旁的 `browser-extension`，主窗口数据在 `desktop-profile`，可重新展开的渲染资源在 `renderer`。备份配置与私密会话时自行保管，不能提交或上传到仓库。
 
 Windows 产物尚无代码签名。Android 采用不可调试的 Release 构建，校验 APK 签名并测试覆盖升级；预览包使用临时测试签名，正式 APK 发布必须配置固定密钥。旧 v0.3.1 的随机 Debug 签名无法保证与新包兼容。详细说明见[使用指引](docs/quickstart-zh.md)和[维护者签名配置](docs/android-signing.md)。
 
@@ -74,3 +74,5 @@ Windows 完整离线产物先运行 `scripts/prepare-webview2.ps1` 获取并核�
 工程按 [AGENTS.md](AGENTS.md) 与 [mattpocock/skills](https://github.com/mattpocock/skills) 的 TDD、深模块接口、规范/规格双轴审查开展。[上游核对](docs/upstream-audit-2026-10-17.md)、[第三方许可](THIRD_PARTY_NOTICES.md)、[验收规格](docs/spec-integrated-desktop.md)分别记录来源、许可和发布条件。
 
 Windows 来源授权使用默认 Edge / Chrome 的 MIXED 专用资料目录，主工作台仍为独立 EXE 窗口。v0.4.0 的 AIS / 无头V会话存在用户已确认的不可用问题，当前修复与验收范围见 [Windows 会话修复记录](docs/windows-session-repair-2026-10-17.md)。
+
+Windows 代理、当前浏览器连接与积分说明见[分步指引](docs/quickstart-guided.md)。AIS/无头V首次需按打开的连接页加载EXE内置扩展，不另建浏览器账号资料目录。

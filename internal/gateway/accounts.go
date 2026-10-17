@@ -201,7 +201,7 @@ func (s *Server) beginAccountLogin(ctx context.Context, id string) (loginAttempt
 	r, _ := http.NewRequestWithContext(probe, "POST", "https://copilot.tencent.com/v2/plugin/auth/state?platform=workbuddy", strings.NewReader("{}"))
 	r.Header.Set("Content-Type", "application/json")
 	workbuddyAnonymousHeaders(r.Header)
-	resp, err := s.client.Do(r)
+	resp, err := providerDo(s.client, r)
 	if err != nil {
 		return loginAttempt{}, errors.New("无法打开 WorkBuddy 授权流程")
 	}
@@ -275,7 +275,7 @@ func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, sta
 	for {
 		r, _ := http.NewRequestWithContext(ctx, "GET", "https://copilot.tencent.com/v2/plugin/auth/token?state="+url.QueryEscape(state), nil)
 		workbuddyAnonymousHeaders(r.Header)
-		resp, err := s.client.Do(r)
+		resp, err := providerDo(s.client, r)
 		if err == nil {
 			data, decodeErr := decodeAccountResponse(resp.Body)
 			resp.Body.Close()

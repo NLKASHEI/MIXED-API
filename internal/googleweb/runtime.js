@@ -232,7 +232,7 @@
             s.chunks.push(btoa(String.fromCharCode(...value.subarray(offset,offset+32768))));
           }
         }
-      }catch(_){s.error='会话请求失败，请检查官方页面的授权与验证状态'}finally{s.done=true}})();return true;
+      }catch(error){s.error=s.controller.signal.aborted?'cancelled':error?.message==='authorization_required'?'authorization_required':s.preparing?'page_preparation':'browser_network'}finally{s.done=true}})();return true;
     },
     read(id){const s=requests.get(id);if(!s)return {error:'请求已结束',done:true};return {status:s.status,headers:s.headers,chunk:s.chunks.shift()||'',done:s.done&&s.chunks.length===0,error:s.error}},
     cancel(id){const s=requests.get(id);if(!s)return true;s.controller.abort();requests.delete(id);

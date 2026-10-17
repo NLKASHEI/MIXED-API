@@ -71,7 +71,7 @@ func (s *Server) workbuddyAccount(ctx context.Context, state string, c accountCr
 	for key, value := range workbuddyIdentity(c) {
 		r.Header.Set(key, value)
 	}
-	resp, err := s.client.Do(r)
+	resp, err := providerDo(s.client, r)
 	if err != nil {
 		return c, errors.New("账号资料暂未就绪")
 	}
