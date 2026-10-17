@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       number: ${{ steps.version.outputs.number }}
+      android: ${{ steps.version.outputs.android }}
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -25,6 +26,8 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$version"; fi
           echo "number=$version" >> "$GITHUB_OUTPUT"
+          android="$(jq -er '.android | select(. == "signed" or . == "preview")' packaging/release-targets.json)"
+          echo "android=$android" >> "$GITHUB_OUTPUT"
 
   verify:
     runs-on: ubuntu-24.04
@@ -105,8 +108,9 @@ jobs:
     timeout-minutes: 40
     env:
       MIXED_API_VERSION: ${{ needs.version.outputs.number }}
-      MIXED_ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.MIXED_API_ANDROID_KEY_PASSWORD || '' }}
+      MIXED_ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && needs.version.outputs.android == 'signed' && secrets.MIXED_API_ANDROID_KEY_PASSWORD || '' }}
       MIXED_ANDROID_SIGNER_SHA256: ${{ vars.MIXED_API_ANDROID_CERT_SHA256 }}
+      ANDROID_RELEASE_MODE: ${{ needs.version.outputs.android }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -121,18 +125,18 @@ jobs:
       - name: Prepare Android signing
         shell: bash
         env:
-          APK_KEYSTORE_B64: ${{ github.event_name != 'pull_request' && secrets.MIXED_API_ANDROID_KEYSTORE_B64 || '' }}
+          APK_KEYSTORE_B64: ${{ github.event_name != 'pull_request' && needs.version.outputs.android == 'signed' && secrets.MIXED_API_ANDROID_KEYSTORE_B64 || '' }}
         run: |
           set -euo pipefail
           umask 077
           export MIXED_ANDROID_KEYSTORE="$RUNNER_TEMP/mixed-release.p12"
           echo "MIXED_ANDROID_KEYSTORE=$MIXED_ANDROID_KEYSTORE" >> "$GITHUB_ENV"
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            # PR code never receives the production signing key, including same-repo PRs.
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$ANDROID_RELEASE_MODE" != signed ]]; then
+            # Preview APKs never receive the persistent production signing key.
             export MIXED_ANDROID_KEY_PASSWORD="$(openssl rand -hex 32)"
             echo "::add-mask::$MIXED_ANDROID_KEY_PASSWORD"
             echo "MIXED_ANDROID_KEY_PASSWORD=$MIXED_ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
-            keytool -genkeypair -keystore "$MIXED_ANDROID_KEYSTORE" -storetype PKCS12 -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api -keyalg RSA -keysize 3072 -validity 3 -dname 'CN=MIXED-API CI only' >/dev/null
+            keytool -genkeypair -keystore "$MIXED_ANDROID_KEYSTORE" -storetype PKCS12 -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=MIXED-API preview build' >/dev/null
             expected="$(keytool -exportcert -keystore "$MIXED_ANDROID_KEYSTORE" -storepass:env MIXED_ANDROID_KEY_PASSWORD -alias mixed-api | openssl dgst -sha256 -r | cut -d' ' -f1)"
             echo "MIXED_ANDROID_SIGNER_SHA256=$expected" >> "$GITHUB_ENV"
           else
@@ -157,7 +161,7 @@ jobs:
           python3 scripts/check-android-apk.py MIXED-API-Android.apk --signer-sha256 "$MIXED_ANDROID_SIGNER_SHA256" --version-code "$((1000 + GITHUB_RUN_NUMBER))" > android-package.json
       - uses: actions/upload-artifact@v4
         with:
-          name: android-release
+          name: ${{ needs.version.outputs.android == 'signed' && 'android-release' || 'android-preview' }}
           path: MIXED-API-Android.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -176,14 +180,14 @@ jobs:
           path: android/app/build/reports/
 
   android-device:
-    needs: android
+    needs: [version, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: android-release
+          name: ${{ needs.version.outputs.android == 'signed' && 'android-release' || 'android-preview' }}
       - uses: actions/download-artifact@v4
         with:
           name: android-update-test
@@ -245,14 +249,38 @@ jobs:
       - name: Publish successful build artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          ANDROID_RELEASE_MODE: ${{ needs.version.outputs.android }}
         shell: bash
         run: |
           set -euo pipefail
           test -s dist/MIXED-API-Windows-x64-Setup.exe
           test -s dist/MIXED-API-Windows-x64.zip
           test -s dist/MIXED-API-Windows-x64.exe
-          test -s dist/MIXED-API-Android.apk
-          (cd dist && sha256sum MIXED-API-* > SHA256SUMS)
+          if [[ "$ANDROID_RELEASE_MODE" == signed ]]; then
+            test -s dist/MIXED-API-Android.apk
+          else
+            test ! -e dist/MIXED-API-Android.apk
+          fi
           cp Install-MIXED-API.ps1 dist/
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "MIXED-API $GITHUB_REF_NAME" --notes-file "docs/release-notes-$GITHUB_REF_NAME.md"
+          (cd dist && sha256sum MIXED-API-* Install-MIXED-API.ps1 > SHA256SUMS)
+          cp "docs/release-notes-$GITHUB_REF_NAME.md" "$RUNNER_TEMP/release-notes.md"
+          printf '\n构建提交：`%s`。构建与验收：[Actions %s](%s/%s/actions/runs/%s)。\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "MIXED-API $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'
+      - name: Download separately labelled Android preview
+        if: needs.version.outputs.android == 'preview'
+        uses: actions/download-artifact@v4
+        with:
+          name: android-preview
+          path: android-preview
+      - name: Add Android preview after desktop publication
+        if: needs.version.outputs.android == 'preview'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv android-preview/MIXED-API-Android.apk dist/MIXED-API-Android-preview.apk
+          (cd dist && sha256sum MIXED-API-* Install-MIXED-API.ps1 > SHA256SUMS)
+          gh release upload "$GITHUB_REF_NAME" dist/MIXED-API-Android-preview.apk dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url,assets:[.assets[].name]}'

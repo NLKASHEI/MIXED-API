@@ -2,7 +2,7 @@
 
 一个客户端地址，管理快速V、无头V、Codex、OpenCode、WorkBuddy 和 AIS。
 
-**当前是内置核心开发分支。正式 Release 仍为 v0.3.1，以下新架构尚未完成全部验收。** 构建结果见 [Actions](https://github.com/NLKASHEI/MIXED-API/actions)，能力与限制见[集成进度](docs/integration-progress.md)。旧版使用方式见 [v0.3.1 文档](https://github.com/NLKASHEI/MIXED-API/blob/v0.3.1/README.md)。
+**v0.4.0 发布 Windows 内置核心版和 Android 测试版。** 下载见 [Release](https://github.com/NLKASHEI/MIXED-API/releases/tag/v0.4.0)。Windows 提供独立窗口与统一工作台；Android APK 使用临时测试签名，不保证后续覆盖升级。实际账号、干净 Windows 和实体手机尚未全部验收，能力与限制见[集成进度](docs/integration-progress.md)。旧版使用方式见 [v0.3.1 文档](https://github.com/NLKASHEI/MIXED-API/blob/v0.3.1/README.md)。
 
 ## 启动与连接
 
@@ -37,6 +37,8 @@ Windows 构建产物提供独立 `MIXED-API-Windows-x64.exe`、便携 ZIP 和 Se
 
 ## Android
 
+v0.4.0 提供 `MIXED-API-Android-preview.apk`，通过完整构建、55 项测试和 Android 15 模拟器验收。它是临时签名测试版；未来签名变化时可能需要保存配置后卸载重装并重新授权，不能保证覆盖升级。固定签名 APK 将另行发布。
+
 APK 使用纯 Java 本地服务，六个来源均有内置请求模块，配置与管理页面保持一致。AIS/无头V使用支持独立 profile 的系统 WebView；设备能力不足时配置页会提示。电脑共享为可选功能。Android 15 的系统栏、键盘避让和通知停止入口已适配；CI 构建、模拟器与实体设备分别验收。
 
 连接电脑时，在电脑打开安装后的「局域网模式」快捷方式，或给 EXE 增加 `--lan` 参数。手机「电脑 MIXED-API」中填写电脑的 `http://实际IPv4:8766/v1` 与电脑客户端 Key；手机 AI 客户端仍使用手机工作台的唯一地址。
@@ -49,7 +51,7 @@ APK 使用纯 Java 本地服务，六个来源均有内置请求模块，配置�
 
 配置在 `mixed-api.json`，原生账号数据在同目录 `.mixed-accounts`；Windows 使用 DPAPI 保护账号令牌。官方页面会话在 `%LOCALAPPDATA%\MIXED-API\provider-*`，主窗口数据在 `desktop-profile`，可重新展开的渲染资源在 `renderer`。备份配置与私密会话时自行保管，不能提交或上传到仓库。
 
-Windows 产物尚无代码签名。Android 开发分支改为不可调试的 Release 构建，校验 APK 签名并测试覆盖升级；PR 使用临时测试签名，正式构建必须配置固定密钥。旧 v0.3.1 的随机 Debug 签名无法保证与新包兼容。详细说明见[使用指引](docs/quickstart-zh.md)和[维护者签名配置](docs/android-signing.md)。
+Windows 产物尚无代码签名。Android 采用不可调试的 Release 构建，校验 APK 签名并测试覆盖升级；预览包使用临时测试签名，正式 APK 发布必须配置固定密钥。旧 v0.3.1 的随机 Debug 签名无法保证与新包兼容。详细说明见[使用指引](docs/quickstart-zh.md)和[维护者签名配置](docs/android-signing.md)。
 
 ## 开发验证
 

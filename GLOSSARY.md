@@ -1,6 +1,6 @@
 # MIXED-API glossary
 
-These definitions describe the integrated development branch. The published v0.3.1 still follows the historical external-backend architecture. See docs/integration-progress.md for verified capabilities and remaining work.
+These definitions describe the v0.4.0 integrated core. Windows packages and a separately labelled Android preview are published from verified CI builds. The historical v0.3.1 uses external backends. See docs/integration-progress.md for verified capabilities and remaining work.
 
 - **Gateway**: The standalone MIXED-API HTTP listener, not a model provider.
 - **Backend**: An optional source, implemented by a native provider module or an explicitly configured external HTTP service.

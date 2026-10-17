@@ -1,6 +1,6 @@
 # 内置重构进度
 
-开发分支 `feat/integrated-desktop-core`，2026-10-17。正式版仍为 v0.3.1，以下是源码与开发验收进度，不是新版本发布声明。
+开发分支 `feat/integrated-desktop-core`，2026-10-17。v0.4.0 发布 Windows 内置核心版与 Android 测试版，实际资产和对应构建见 [Release](https://github.com/NLKASHEI/MIXED-API/releases/tag/v0.4.0)。以下分别记录已验证范围与未完成事项。
 
 六个来源均已用 Go / Java 实现内置请求链，默认关闭。旧上游下载器、外部 EXE 导入与进程启动器已删除。用户配置账号或 Key，不选择上游运行版本；客户端共用 `http://127.0.0.1:8765/v1`。
 
@@ -22,7 +22,7 @@ Android 为纯 Java 本地核心，共享管理 HTML 与配置。电脑共享只
 
 `100ef39` 的 [Actions 39020922946](https://github.com/NLKASHEI/MIXED-API/actions/runs/39020922946) 已通过 Go race/tests/vet、Windows 构建、UI 回归、Android 55 项测试与构建/lint，以及 Android 15 干净模拟器的安装、工作台、后台鉴权、通知停止、重启、Keystore 加密写入/读取和账号注销。模拟器没有登录真实账号，不能代替实体手机验收。
 
-后续 Android 打包已改为不可调试的 Release 变体，增加实际 APK 证书校验和覆盖升级测试。本机 Release 构建、55 项测试与 lintRelease（0 错误，5 警告）通过；新的 CI 升级结果仍需对应提交验证。正式密钥尚未配置，非 PR 签名构建保持阻断，不能发布临时测试签名包。见[签名配置](android-signing.md)。
+后续 Android 打包已改为不可调试的 Release 变体，增加实际 APK 证书校验和覆盖升级测试。`ad97606` 的 [Actions 39022950817](https://github.com/NLKASHEI/MIXED-API/actions/runs/39022950817) 已通过全部检查，包含 55 项 Android 测试、lintRelease（0 错误，5 警告）和模拟器覆盖升级验收。v0.4.0 的资产另由其 tag 工作流重新构建与验收，不使用旧版本产物改名。固定正式密钥尚未配置，本次 APK 单独标为临时签名测试版；用户要求先发布 Windows，再补 APK。见[签名配置](android-signing.md)。
 
 用户明确暂不登录，实际本人账号生成继续保留为未验证。后续仍需完成兼容性收尾、干净系统/设备证据与最终资产核验；不关闭 [Issue #3](https://github.com/NLKASHEI/MIXED-API/issues/3)，不将测试夹具当成全部上游能力已交付。
 
