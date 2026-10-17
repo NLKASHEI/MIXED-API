@@ -30,17 +30,30 @@ func (o *responseStream) sendMessages(kind string, fields map[string]any) error 
 		return write("content_block_start", map[string]any{"index": index, "content_block": map[string]any{"type": "thinking", "thinking": ""}})
 	case "response.output_item.added":
 		item := fields["item"].(map[string]any)
+		if item["type"] == "reasoning" {
+			if details, ok := item["reasoning_details"].([]any); ok {
+				blocks, err := messagesReasoning(details)
+				if err != nil {
+					return err
+				}
+				if len(blocks) == 1 {
+					return write("content_block_start", map[string]any{"index": index, "content_block": blocks[0]})
+				}
+			}
+		}
 		if item["type"] == "function_call" {
 			tool := map[string]any{"type": "tool_use", "id": item["call_id"], "name": item["name"], "input": map[string]any{}}
 			copyToolMetadata(tool, item)
 			return write("content_block_start", map[string]any{"index": index, "content_block": tool})
 		}
-	case "response.output_text.delta":
+	case "response.output_text.delta", "response.refusal.delta":
 		return write("content_block_delta", map[string]any{"index": index, "delta": map[string]any{"type": "text_delta", "text": fields["delta"]}})
 	case "response.reasoning_summary_text.delta":
 		return write("content_block_delta", map[string]any{"index": index, "delta": map[string]any{"type": "thinking_delta", "thinking": fields["delta"]}})
 	case "response.function_call_arguments.delta":
 		return write("content_block_delta", map[string]any{"index": index, "delta": map[string]any{"type": "input_json_delta", "partial_json": fields["delta"]}})
+	case "reasoning_signature":
+		return write("content_block_delta", map[string]any{"index": index, "delta": map[string]any{"type": "signature_delta", "signature": fields["signature"]}})
 	case "response.output_item.done":
 		return write("content_block_stop", map[string]any{"index": index})
 	case "response.completed", "response.incomplete":
@@ -50,7 +63,7 @@ func (o *responseStream) sendMessages(kind string, fields map[string]any) error 
 		}
 		if o.finish == "length" {
 			stop = "max_tokens"
-		} else if o.finish == "content_filter" {
+		} else if o.finish == "content_filter" || o.refused {
 			stop = "refusal"
 		}
 		usage := map[string]any{"input_tokens": 0, "output_tokens": 0}

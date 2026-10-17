@@ -81,7 +81,9 @@ final class ProtocolRequest {
             String role = item.getString("role");
             if (!java.util.Arrays.asList("user", "assistant", "system", "developer").contains(role))
               throw new IOException("Invalid role");
-            messages.put(obj("role", role, "content", responseContent(item.get("content"))));
+            JSONObject message = obj("role", role);
+            message.put("content", responseContent(item.get("content"), message));
+            messages.put(message);
             break;
           }
         case "function_call":
@@ -163,6 +165,10 @@ final class ProtocolRequest {
   }
 
   private static Object responseContent(Object value) throws Exception {
+    return responseContent(value, null);
+  }
+
+  private static Object responseContent(Object value, JSONObject message) throws Exception {
     if (value instanceof String) return value;
     if (!(value instanceof JSONArray)) throw new IOException("Invalid content");
     JSONArray parts = (JSONArray) value, result = new JSONArray();
@@ -172,8 +178,24 @@ final class ProtocolRequest {
         case "input_text":
         case "output_text":
           only(p, "type", "text", "annotations");
-          if (p.has("annotations") && p.getJSONArray("annotations").length() != 0)
-            throw new IOException("Unsupported citation replay");
+          if (p.has("annotations")) {
+            JSONArray citations = p.getJSONArray("annotations");
+            if (citations.length() > 0 && message == null)
+              throw new IOException("Unsupported tool result citations");
+            for (int n = 0; n < citations.length(); n++) {
+              JSONArray saved = message.optJSONArray("annotations");
+              if (saved == null) {
+                saved = new JSONArray();
+                message.put("annotations", saved);
+              }
+              JSONObject annotation = new JSONObject(citations.getJSONObject(n).toString());
+              if (annotation.optString("type").equals("url_citation")) {
+                annotation.remove("type");
+                annotation = obj("type", "url_citation", "url_citation", annotation);
+              }
+              saved.put(annotation);
+            }
+          }
           result.put(obj("type", "text", "text", p.getString("text")));
           break;
         case "refusal":

@@ -87,6 +87,9 @@ func (b *protocolBuffer) Write(raw []byte) (int, error) {
 }
 
 func responsesInputToChat(input map[string]any) (map[string]any, error) {
+	if err := protocolFields(input, "model", "stream", "input", "instructions", "max_output_tokens", "temperature", "top_p", "reasoning", "text", "tools", "tool_choice", "parallel_tool_calls", "store"); err != nil {
+		return nil, err
+	}
 	out := map[string]any{}
 	for _, key := range []string{"model", "stream", "temperature", "top_p", "parallel_tool_calls"} {
 		if v, ok := input[key]; ok {
@@ -106,11 +109,17 @@ func responsesInputToChat(input map[string]any) (map[string]any, error) {
 		out["max_completion_tokens"] = v
 	}
 	if reasoning, ok := input["reasoning"].(map[string]any); ok {
+		if err := protocolFields(reasoning, "effort"); err != nil {
+			return nil, err
+		}
 		if v, ok := reasoning["effort"]; ok {
 			out["reasoning_effort"] = v
 		}
 	}
 	if text, ok := input["text"].(map[string]any); ok {
+		if err := protocolFields(text, "format"); err != nil {
+			return nil, err
+		}
 		if format, ok := text["format"].(map[string]any); ok {
 			if format["type"] == "json_schema" {
 				schema := map[string]any{}
@@ -152,7 +161,63 @@ func responsesInputToChat(input map[string]any) (map[string]any, error) {
 			if err != nil {
 				return nil, err
 			}
-			messages = append(messages, map[string]any{"role": role, "content": content})
+			message := map[string]any{"role": role, "content": content}
+			if parts, ok := item["content"].([]any); ok {
+				annotations := []any{}
+				for _, part := range parts {
+					if p, ok := part.(map[string]any); ok {
+						if rows, ok := p["annotations"].([]any); ok {
+							for _, row := range rows {
+								a, ok := row.(map[string]any)
+								if !ok {
+									return nil, errors.New("引用无效")
+								}
+								if a["type"] == "url_citation" {
+									copy := map[string]any{}
+									for k, v := range a {
+										if k != "type" {
+											copy[k] = v
+										}
+									}
+									annotations = append(annotations, map[string]any{"type": "url_citation", "url_citation": copy})
+								} else {
+									annotations = append(annotations, a)
+								}
+							}
+						}
+					}
+				}
+				if len(annotations) > 0 {
+					message["annotations"] = annotations
+				}
+			}
+			messages = append(messages, message)
+		case "reasoning":
+			thought := ""
+			if summary, ok := item["summary"].([]any); ok {
+				for _, value := range summary {
+					part, ok := value.(map[string]any)
+					if !ok || part["type"] != "summary_text" {
+						return nil, errors.New("思考摘要无效")
+					}
+					text, ok := part["text"].(string)
+					if !ok {
+						return nil, errors.New("思考摘要无效")
+					}
+					thought += text
+				}
+			}
+			if item["encrypted_content"] != nil {
+				return nil, errors.New("此来源不能转换原生 Responses 加密思考，请使用匹配的原生协议")
+			}
+			message := map[string]any{"role": "assistant", "content": nil}
+			if thought != "" {
+				message["reasoning_content"] = thought
+			}
+			if details, ok := item["reasoning_details"].([]any); ok {
+				message["reasoning_details"] = details
+			}
+			messages = append(messages, message)
 		case "function_call":
 			id, _ := item["call_id"].(string)
 			name, _ := item["name"].(string)
@@ -221,6 +286,8 @@ func responsesContentToChat(content any) (any, error) {
 		switch p["type"] {
 		case "input_text", "output_text":
 			out = append(out, map[string]any{"type": "text", "text": p["text"]})
+		case "refusal":
+			out = append(out, map[string]any{"type": "text", "text": p["refusal"]})
 		case "input_image":
 			if p["file_id"] != nil {
 				return nil, errors.New("此来源不能读取 Responses 云端文件")
@@ -263,11 +330,37 @@ func chatResultToResponses(chat map[string]any, model string) (map[string]any, e
 		return nil, errors.New("unknown finish")
 	}
 	output := []any{}
-	if text, _ := message["reasoning_content"].(string); text != "" {
-		output = append(output, map[string]any{"id": "rs_" + newKey(""), "type": "reasoning", "summary": []any{map[string]any{"type": "summary_text", "text": text}}})
+	thought, _ := message["reasoning_content"].(string)
+	details, _ := message["reasoning_details"].([]any)
+	if thought != "" || len(details) > 0 {
+		summary := []any{}
+		if thought != "" {
+			summary = append(summary, map[string]any{"type": "summary_text", "text": thought})
+		}
+		item := map[string]any{"id": "rs_" + newKey(""), "type": "reasoning", "summary": summary}
+		if len(details) > 0 {
+			item["reasoning_details"] = details
+		}
+		output = append(output, item)
+	}
+	parts := []any{}
+	if message["content"] != nil {
+		if _, ok := message["content"].(string); !ok {
+			return nil, errors.New("unsupported generated content")
+		}
 	}
 	if text, _ := message["content"].(string); text != "" {
-		output = append(output, map[string]any{"id": "msg_" + newKey(""), "type": "message", "role": "assistant", "status": status, "content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}}})
+		annotations, err := responseAnnotations(message["annotations"])
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, map[string]any{"type": "output_text", "text": text, "annotations": annotations})
+	}
+	if refusal, _ := message["refusal"].(string); refusal != "" {
+		parts = append(parts, map[string]any{"type": "refusal", "refusal": refusal})
+	}
+	if len(parts) > 0 {
+		output = append(output, map[string]any{"id": "msg_" + newKey(""), "type": "message", "role": "assistant", "status": status, "content": parts})
 	}
 	if calls, ok := message["tool_calls"].([]any); ok {
 		for _, value := range calls {

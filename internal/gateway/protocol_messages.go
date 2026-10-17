@@ -6,6 +6,9 @@ import (
 )
 
 func messagesInputToChat(input map[string]any) (map[string]any, error) {
+	if err := protocolFields(input, "model", "stream", "messages", "system", "max_tokens", "temperature", "top_p", "top_k", "stop_sequences", "thinking", "tools", "tool_choice"); err != nil {
+		return nil, err
+	}
 	out := map[string]any{}
 	for _, key := range []string{"model", "stream", "max_tokens", "temperature", "top_p", "top_k", "thinking"} {
 		if v, ok := input[key]; ok {
@@ -106,7 +109,13 @@ func messagesInputToChat(input map[string]any) (map[string]any, error) {
 				if role != "assistant" {
 					return nil, errors.New("思考块必须属于 assistant")
 				}
-				details = append(details, p)
+				detail := map[string]any{"format": "anthropic-claude-v1", "index": len(details)}
+				if p["type"] == "thinking" {
+					detail["type"], detail["text"], detail["signature"] = "reasoning.text", p["thinking"], p["signature"]
+				} else {
+					detail["type"], detail["data"] = "reasoning.encrypted", p["data"]
+				}
+				details = append(details, detail)
 			default:
 				return nil, errors.New("该 Messages 内容类型无法转换到此来源")
 			}
@@ -198,9 +207,25 @@ func chatResultToMessages(chat map[string]any, model string) (map[string]any, er
 		case "message":
 			for _, p := range item["content"].([]any) {
 				part := p.(map[string]any)
-				content = append(content, map[string]any{"type": "text", "text": part["text"]})
+				if annotations, ok := part["annotations"].([]any); ok && len(annotations) > 0 {
+					return nil, errors.New("citation representation unavailable")
+				}
+				text := part["text"]
+				if part["type"] == "refusal" {
+					text = part["refusal"]
+					stop = "refusal"
+				}
+				content = append(content, map[string]any{"type": "text", "text": text})
 			}
 		case "reasoning":
+			if details, ok := item["reasoning_details"].([]any); ok && len(details) > 0 {
+				blocks, err := messagesReasoning(details)
+				if err != nil {
+					return nil, err
+				}
+				content = append(content, blocks...)
+				continue
+			}
 			for _, p := range item["summary"].([]any) {
 				part := p.(map[string]any)
 				content = append(content, map[string]any{"type": "thinking", "thinking": part["text"], "signature": ""})

@@ -71,6 +71,8 @@ type responseStream struct {
 	response                  map[string]any
 	items                     []any
 	textIndex, reasoningIndex int
+	refusalIndex              int
+	refused                   bool
 	tools                     map[int]map[string]any
 	sequence, size            int
 	finish                    string
@@ -168,6 +170,40 @@ func (o *responseStream) chunk(raw []byte) error {
 				return err
 			}
 		}
+		if details, ok := c.Delta["reasoning_details"].([]any); ok {
+			if err := o.reasoning(details); err != nil {
+				return err
+			}
+		}
+		if refusal, ok := c.Delta["refusal"].(string); ok && refusal != "" {
+			if err := o.refusal(refusal); err != nil {
+				return err
+			}
+		}
+		if value := c.Delta["annotations"]; value != nil {
+			rows, err := responseAnnotations(value)
+			if err != nil {
+				return err
+			}
+			if o.messages && len(rows) > 0 {
+				return errors.New("citation representation unavailable")
+			}
+			if o.textIndex < 0 {
+				if err := o.text("", false); err != nil {
+					return err
+				}
+			}
+			item := o.items[o.textIndex].(map[string]any)
+			part := item["content"].([]any)[0].(map[string]any)
+			annotations := part["annotations"].([]any)
+			for _, row := range rows {
+				if err := o.send("response.output_text.annotation.added", map[string]any{"item_id": item["id"], "output_index": o.textIndex, "content_index": 0, "annotation_index": len(annotations), "annotation": row}); err != nil {
+					return err
+				}
+				annotations = append(annotations, row)
+			}
+			part["annotations"] = annotations
+		}
 		if calls, ok := c.Delta["tool_calls"].([]any); ok {
 			for _, value := range calls {
 				call, ok := value.(map[string]any)
@@ -253,12 +289,18 @@ func (o *responseStream) complete() error {
 			} else {
 				item["status"] = status
 			}
-			part := item[field].([]any)[0].(map[string]any)
-			if err := o.send(kind, map[string]any{"item_id": item["id"], "output_index": index, key: 0, "text": part["text"]}); err != nil {
-				return err
-			}
-			if err := o.send(partKind, map[string]any{"item_id": item["id"], "output_index": index, key: 0, "part": part}); err != nil {
-				return err
+			for n, value := range item[field].([]any) {
+				part := value.(map[string]any)
+				event, textField := kind, "text"
+				if part["type"] == "refusal" {
+					event, textField = "response.refusal.done", "refusal"
+				}
+				if err := o.send(event, map[string]any{"item_id": item["id"], "output_index": index, key: n, textField: part[textField]}); err != nil {
+					return err
+				}
+				if err := o.send(partKind, map[string]any{"item_id": item["id"], "output_index": index, key: n, "part": part}); err != nil {
+					return err
+				}
 			}
 		case "function_call":
 			item["status"] = status
@@ -281,7 +323,7 @@ func (o *responseStream) complete() error {
 func streamChatAsResponses(w http.ResponseWriter, r *http.Request, body io.Reader, model string, messages bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	o := &responseStream{w: w, textIndex: -1, reasoningIndex: -1, tools: map[int]map[string]any{}, items: []any{}, response: map[string]any{"id": "resp_" + newKey(""), "object": "response", "model": model, "created_at": time.Now().Unix(), "status": "in_progress", "output": []any{}, "error": nil, "incomplete_details": nil, "store": false}}
+	o := &responseStream{w: w, textIndex: -1, reasoningIndex: -1, refusalIndex: -1, tools: map[int]map[string]any{}, items: []any{}, response: map[string]any{"id": "resp_" + newKey(""), "object": "response", "model": model, "created_at": time.Now().Unix(), "status": "in_progress", "output": []any{}, "error": nil, "incomplete_details": nil, "store": false}}
 	o.messages = messages
 	if o.send("response.created", map[string]any{"response": o.response}) != nil {
 		return

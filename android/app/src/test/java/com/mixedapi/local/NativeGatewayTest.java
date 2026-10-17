@@ -95,10 +95,11 @@ public class NativeGatewayTest {
                 messages.contains("reasoning_content")
                     && messages.contains("plan")
                     && messages.contains("tool_call_id")
-                    && messages.contains("tool-result"));
+                    && messages.contains("tool-result")
+                    && messages.contains("url_citation"));
           }
           String response =
-              "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"content\":\"hello\",\"reasoning_content\":\"plan\",\"tool_calls\":[{\"id\":\"c1\",\"function\":{\"name\":\"weather\",\"arguments\":\"{}\"}}]}}]}";
+              "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"content\":\"hello\",\"annotations\":[{\"type\":\"url_citation\",\"url_citation\":{\"url\":\"https://example.com/\",\"title\":\"source\",\"start_index\":0,\"end_index\":5}}],\"reasoning_content\":\"plan\",\"tool_calls\":[{\"id\":\"c1\",\"function\":{\"name\":\"weather\",\"arguments\":\"{}\"}}]}}]}";
           return new GoogleSessions.Response(
               200, new ByteArrayInputStream(response.getBytes(StandardCharsets.UTF_8)));
         });
