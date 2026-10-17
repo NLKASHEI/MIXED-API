@@ -38,7 +38,7 @@ def wait_for(check, seconds=30):
         try:
             if check():
                 return
-        except (OSError, urllib.error.URLError, subprocess.SubprocessError):
+        except (OSError, urllib.error.URLError, subprocess.SubprocessError, ET.ParseError):
             pass
         time.sleep(1)
     raise AssertionError("Android acceptance condition timed out")
@@ -49,8 +49,20 @@ def screenshot(name):
 
 
 def tree():
-    adb("shell", "uiautomator", "dump", "/sdcard/mixed-ui.xml")
-    return ET.fromstring(adb("exec-out", "cat", "/sdcard/mixed-ui.xml"))
+    for attempt in range(3):
+        # A package update can temporarily leave UI automation without an idle
+        # hierarchy. Never use the previous screenshot's stale XML as success.
+        adb("shell", "rm", "-f", "/sdcard/mixed-ui.xml")
+        status = adb("shell", "uiautomator", "dump", "/sdcard/mixed-ui.xml")
+        raw = ""
+        try:
+            raw = adb("exec-out", "cat", "/sdcard/mixed-ui.xml")
+            return ET.fromstring(raw)
+        except (ET.ParseError, subprocess.CalledProcessError):
+            (OUTPUT / "ui-dump-diagnostic.txt").write_text(status + "\n" + raw, encoding="utf-8")
+            if attempt == 2:
+                raise
+            time.sleep(1)
 
 
 def tap(node):
