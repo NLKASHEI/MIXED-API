@@ -20,7 +20,22 @@
   const requests = new Map();
   let bootstrap=null, initialized=false, invalidated=false, initializationMessage='';
   const promptValue=e=>e.isContentEditable?e.textContent:e.value;
-  const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>e.getClientRects().length>0);
+  const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>{
+    if(!e.getClientRects().length||e.closest?.('[aria-hidden="true"],[hidden],[inert]'))return false;
+    if(typeof getComputedStyle==='function'){const style=getComputedStyle(e);if(style.visibility==='hidden'||style.visibility==='collapse'||style.display==='none'||style.opacity==='0')return false}
+    return true;
+  });
+  function blockingDialogs(){
+    return visible('[role="dialog"],[aria-modal="true"],dialog[open]').filter(e=>{
+      if(e.getAttribute?.('aria-modal')==='true'||e.tagName==='DIALOG'&&e.open)return true;
+      if(e.closest?.('mat-dialog-container,.mat-mdc-dialog-container,[data-overlay-container]'))return true;
+      if(document.activeElement&&e.contains?.(document.activeElement))return true;
+      // Older consent widgets can omit aria-modal. Keep those user-owned,
+      // while ordinary Cloud help/navigation panels must not block the source.
+      return /登录|登入|条款|同意|验证|sign.?in|terms|consent|verif|captcha/i.test(e.getAttribute?.('aria-label')||e.textContent||'');
+    });
+  }
+  const officialStudio=()=>!aps||/^\/(agent-platform|vertex-ai)\/studio\/multimodal(?:\/|$)/.test(new URL(location.href).pathname);
   function promptFields(){
     const primary=visible(ais?'ms-prompt-box textarea':'[contenteditable="true"][role="textbox"]');
     return primary.length?primary:visible('textarea');
@@ -158,11 +173,11 @@
     if(bootstrap)return {status:'initializing',message:'正在连接来源会话'};
     const ready=(observedSuccess||initialized) && (ais ? Boolean(snapshot && service && headers['x-goog-api-key']) : Boolean(template && captcha));
     let message=ready?'会话已连接，尚未验证实际推理':initializationMessage;
-    const fields=promptFields(),dialogs=visible('[role="dialog"],[aria-modal="true"]');
+    const fields=promptFields(),dialogs=blockingDialogs();
     const empty=fields.length===1&&!(promptValue(fields[0])||'').trim();
-    const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&empty&&(ais?!!snapshot&&runButtons().length===1:!!window.grecaptcha?.enterprise?.execute);
-    if(!message)message=dialogs.length?'请本人处理官方页面的登录、条款或验证提示':fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?'正在等待 AIS 聊天页面和验证函数加载':'正在等待无头V聊天页面和官方验证接口加载';
-    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key']}:{template:!!template,verification:!!captcha},version:'0.4.3'};
+    const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&(ais?empty&&!!snapshot&&runButtons().length===1:officialStudio()&&!!window.grecaptcha?.enterprise?.execute);
+    if(!message)message=dialogs.length?'官方页面检测到 '+dialogs.length+' 个阻塞窗口，请本人处理该窗口中的登录、条款或验证提示':ais&&fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?'正在等待 AIS 聊天页面和验证函数加载':!officialStudio()?'无头V：请进入 Agent Studio 的多模态页面':!window.grecaptcha?.enterprise?.execute?'无头V：等待官方 reCAPTCHA 脚本加载，请检查浏览器代理':'无头V：正在检查官方页面状态';
+    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key'],input:fields.length===1,blocking_dialog:dialogs.length>0}:{official_page:officialStudio(),verification_script:!!window.grecaptcha?.enterprise?.execute,blocking_dialog:dialogs.length>0,template:!!template,verification:!!captcha},version:'0.4.4'};
   }
   function initializeAPS(){
     const enterprise=window.grecaptcha?.enterprise;
@@ -191,9 +206,9 @@
     if(invalidated || bootstrap || state().status==='ready')return state();
     initializationMessage='';
     if(requests.size)return unavailable('有请求正在执行，请完成后再连接会话');
-    if(visible('[role="dialog"],[aria-modal="true"]').length)return unavailable('请本人处理官方页面的条款、登录或验证提示后再连接会话');
+    if(blockingDialogs().length)return unavailable('请本人处理官方页面的条款、登录或验证提示后再连接会话');
     const fields=promptFields();
-    if(aps){if(fields.length!==1)return unavailable('无头V：未找到唯一的官方聊天输入框，请先进入 Agent Studio 聊天页面并处理页面提示');return initializeAPS()}
+    if(aps){if(!officialStudio())return unavailable('无头V：请进入 Agent Studio 的多模态页面');return initializeAPS()}
     const buttons=runButtons();
     if(!snapshot || buttons.length!==1 || fields.length!==1)return unavailable('AIS 初始化未完成：验证函数'+(snapshot?'已找到':'未找到')+'；输入框 '+fields.length+' 个；运行按钮 '+buttons.length+' 个。请进入 Playground 的新对话页，再连接会话');
     const textarea=fields[0],button=buttons[0];

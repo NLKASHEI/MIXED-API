@@ -78,9 +78,10 @@ assert.equal(graphSession.cancel(id),true);assert.equal(graphRequest.options.sig
 // A fresh APS page initializes from its real contenteditable input without
 // sending a generation or clicking a consent dialog.
 let consent=true, graphUpstreamCalls=0;
+const consentModal={getClientRects:()=>[1],getAttribute:name=>name==='aria-modal'?'true':null};
 const input={isContentEditable:true,textContent:'',getClientRects:()=>[1],dispatchEvent(e){if(e.type==='keydown')graphWindow2.grecaptcha.enterprise.execute('official-key',{}).then(()=>graphWindow2.fetch(graph,{body:JSON.stringify(template)})).catch(()=>{});}};
 const graphWindow2={grecaptcha:{enterprise:{execute:async()=> 'fixture-proof'}},fetch:async()=>{graphUpstreamCalls++;return new Response('[]')}};
-runInNewContext(script,{...globals,window:graphWindow2,XMLHttpRequest:class extends FakeXHR {},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:{cookie:'',querySelectorAll:s=>s.includes('aria-modal')?(consent?[input]:[]):s==='[contenteditable="true"][role="textbox"]'?[input]:[]}});
+runInNewContext(script,{...globals,window:graphWindow2,XMLHttpRequest:class extends FakeXHR {},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:{cookie:'',querySelectorAll:s=>s.includes('aria-modal')?(consent?[consentModal]:[]):s==='[contenteditable="true"][role="textbox"]'?[input]:[]}});
 assert.equal(graphWindow2.__mixedGoogleWeb.initialize().status,'waiting');
 assert.equal(input.textContent,'','initializer touched input behind consent');
 consent=false;
@@ -105,6 +106,19 @@ assert.equal(JSON.parse(anonSent.options.body).operationName,'StreamGenerateCont
 assert.equal(JSON.parse(anonSent.options.body).querySignature,'2/l8eCsMMY49imcDQ/lwwXyL8cYtTjxZBF2dNqy69LodY=');
 assert.equal(anonSent.options.credentials,'omit','anonymous generation inherited project login credentials');
 signedSession.cancel(id);
+// Cloud Console has visible nonmodal panels with role=dialog. Anonymous
+// verification does not type in the UI and must not depend on a chat input.
+let blocking=false,verificationRuns=0;
+const nonModal={getClientRects:()=>[1],getAttribute:()=>null,closest:()=>null,contains:()=>false,tagName:'DIV',textContent:'Help panel'};
+const actualModal={...nonModal,getAttribute:name=>name==='aria-modal'?'true':null};
+const panelWindow={grecaptcha:{enterprise:{execute:async()=>{verificationRuns++;return 'proof'}}},fetch:async()=>{throw Error('unexpected generation')}};
+runInNewContext(script,{...globals,window:panelWindow,XMLHttpRequest:class extends FakeXHR{},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:{cookie:'',querySelectorAll:s=>s.includes('aria-modal')?[nonModal,...(blocking?[actualModal]:[])]:[]}});
+const panelSession=panelWindow.__mixedGoogleWeb;
+assert.equal(panelSession.state().can_initialize,true,'nonmodal panel or missing editor blocked anonymous verification');
+blocking=true;assert.equal(panelSession.state().can_initialize,false,'real modal consent was ignored');
+assert.equal(panelSession.initialize().status,'waiting');assert.equal(verificationRuns,0);
+blocking=false;panelSession.initialize();await delay(30);
+assert.equal(panelSession.state().status,'ready');assert.equal(verificationRuns,1);
 let releaseProof,lateSent=0;
 const proofWait=new Promise(resolve=>releaseProof=resolve);
 const lateWindow={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */await proofWait;return 'proof'}},fetch:async()=>{lateSent++;return new Response(valid)}};

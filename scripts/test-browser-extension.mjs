@@ -7,7 +7,7 @@ import {runInNewContext} from 'node:vm';
 const manifest=JSON.parse(readFileSync('internal/googleweb/extension/manifest.json'));
 assert.deepEqual(manifest.permissions,['scripting']);
 const sockets=[],navigated=[],removed=[],executed=[];
-let receiver,tabURL='http://127.0.0.1:12345/mixed-browser/connect#'+'a'.repeat(64),blockedGet;
+let receiver,tabRemoved,tabURL='http://127.0.0.1:12345/mixed-browser/connect#'+'a'.repeat(64),blockedGet;
 class Socket{
   static OPEN=1;
   readyState=1;sent=[];
@@ -18,7 +18,7 @@ class Socket{
 const chrome={runtime:{onMessage:{addListener:f=>receiver=f}},tabs:{
   create:async()=>{throw Error('must reuse the launched tab')},
   get:async()=>{if(blockedGet)await blockedGet;return{url:tabURL,status:'complete',windowId:7}},
-  remove:async id=>{removed.push(id)},update:async(id,options)=>{if(options.url){navigated.push({id,...options});tabURL=options.url}return{id}},onRemoved:{addListener:()=>{}}
+  remove:async id=>{removed.push(id)},update:async(id,options)=>{if(options.url){navigated.push({id,...options});tabURL=options.url}return{id}},onRemoved:{addListener:f=>tabRemoved=f}
 },windows:{update:async()=>{}},scripting:{executeScript:async options=>{
   assert.equal(options.target.tabId,1);assert.equal(options.world,'MAIN');
   if(options.files)return[{}];
@@ -52,5 +52,29 @@ await command(5,'initialize');await command(6,'cancelInitialize');await settle()
 unblockInit();blockedGet=null;await settle();assert.deepEqual(executed.slice(-2),['initialize','cancelInitialize']);
 tabURL='https://accounts.google.com/';const count=executed.length;
 await command(7,'state');await settle();assert.equal(socket.sent.find(m=>m.id===7).result.status,'waiting');assert.equal(executed.length,count);
-socket.close();await settle();assert.deepEqual(removed,[1]);
-console.log('Browser extension pairing, official-origin restriction, command ordering and owned-tab cleanup passed.');
+socket.close();await settle();assert.deepEqual(removed,[],'disconnect closed a user login/verification tab');
+await new Promise(resolve=>setTimeout(resolve,550));
+const reconnected=sockets.at(-1);assert.notEqual(reconnected,socket);
+await reconnected.onmessage({data:JSON.stringify({kind:'hello',source:'aistudio'})});
+assert(reconnected.sent.some(m=>m.ready),'bridge did not reconnect while login remained open');
+assert.equal(navigated.length,1,'reconnection navigated away from login');
+tabURL='https://aistudio.google.com/prompts/new_chat';
+let releaseLate;blockedGet=new Promise(resolve=>releaseLate=resolve);
+const startsBefore=executed.filter(m=>m==='start').length;
+await reconnected.onmessage({data:JSON.stringify({id:9,method:'start',args:['c'.repeat(48),{kind:'build'}]})});await settle();
+reconnected.close();releaseLate();blockedGet=null;await settle();
+assert.equal(executed.filter(m=>m==='start').length,startsBefore,'late generation escaped after bridge disconnect');
+await new Promise(resolve=>setTimeout(resolve,550));
+const resumed=sockets.at(-1);await resumed.onmessage({data:JSON.stringify({kind:'hello',source:'aistudio'})});
+tabURL='https://aistudio.google.com/prompts/new_chat';
+await resumed.onmessage({data:JSON.stringify({id:10,method:'start',args:['d'.repeat(48),{kind:'build'}]})});await settle();
+tabURL='https://accounts.google.com/';
+await resumed.onmessage({data:JSON.stringify({id:11,method:'cancel',args:['d'.repeat(48)]})});await settle();
+resumed.close();await settle();assert.deepEqual(removed,[],'stale active flag closed login after navigation and cancellation');
+await new Promise(resolve=>setTimeout(resolve,550));
+const activeSocket=sockets.at(-1);await activeSocket.onmessage({data:JSON.stringify({kind:'hello',source:'aistudio'})});
+tabURL='https://aistudio.google.com/prompts/new_chat';
+await activeSocket.onmessage({data:JSON.stringify({id:12,method:'start',args:['e'.repeat(48),{kind:'build'}]})});await settle();
+activeSocket.close();await settle();assert.deepEqual(removed,[1],'unconfirmed active generation was left running');
+tabRemoved(1);await settle();
+console.log('Browser extension pairing, navigation, command ordering, login preservation and reconnection passed.');

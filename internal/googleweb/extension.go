@@ -35,6 +35,7 @@ type ExtensionPage struct {
 	open                        func(string) error
 	peer                        *extensionPeer
 	connected, closed           bool
+	disconnectedAt              time.Time
 	sequence                    uint64
 	pending                     map[uint64]chan extensionReply
 }
@@ -159,6 +160,7 @@ func (p *ExtensionPage) serve(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
 		if p.peer == peer {
 			p.peer = nil
+			p.disconnectedAt = time.Now()
 			for id, ch := range p.pending {
 				ch <- extensionReply{Error: "disconnected"}
 				delete(p.pending, id)
@@ -239,9 +241,13 @@ func (p *ExtensionPage) Call(ctx context.Context, method string, args ...any) (j
 		return nil, errors.New("browser bridge closed")
 	}
 	if peer == nil || !peer.ready {
+		connected := p.connected
 		p.mu.Unlock()
 		switch method {
 		case "state", "initialize":
+			if connected {
+				return json.RawMessage(`{"status":"waiting","message":"浏览器连接已中断，正在重新连接；请保留官方标签页"}`), nil
+			}
 			return json.RawMessage(`{"status":"waiting","message":"请在当前浏览器按连接页指引加载 MIXED 扩展，再刷新连接页"}`), nil
 		case "cancelInitialize", "cancel":
 			return json.RawMessage(`true`), nil
@@ -275,7 +281,8 @@ func (p *ExtensionPage) Eval(context.Context, string) (json.RawMessage, error) {
 func (p *ExtensionPage) Alive() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return !p.closed && (!p.connected || p.peer != nil)
+	// Keep the same source and listener during the extension's bounded retry.
+	return !p.closed && (!p.connected || p.peer != nil || time.Since(p.disconnectedAt) < 10*time.Second)
 }
 func (p *ExtensionPage) Show() {
 	p.mu.Lock()

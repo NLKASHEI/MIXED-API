@@ -12,50 +12,75 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
 });
 function connect(endpoint,tabId,setupURL){
   const existing=sessions.get(endpoint);if(existing)return existing.ready;
-  const session={socket:new WebSocket(endpoint),tab:null,source:null,closed:false};sessions.set(endpoint,session);
-  session.ready=new Promise((resolve,reject)=>{
-    const timeout=setTimeout(()=>{reject(Error('connection_timeout'));session.socket.close()},15000);
-    session.socket.onmessage=async event=>{
-      let message;try{message=JSON.parse(event.data)}catch{session.socket.close();return}
+  const session={tab:null,source:null,closed:false,requestActive:false,reconnects:0};sessions.set(endpoint,session);
+  let resolveReady,rejectReady;
+  session.ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject});
+  const finish=()=>{if(session.closed)return;session.closed=true;clearTimeout(session.timeout);clearTimeout(session.retry);clearInterval(session.heartbeat);sessions.delete(endpoint);rejectReady(Error('disconnected'))};
+  session.finish=finish;
+  session.timeout=setTimeout(()=>{finish();session.socket.close()},15000);
+  function openSocket(){
+    if(session.closed)return;
+    const socket=new WebSocket(endpoint);session.socket=socket;
+    socket.onmessage=async event=>{
+      let message;try{message=JSON.parse(event.data)}catch{finish();socket.close();return}
       if(message.kind==='hello'){
-        if(session.source||!pages[message.source]){session.socket.close();return}
-        session.source=message.source;
+        if(!pages[message.source]||(session.source&&session.source!==message.source)){finish();socket.close();return}
         try{
-          // Reuse the tab opened by ShellExecute. The localhost capability is
-          // replaced, never copied into the provider URL or a referrer.
-          const tab=await chrome.tabs.get(tabId);
-          if(session.closed||tab.url!==setupURL)throw Error('connection_tab_changed');
-          session.tab=tabId;
-          await chrome.tabs.update(tabId,{url:pages[session.source],active:true});
-          if(session.closed){await chrome.tabs.remove(tabId);return}
-          session.socket.send(JSON.stringify({ready:true}));clearTimeout(timeout);resolve();
-        }catch{clearTimeout(timeout);reject(Error('tab_failed'));session.socket.close()}
+          if(!session.source){
+            const tab=await chrome.tabs.get(tabId);
+            if(session.closed||tab.url!==setupURL)throw Error('connection_tab_changed');
+            session.source=message.source;session.tab=tabId;
+            // Replace the localhost capability; never send it to Google.
+            await chrome.tabs.update(tabId,{url:pages[session.source],active:true});
+          }else await chrome.tabs.get(session.tab);
+          if(session.closed||socket!==session.socket)return;
+          socket.send(JSON.stringify({ready:true}));clearTimeout(session.timeout);session.reconnects=0;resolveReady();
+        }catch{finish();socket.close()}
         return;
       }
       if(!Number.isSafeInteger(message.id)||!methods.has(message.method)||!session.tab)return;
-      // Commands run in arrival order. A cancellation cannot overtake an earlier
-      // start waiting for the browser API and falsely acknowledge its absence.
+      // Cancellation follows earlier commands and never falsely acknowledges
+      // a delayed start. Old connections cannot reply on a new socket.
       session.commands=(session.commands||Promise.resolve()).then(async()=>{
-        if(session.closed)return;
-        try{const result=await execute(session,message.method,message.args||[]);if(session.socket.readyState===WebSocket.OPEN)session.socket.send(JSON.stringify({id:message.id,result}))}
-        catch{if(session.socket.readyState===WebSocket.OPEN)session.socket.send(JSON.stringify({id:message.id,error:'page_unavailable'}))}
+        if(session.closed||session.socket!==socket||socket.readyState!==WebSocket.OPEN)return;
+        try{const result=await execute(session,message.method,message.args||[]);if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:message.id,result}))}
+        catch{if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:message.id,error:'page_unavailable'}))}
       });
     };
-    session.socket.onclose=()=>{clearTimeout(timeout);clearInterval(session.heartbeat);session.closed=true;sessions.delete(endpoint);reject(Error('disconnected'));if(session.tab)chrome.tabs.remove(session.tab).catch(()=>{})};
-    session.socket.onerror=()=>session.socket.close();
-  });
+    socket.onclose=()=>{
+      if(session.closed||session.socket!==socket)return;
+      if(session.requestActive){
+        // A generated request with no confirmed abort cannot be left running.
+        // Login and verification alone never set this flag.
+        finish();chrome.tabs.get(session.tab).then(tab=>{if(new URL(tab.url).origin===origins[session.source])return chrome.tabs.remove(session.tab)}).catch(()=>{});return;
+      }
+      // A disconnected bridge is not permission to delete the user's login.
+      // Abort initialization if the official document is still reachable.
+      session.commands=(session.commands||Promise.resolve()).then(()=>execute(session,'cancelInitialize',[])).catch(()=>{});
+      if(session.reconnects++>=3){finish();return}
+      session.retry=setTimeout(openSocket,500*session.reconnects);
+    };
+    socket.onerror=()=>socket.close();
+  }
   session.heartbeat=setInterval(()=>{if(session.socket.readyState===WebSocket.OPEN)session.socket.send('{}')},20000);
-  return session.ready;
+  openSocket();return session.ready;
 }
 async function execute(session,method,args){
+  const connection=session.socket;
+  const unavailable=()=>session.closed||session.socket!==connection||connection.readyState!==WebSocket.OPEN;
   const tab=await chrome.tabs.get(session.tab);
+  if(['start','initialize'].includes(method)&&unavailable())throw Error('disconnected');
   if(method==='show'){await chrome.tabs.update(session.tab,{active:true});await chrome.windows.update(tab.windowId,{focused:true});return true}
   let allowed=false;try{allowed=new URL(tab.url).origin===origins[session.source]}catch{}
-  if(!allowed){if(method==='state'||method==='initialize')return {status:'waiting',message:'请在当前浏览器的官方页面完成本人登录与页面提示'};if(method==='cancel'||method==='cancelInitialize')return true;return false}
+  if(!allowed){if(method==='state'||method==='initialize'){let login=false;try{login=new URL(tab.url).origin==='https://accounts.google.com'}catch{}return {status:'waiting',message:login?'正在等待本人完成 Google 登录':'来源标签页已离开对应官方站点，请返回该来源页面',checks:{official_origin:false}};}if(method==='cancel'){session.requestActive=false;return true}if(method==='cancelInitialize')return true;return false}
   if(tab.status!=='complete'){if(method==='state'||method==='initialize')return {status:'waiting',message:'正在等待官方页面加载'};throw Error('page_loading')}
+  if(method==='start')session.requestActive=true;
   await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',files:['google-session.js']});
+  if(['start','initialize'].includes(method)&&unavailable())throw Error('disconnected');
   const results=await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',func:invoke,args:[method,args,origins[session.source]]});
-  return results[0]?.result??false;
+  const result=results[0]?.result??false;
+  if(method==='cancel'&&result===true||method==='start'&&result===false)session.requestActive=false;
+  return result;
 }
 // chrome.scripting serializes this function into the page; validate there too.
 function invoke(method,args,origin){
@@ -66,4 +91,4 @@ function invoke(method,args,origin){
   if(!api)return method==='state'?{status:'waiting',message:'官方页面连接脚本未就绪'}:false;
   return api[method](...args);
 }
-chrome.tabs.onRemoved.addListener(id=>{for(const s of sessions.values())if(s.tab===id)s.socket.close()});
+chrome.tabs.onRemoved.addListener(id=>{for(const s of sessions.values())if(s.tab===id){s.finish();s.socket.close()}});

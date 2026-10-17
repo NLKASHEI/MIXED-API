@@ -164,7 +164,7 @@ func (b *Browser) State(ctx context.Context, id string) State {
 	raw, err := callPage(ctx, s.page, "state")
 	var result State
 	if err != nil || json.Unmarshal(raw, &result) != nil || result.Status == "" {
-		return State{Status: "waiting", Message: "请在官方页面完成本人授权"}
+		return State{Status: "waiting", Message: "浏览器页面正在跳转或连接脚本暂不可用；等待页面加载，若持续失败请刷新官方标签页"}
 	}
 	return result
 }
