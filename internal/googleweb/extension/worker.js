@@ -65,6 +65,14 @@ function connect(endpoint,tabId,setupURL){
   session.heartbeat=setInterval(()=>{if(session.socket.readyState===WebSocket.OPEN)session.socket.send('{}')},20000);
   openSocket();return session.ready;
 }
+// A tab-scoped network fence also covers transports cached before page hooks.
+// Keep a cancelled bootstrap fenced until an explicit API generation or tab close.
+async function initializationFence(tabId,enabled){
+  const id=100000+tabId;
+  const update={removeRuleIds:[id]};
+  if(enabled)update.addRules=[{id,priority:1,action:{type:'block'},condition:{tabIds:[tabId],regexFilter:'^https://alkalimakersuite-pa\\.clients6\\.google\\.com/.*(GenerateContent|ProxyStreamedCall|ProxyUnaryCall|SavePrompt|CreatePrompt)',resourceTypes:['xmlhttprequest','other']}}];
+  await chrome.declarativeNetRequest.updateSessionRules(update);
+}
 async function execute(session,method,args){
   const connection=session.socket;
   const unavailable=()=>session.closed||session.socket!==connection||connection.readyState!==WebSocket.OPEN;
@@ -74,11 +82,27 @@ async function execute(session,method,args){
   let allowed=false;try{allowed=new URL(tab.url).origin===origins[session.source]}catch{}
   if(!allowed){if(method==='state'||method==='initialize'){let login=false;try{login=new URL(tab.url).origin==='https://accounts.google.com'}catch{}return {status:'waiting',message:login?'正在等待本人完成 Google 登录':'来源标签页已离开对应官方站点，请返回该来源页面',checks:{official_origin:false}};}if(method==='cancel'){session.requestActive=false;return true}if(method==='cancelInitialize')return true;return false}
   if(tab.status!=='complete'){if(method==='state'||method==='initialize')return {status:'waiting',message:'正在等待官方页面加载'};throw Error('page_loading')}
-  if(method==='start')session.requestActive=true;
+  if(session.source==='aistudio'&&method==='initialize'){
+    try{await initializationFence(session.tab,true)}catch{return {status:'waiting',message:'浏览器初始化拦截未安装，请刷新 MIXED 浏览器连接扩展后重试'}}
+  }
   await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',files:['google-session.js']});
   if(['start','initialize'].includes(method)&&unavailable())throw Error('disconnected');
-  const results=await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',func:invoke,args:[method,args,origins[session.source]]});
+  if(session.source==='aistudio'&&method==='start'){
+    const check=await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',func:invoke,args:['state',[],origins[session.source]]});
+    if(check[0]?.result?.status!=='ready')return false;
+    if(unavailable())throw Error('disconnected');
+    await initializationFence(session.tab,false);
+  }
+  if(['start','initialize'].includes(method)&&unavailable()){
+    if(session.source==='aistudio'&&method==='start')await initializationFence(session.tab,true);
+    throw Error('disconnected');
+  }
+  if(method==='start')session.requestActive=true;
+  let results;
+  try{results=await chrome.scripting.executeScript({target:{tabId:session.tab},world:'MAIN',func:invoke,args:[method,args,origins[session.source]]})}
+  catch(error){if(session.source==='aistudio'&&method==='start')await initializationFence(session.tab,true);throw error}
   const result=results[0]?.result??false;
+  if(session.source==='aistudio'&&method==='start'&&result===false)await initializationFence(session.tab,true);
   if(method==='cancel'&&result===true||method==='start'&&result===false)session.requestActive=false;
   return result;
 }
@@ -91,4 +115,4 @@ function invoke(method,args,origin){
   if(!api)return method==='state'?{status:'waiting',message:'官方页面连接脚本未就绪'}:false;
   return api[method](...args);
 }
-chrome.tabs.onRemoved.addListener(id=>{for(const s of sessions.values())if(s.tab===id){s.finish();s.socket.close()}});
+chrome.tabs.onRemoved.addListener(id=>{initializationFence(id,false).catch(()=>{});for(const s of sessions.values())if(s.tab===id){s.finish();s.socket.close()}});

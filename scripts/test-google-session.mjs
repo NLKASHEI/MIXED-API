@@ -150,8 +150,7 @@ runInNewContext(script,{...globals,window:lateWindow,XMLHttpRequest:class extend
 assert.equal(lateWindow.__mixedGoogleWeb.initialize().status,'initializing');await delay(150);
 lateWindow.__mixedGoogleWeb.cancelInitialize();releaseProof();await delay(20);
 assert.equal(lateSent,0,'cancelled initialization leaked a delayed generation');
-assert.equal(lateWindow.__mixedGoogleWeb.state().status,'waiting');
-assert.equal(lateWindow.__mixedGoogleWeb.start(id,{kind:'models'}),false,'invalidated page allowed a new request');
+assert.equal(lateWindow.__mixedGoogleWeb.state().status,'ready','captured service waited on an unnecessary proof generation');
 // Cancellation while the official page is still preparing a request cannot
 // acknowledge a released lease and permit another concurrent page operation.
 let holdRequest=false,releaseRequest,preparingSent=0;
@@ -170,3 +169,15 @@ releaseRequest();await delay(20);
 assert.equal(preparingSent,1,'cancelled generation was sent after preparation finished');
 assert.equal(preparingField.text,'','cancelled request left page content behind');
 console.log('Google official-session bootstrap, rejection, unary RPC, catalog, GraphQL framing, cancellation, origin and serialization checks passed.');
+
+// The official app can cache fetch before MIXED hooks are installed. Capturing
+// the service must end bootstrap before even that cached fetch can generate.
+let cachedGenerations=0;
+const cachedFetch=async()=>{cachedGenerations++;return new Response(valid)};
+const cachedWindow={default_MakerSuite:{async native(service,hash){/* Promise .snapshot) */return 'proof'}},fetch:cachedFetch};
+const cachedInput=new Textarea();
+const cachedRun={...runButton,click(){cachedWindow.default_MakerSuite.native({},'bootstrap').then(()=>cachedFetch(rpc+'GenerateContent')).catch(()=>{})}};
+runInNewContext(script,{...globals,window:cachedWindow,XMLHttpRequest:class extends FakeXHR{},document:{cookie:'',querySelectorAll:s=>s==='ms-run-button button'?[cachedRun]:s==='ms-prompt-box textarea'?[cachedInput]:[]}});
+cachedWindow.__mixedGoogleWeb.initialize();await delay(160);
+assert.equal(cachedGenerations,0,'cached transport submitted initialization to the model');
+assert.equal(cachedWindow.__mixedGoogleWeb.state().status,'ready','service capture waits for generation completion');

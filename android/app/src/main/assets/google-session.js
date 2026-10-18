@@ -157,7 +157,15 @@
         const source=Function.prototype.toString.call(maker[key]);
         if (!/\.?snapshot\s*[()]/.test(source) || !/content|yield|Promise|e9b|Bcc/.test(source)) continue;
         snapshot=maker[key];
-        maker[key]=function(...args){if(args[0] && ['object','function'].includes(typeof args[0]))service=args[0];return snapshot.apply(this,args)};
+        maker[key]=function(...args){
+          if(args[0] && ['object','function'].includes(typeof args[0]))service=args[0];
+          if(bootstrap?.triggered && service){
+            headers['x-goog-api-key']||='AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs';
+            interceptBootstrap('GenerateContent','');
+            return Promise.reject(new DOMException('Initialization complete','AbortError'));
+          }
+          return snapshot.apply(this,args)
+        };
         break;
       }
     }
@@ -200,7 +208,7 @@
     const empty=fields.length===1&&!(promptValue(fields[0])||'').trim();
     const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&(ais?empty&&!!snapshot&&runButtons().length===1:officialStudio());
     if(!message)message=dialogs.length?'官方页面检测到 '+dialogs.length+' 个阻塞窗口，请本人处理该窗口中的登录、条款或验证提示':ais&&fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?(authenticated?'已登录；正在准备 AIS 请求协议（验证函数'+(snapshot?'已找到':'加载中')+'，输入框 '+fields.length+' 个，运行按钮 '+runButtons().length+' 个）':accountChecking?'已检测浏览器现有账号，正在检查会话':'正在加载 AIS 请求协议，不代表需要重新登录或处理人机验证'):!officialStudio()?'无头V：请进入 Agent Studio 的多模态页面':!window.grecaptcha?.enterprise?.execute?'无头V：等待官方 reCAPTCHA 脚本加载，请检查浏览器代理':'无头V：正在检查官方页面状态';
-    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{authenticated,snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key'],input:fields.length===1,blocking_dialog:dialogs.length>0}:{official_page:officialStudio(),verification_script:!!window.grecaptcha?.enterprise?.execute,blocking_dialog:dialogs.length>0,template:!!template,verification:!!captcha},version:'0.4.5'};
+    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{authenticated,snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key'],input:fields.length===1,blocking_dialog:dialogs.length>0}:{official_page:officialStudio(),verification_script:!!window.grecaptcha?.enterprise?.execute,blocking_dialog:dialogs.length>0,template:!!template,verification:!!captcha},version:'0.4.6'};
   }
   function initializeAPS(){
     const sdk=window.grecaptcha?.enterprise;
@@ -242,7 +250,7 @@
     if(!snapshot || buttons.length!==1 || fields.length!==1)return unavailable('AIS 初始化未完成：验证函数'+(snapshot?'已找到':'未找到')+'；输入框 '+fields.length+' 个；运行按钮 '+buttons.length+' 个。请进入 Playground 的新对话页，再连接会话');
     const textarea=fields[0],button=buttons[0];
     if((promptValue(textarea)||'').trim())return unavailable('官方页面有未发送的内容，请先自行保存或清空，再连接会话');
-    const prompt='MIXED connection initialization';
+    const prompt='Reply with exactly 1.';
     setPrompt(textarea,prompt);
     const pending={textarea,prompt,timer:setTimeout(()=>{initializationMessage='来源初始化超时，请检查官方页面的登录、验证或权限提示';cancelInitialize()},30000)};
     bootstrap=pending;

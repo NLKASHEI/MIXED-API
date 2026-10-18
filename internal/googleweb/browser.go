@@ -159,7 +159,7 @@ func (b *Browser) session(id string) *browserSession {
 func (b *Browser) State(ctx context.Context, id string) State {
 	s := b.session(id)
 	if s == nil {
-		return State{Status: "none", Message: "请打开来源授权窗口"}
+		return State{Status: "none", Message: "请打开来源连接页面"}
 	}
 	raw, err := callPage(ctx, s.page, "state")
 	var result State

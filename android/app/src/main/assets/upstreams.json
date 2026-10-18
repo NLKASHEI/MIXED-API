@@ -46,7 +46,7 @@
       "repo": "hawklithm/workbuddy2api",
       "revision": "4354f83bd95d6995ef944ef342f95668ac1290b8",
       "license": "MIT",
-      "note": "采用直接 HTTP 协议与本人授权流程；不再启动原有 Node relay 或官方 CLI。"
+      "note": "直接 HTTP 反代；按所选国内站、国际 WorkBuddy AI 或国际 CodeBuddy 授权。实时读取模型与积分倍率，免费活动以当前目录为准。"
     },
     {
       "id": "aps",
@@ -56,7 +56,7 @@
       "sha256": "ea394caa57a9bb48d713e503a30db10851622649b50b1068b8d6206d2a502e9e",
       "entry": "vertex-proxy.exe",
       "license": "PolyForm-Noncommercial-1.0.0",
-      "note": "Windows 一键进入当前 Edge / Chrome 的官方页面，等待本人登录或验证后自动连接。首次需加载随 EXE 提供的连接扩展；真实生成仍待本人验收。"
+      "note": "无头V使用匿名接口，无需 Google 账号、Cookie 或 Express Key。准备后自动通过当前 Edge / Chrome 连接官方验证环境；首次须加载内置连接扩展。真实生成待验收。"
     },
     {
       "id": "aistudio",

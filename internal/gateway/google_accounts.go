@@ -15,10 +15,10 @@ import (
 
 func (s *Server) handleGoogleAccount(w http.ResponseWriter, r *http.Request, id, action string) {
 	if s.google == nil {
-		jsonError(w, 503, "请在 MIXED 应用窗口中打开此来源的授权步骤")
+		jsonError(w, 503, "请在 MIXED 应用窗口中打开此来源的连接步骤")
 		return
 	}
-	if r.Method == "POST" && action == "login" {
+	if r.Method == "POST" && (action == "login" || action == "connect") {
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
 		if err := s.google.Open(ctx, id); err != nil {
@@ -30,7 +30,11 @@ func (s *Server) handleGoogleAccount(w http.ResponseWriter, r *http.Request, id,
 			jsonError(w, 503, message)
 			return
 		}
-		jsonResult(w, 200, map[string]string{"status": "waiting", "message": "请在默认浏览器完成本人登录与页面提示，软件会自动连接会话"})
+		message := "请在默认浏览器完成本人登录与页面提示，软件会自动连接会话"
+		if id == "aps" {
+			message = "正在准备无头V匿名连接；不需要 Google 账号、Cookie 或 Express Key"
+		}
+		jsonResult(w, 200, map[string]string{"status": "waiting", "message": message})
 		return
 	}
 	if r.Method == "POST" && action == "initialize" {

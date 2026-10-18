@@ -1,5 +1,7 @@
 # 协议能力与测试
 
+v0.4.6 Windows新增：AIS初始化的标签级网络拦截、WorkBuddy实时模型及积分分类、Build原生工具JSON Schema和Playground本地引用。Android只同步页面脚本/HTML，Java未移植实时目录及Schema增量；APK仍暂停。无头V匿名连接与AIS账号授权分别说明。
+
 v0.4.5 Windows新增：WorkBuddy三站账号/刷新隔离，Google已有账号检查与官方SDK加载，Gemini 4路由，快速V交付前重试/完整缓存/可选客户端续传。Android仅同步共享资源；Java尚无三站授权与续传模块，UI按平台隐藏这些选项，不发布APK。完整边界见ADR-0009及release-notes-v0.4.5.md。
 
 2026-10-17，开发分支。Go 与 Android Java 共享配置及管理 HTML，分别实现本地 HTTP 核心；模拟服务方响应、实际 TCP 取消、平台模拟测试与真实账号/设备验收分别记录。

@@ -570,3 +570,5 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+- WorkBuddy live catalog protocol reference: dingminhua/dsh-connect-workbuddy, commit 9f09263e0347adc167edc9b5ccc7d1be66d4f4b6, MIT. See docs/third-party/dsh-connect-workbuddy-MIT.txt and docs/upstream-audit-2026-10-18-v046.md. Independent Go implementation; no DSH runtime bundled.

@@ -26,9 +26,15 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 			return nil, errors.New("请填写 Express API Key")
 		}
 		if b.ID == "workbuddy" {
-			if _, err := s.freshCredential(ctx, workbuddyAccountID(b), ""); err != nil {
+			models, err := s.workbuddyCatalog(ctx, b)
+			if err != nil {
 				return nil, err
 			}
+			ids := make([]string, 0, len(models))
+			for _, m := range models {
+				ids = append(ids, m.Original)
+			}
+			return ids, nil
 		}
 		var catalogs map[string][]string
 		_ = json.Unmarshal(builtinModelsJSON, &catalogs)

@@ -57,6 +57,24 @@ func (s *Server) serveGoogleWeb(w http.ResponseWriter, r *http.Request, b Backen
 		return
 	}
 	contract.prepare(body, kind == "playground")
+	if kind == "build" {
+		// Gemini's parameters field is a restricted OpenAPI Schema. Preserve
+		// full client JSON Schema through the native Build JSON Schema field.
+		if tools, ok := body["tools"].([]any); ok {
+			for _, tool := range tools {
+				if object, ok := tool.(map[string]any); ok {
+					if declarations, ok := object["functionDeclarations"].([]map[string]any); ok {
+						for _, declaration := range declarations {
+							if schema, ok := declaration["parameters"]; ok {
+								declaration["parametersJsonSchema"] = schema
+								delete(declaration, "parameters")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	if kind == "aps" {
 		body, err = apsPayload(body)
 		if err != nil {

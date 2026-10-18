@@ -248,10 +248,26 @@ func (s *Server) accountJSON(r *http.Request, id, path string, body any) (*http.
 			for key, value := range workbuddyIdentity(c) {
 				headers[key] = value
 			}
+			if path == "/v3/config" {
+				headers["X-Product"] = "SaaS"
+				headers["X-Requested-With"] = "XMLHttpRequest"
+				product := "CLI/2.63.2 CodeBuddy/2.63.2"
+				if id == "workbuddy-intl" {
+					product = "WorkBuddy/5.5.2"
+				}
+				if id == "workbuddy-global" {
+					product = "CodeBuddy/2.63.2"
+				}
+				headers["User-Agent"] = product + " (compatible; MIXED-API/" + BuildVersion + ")"
+			}
 		}
 		var resp *http.Response
 		if body == nil {
-			request, buildErr := http.NewRequestWithContext(r.Context(), "GET", accountEndpoint(id)+path, nil)
+			endpoint := accountEndpoint(id) + path
+			if isWorkBuddyAccount(id) && path == "/v3/config" {
+				endpoint = strings.TrimSuffix(accountEndpoint(id), "/v2") + path
+			}
+			request, buildErr := http.NewRequestWithContext(r.Context(), "GET", endpoint, nil)
 			if buildErr != nil {
 				return nil, buildErr
 			}
@@ -259,7 +275,7 @@ func (s *Server) accountJSON(r *http.Request, id, path string, body any) (*http.
 				request.Header.Set(key, value)
 			}
 			request.Header.Set("Accept", "application/json")
-			resp, err = s.client.Do(request)
+			resp, err = providerDo(s.client, request)
 		} else {
 			resp, err = providerJSON(s.client, r, accountEndpoint(id)+path, body, headers)
 		}

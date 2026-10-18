@@ -55,6 +55,9 @@ func TestBrowserLoginWaitsForUserThenConnectsWithoutAnotherAction(t *testing.T) 
 	if w := accountTestCall(app, "POST", "/api/accounts/aps/login", "admin", ""); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	if w := accountTestCall(app, "POST", "/api/accounts/aps/connect", "admin", ""); w.Code != 200 || strings.Contains(w.Body.String(), "登录") {
+		t.Fatal("anonymous V asked for an account", w.Code, w.Body.String())
+	}
 	time.Sleep(150 * time.Millisecond)
 	if page.initializations.Load() != 0 {
 		t.Fatal("initialized before user finished official page")

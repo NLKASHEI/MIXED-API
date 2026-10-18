@@ -338,6 +338,13 @@ func fromProtoStruct(v any, depth int) (map[string]any, error) {
 }
 
 func playgroundSchema(value any, depth int) ([]any, error) {
+	if depth == 0 {
+		resolved, err := expandPlaygroundRefs(value)
+		if err != nil {
+			return nil, err
+		}
+		value = resolved
+	}
 	if depth > 32 {
 		return nil, errors.New("工具 Schema 层级过深")
 	}

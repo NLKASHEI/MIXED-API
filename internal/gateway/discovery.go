@@ -78,11 +78,19 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) (result backendDis
 		return result
 	}
 	var ids []string
+	var workbuddyModels []catalogModel
 	if b.Kind == "builtin" {
 		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
 		var err error
-		ids, err = s.integratedModels(probe, b)
+		if b.ID == "workbuddy" {
+			workbuddyModels, err = s.workbuddyCatalog(probe, b)
+			for _, m := range workbuddyModels {
+				ids = append(ids, m.Original)
+			}
+		} else {
+			ids, err = s.integratedModels(probe, b)
+		}
 		if err != nil {
 			return fail("builtin_auth", err.Error(), "检查该来源的账号授权和网络。")
 		}
@@ -129,6 +137,14 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) (result backendDis
 		}
 		seen[id] = true
 		model := catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id}
+		if b.ID == "workbuddy" && b.Kind == "builtin" {
+			for _, current := range workbuddyModels {
+				if current.Original == id {
+					model = current
+					break
+				}
+			}
+		}
 		if b.ID == "opencode" {
 			model.Access = openCodeAccess(id)
 			if model.Access.Kind != "free_candidate" {
@@ -144,7 +160,7 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) (result backendDis
 	result.ModelCount = len(result.models)
 	result.DurationMs = time.Since(begin).Milliseconds()
 	result.Next = "已读取模型目录。复制完整模型 ID 到客户端，发送一次消息验证实际推理权限。"
-	if b.Kind == "builtin" && (b.ID == "vertex" || b.ID == "workbuddy") {
+	if b.Kind == "builtin" && b.ID == "vertex" {
 		result.Next = "内置模型目录；请发送消息验证实际权限。"
 	}
 	return result
