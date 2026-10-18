@@ -1,5 +1,7 @@
 # 协议能力与测试
 
+v0.4.5 Windows新增：WorkBuddy三站账号/刷新隔离，Google已有账号检查与官方SDK加载，Gemini 4路由，快速V交付前重试/完整缓存/可选客户端续传。Android仅同步共享资源；Java尚无三站授权与续传模块，UI按平台隐藏这些选项，不发布APK。完整边界见ADR-0009及release-notes-v0.4.5.md。
+
 2026-10-17，开发分支。Go 与 Android Java 共享配置及管理 HTML，分别实现本地 HTTP 核心；模拟服务方响应、实际 TCP 取消、平台模拟测试与真实账号/设备验收分别记录。
 
 | 能力 | Go / Java 当前行为 | 测试 |

@@ -99,3 +99,74 @@ func TestExpressRetriesBusyResponseBeforeStreaming(t *testing.T) {
 		t.Fatal(logs)
 	}
 }
+
+func TestExpressInterruptedStreamRetriesBeforeDelivery(t *testing.T) {
+	for _, aggregate := range []bool{false, true} {
+		cfg := Defaults()
+		cfg.APIKey = "client"
+		cfg.Backends = []Backend{{ID: "vertex", Kind: "builtin", URL: builtinBase("vertex"), ProviderKey: "key", Enabled: true}}
+		cfg.EngineSettings = map[string]engineSettings{"vertex": {MaxRetries: 1, RequestTimeoutSeconds: 10, AggregateStream: aggregate}}
+		app := NewServer("", cfg)
+		attempts := 0
+		app.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+			attempts++
+			raw := ": heartbeat\n\n"
+			if aggregate {
+				raw = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"BROKEN\"}]}}]}\n\n"
+			}
+			if attempts > 1 {
+				raw = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"OK\"}]},\"finishReason\":\"STOP\"}]}\n\n"
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Retry-After": {"0"}}, Body: io.NopCloser(strings.NewReader(raw))}, nil
+		})
+		w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-test","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+		if attempts != 2 || !strings.Contains(w.Body.String(), "OK") || strings.Contains(w.Body.String(), "BROKEN") || !strings.Contains(w.Body.String(), "[DONE]") {
+			t.Fatalf("aggregate=%v attempts=%d HTTP=%d %s", aggregate, attempts, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestGemini4IsListedAndUsesOfficialAPIVersion(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.AdminKey = "admin"
+	cfg.Backends = []Backend{{ID: "vertex", Kind: "builtin", URL: builtinBase("vertex"), ProviderKey: "key", Enabled: true}}
+	app := NewServer("", cfg)
+	calls := 0
+	app.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if !strings.HasPrefix(r.URL.Path, "/v1beta1/") {
+			t.Error("Gemini 4 used older API", r.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}]}`))}, nil
+	})
+	if w := accountTestCall(app, "GET", "/v1/models", "client", ""); !strings.Contains(w.Body.String(), "vertex/gemini-4-argon") {
+		t.Fatal("official Gemini 4 missing")
+	}
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-4-argon","messages":[{"role":"user","content":"hello"}]}`)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	w = accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-4-argon","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"minimal"}`)
+	w = accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-4-argon","messages":[{"role":"user","content":"hello"}],"n":2}`)
+	if w.Code != 400 || calls != 1 {
+		t.Fatal("unsupported Gemini 4 reasoning sent upstream", w.Code, calls)
+	}
+}
+
+func TestExpressBlockedPromptIsNotRetried(t *testing.T) {
+	cfg := Defaults()
+	cfg.APIKey = "client"
+	cfg.Backends = []Backend{{ID: "vertex", Kind: "builtin", URL: builtinBase("vertex"), ProviderKey: "key", Enabled: true}}
+	cfg.EngineSettings = map[string]engineSettings{"vertex": {MaxRetries: 2, RequestTimeoutSeconds: 10}}
+	app := NewServer("", cfg)
+	calls := 0
+	app.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 200, Header: http.Header{"Retry-After": {"0"}}, Body: io.NopCloser(strings.NewReader("data: {\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}\n\n"))}, nil
+	})
+	w := accountTestCall(app, "POST", "/v1/chat/completions", "client", `{"model":"vertex/gemini-test","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+	if calls != 1 || w.Code != 403 {
+		t.Fatal("blocked prompt treated as disconnect", calls, w.Code, w.Body.String())
+	}
+}

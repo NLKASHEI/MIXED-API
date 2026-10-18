@@ -226,9 +226,15 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 		if json.Unmarshal(raw, &n) != nil || n < 1 || n > 8 {
 			return nil, errors.New("n 必须是 1–8 的整数")
 		}
+		if strings.HasPrefix(model, "gemini-4-argon") && n != 1 {
+			return nil, errors.New("Gemini 4 supports one candidate per request")
+		}
 	}
 	for input, output := range map[string]string{"temperature": "temperature", "top_p": "topP", "top_k": "topK", "max_tokens": "maxOutputTokens", "max_completion_tokens": "maxOutputTokens", "n": "candidateCount", "seed": "seed"} {
 		if v, ok := payload[input]; ok {
+			if input == "n" && strings.HasPrefix(model, "gemini-4-argon") {
+				continue
+			}
 			config[output] = v
 		}
 	}
@@ -262,6 +268,9 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 		json.Unmarshal(raw, &effort)
 		switch effort {
 		case "low", "medium", "high", "minimal":
+			if strings.HasPrefix(model, "gemini-4-argon") && effort == "minimal" {
+				return nil, errors.New("Gemini 4 仅支持 low、medium、high 思考级别")
+			}
 			config["thinkingConfig"] = map[string]any{"thinkingLevel": strings.ToUpper(effort), "includeThoughts": true}
 		default:
 			return nil, errors.New("reasoning_effort 不支持")
@@ -340,6 +349,9 @@ func expressPayload(payload map[string]json.RawMessage, model string) (map[strin
 }
 
 func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend, publicModel, model string, payload map[string]json.RawMessage) {
+	if s.resumableExpress(w, r, b, publicModel, model, payload) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.sourceSettings("vertex").RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
@@ -362,6 +374,9 @@ func (s *Server) serveExpress(w http.ResponseWriter, r *http.Request, b Backend,
 			return
 		}
 		modelBase = builtinBase("vertex") + "/v1/projects/" + b.ExpressProject + "/locations/" + b.ExpressLocation + "/publishers/google/models/"
+	}
+	if strings.HasPrefix(model, "gemini-4-argon") {
+		modelBase = strings.Replace(modelBase, "/v1/", "/v1beta1/", 1)
 	}
 	s.serveGeminiHTTP(w, r, b, publicModel, model, payload, modelBase, map[string]string{"x-goog-api-key": b.ProviderKey})
 }
@@ -397,7 +412,11 @@ func (s *Server) serveGeminiHTTP(w http.ResponseWriter, r *http.Request, b Backe
 	endpoint := modelBase + url.PathEscape(baseModel) + ":" + action
 	var resp *http.Response
 	if b.ID == "vertex" {
-		resp, err = s.expressJSON(r, endpoint, body, headers)
+		expected := 1
+		if raw, ok := payload["n"]; ok {
+			json.Unmarshal(raw, &expected)
+		}
+		resp, err = s.expressJSON(r, endpoint, body, headers, stream, expected)
 	} else {
 		resp, err = providerJSON(s.client, r, endpoint, body, headers)
 	}

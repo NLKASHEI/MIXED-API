@@ -38,6 +38,7 @@ func main() {
 		startupFailure(gui, "无法读取或保存配置，请检查配置文件格式和目录写入权限。")
 	}
 	server := gateway.NewServer(*file, cfg)
+	defer server.CloseResumable()
 	if runtime.GOOS == "windows" && !*noBrowser {
 		sessions := desktop.NewGoogleSessions(filepath.Join(filepath.Dir(*file), "browser-extension"))
 		server.SetGoogleSessions(sessions)

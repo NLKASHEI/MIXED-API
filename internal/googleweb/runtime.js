@@ -19,6 +19,8 @@
   let headers = {}, template = null, graphURL = '', snapshot = null, service = null, captcha = null, observedSuccess = false;
   const requests = new Map();
   let bootstrap=null, initialized=false, invalidated=false, initializationMessage='';
+  let accountChecked=false,accountChecking=false,authenticated=false,accountMessage='',sessionRejected=false;
+  const existingAccount=()=>/(?:^|;\s*)(?:SAPISID|__Secure-1PAPISID|__Secure-3PAPISID)=/.test(document.cookie||'');
   const promptValue=e=>e.isContentEditable?e.textContent:e.value;
   const visible=selector=>[...document.querySelectorAll(selector)].filter(e=>{
     if(!e.getClientRects().length||e.closest?.('[aria-hidden="true"],[hidden],[inert]'))return false;
@@ -32,7 +34,7 @@
       if(document.activeElement&&e.contains?.(document.activeElement))return true;
       // Older consent widgets can omit aria-modal. Keep those user-owned,
       // while ordinary Cloud help/navigation panels must not block the source.
-      return /登录|登入|条款|同意|验证|sign.?in|terms|consent|verif|captcha/i.test(e.getAttribute?.('aria-label')||e.textContent||'');
+      return false;
     });
   }
   const officialStudio=()=>!aps||/^\/(agent-platform|vertex-ai)\/studio\/multimodal(?:\/|$)/.test(new URL(location.href).pathname);
@@ -64,6 +66,7 @@
     if(ais && kind!=='GenerateContent')return false;
     if(aps){try{if(kind!=='aps'||JSON.parse(body).operationName!=='StreamGenerateContentAnonymous')return false}catch(_){return false}}
     initialized=ais?Boolean(snapshot && service && headers['x-goog-api-key']):Boolean(template && captcha);
+    sessionRejected=!initialized;
     initializationMessage=initialized?'':'页面初始化未取得完整会话，请重新打开来源页面';
     cancelInitialize(true);return true;
   }
@@ -97,7 +100,7 @@
   }
   function observe(kind,status,text) {
     if(!kind)return;
-    initialized=false;
+    initialized=false;observedSuccess=false;sessionRejected=true;
     if(status===401||status===403){observedSuccess=false;return}
     if(status!==200 || text.length>8*1024*1024)return;
     try {
@@ -109,6 +112,7 @@
       else if(kind==='GenerateContent') observedSuccess=Array.isArray(root?.[0])&&root[0].some(f=>f?.[0]?.some(c=>c?.[1]>0))&&root.slice(1).every(s=>!s?.[0]);
       else {const frames=kind==='ProxyUnaryCall'?[root]:root?.[0];observedSuccess=Array.isArray(frames)&&frames.some(f=>finished(JSON.parse(typeof f?.[0]==='string'?f[0]:atob(f?.[2]||''))))&&(kind==='ProxyUnaryCall'||root.slice(1).every(s=>!s?.[0]))}
     }catch(_){observedSuccess=false}
+    sessionRejected=!observedSuccess;
   }
   async function observeFetch(kind,response) {
     if(!kind)return;
@@ -167,27 +171,52 @@
     }
   }
   const timer=setInterval(discover,100);addEventListener('pagehide',()=>{clearInterval(timer);for(const s of requests.values())s.controller.abort()},{once:true});
+  function checkExistingAccount(){
+    if(!ais||!existingAccount()||accountChecking||accountChecked)return;
+    accountChecking=true;
+    // Public application key also observed in upstream model_discovery.py.
+    // The user's authorization stays in this official browser document.
+    headers['x-goog-api-key']||='AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs';
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);
+    (async()=>{
+      const response=await originalFetch(rpcHost+rpcPath+'ListModels',{method:'POST',headers:await authHeaders(),body:'[]',credentials:'include',redirect:'error',signal:controller.signal});
+      if(response.status===401){sessionRejected=true;accountMessage='浏览器现有账号授权已失效，请在官方页面重新登录';return}
+      if(response.status===403){sessionRejected=true;accountMessage='现有账号的模型目录被拒绝（403），请检查地区与账号权限；这不是待处理人机验证';return}
+      if(!response.ok){accountMessage='现有账号检查返回 HTTP '+response.status+'，请检查浏览器网络与官方页面';return}
+      const reader=response.body.getReader(),chunks=[];let size=0;try{for(;;){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>8*1024*1024){await reader.cancel();throw Error('large_catalog')}chunks.push(value)}}finally{reader.releaseLock()}
+      const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}const raw=new TextDecoder().decode(bytes);
+      const value=parseSparse(raw);
+      authenticated=Array.isArray(value?.[0])&&value[0].some(row=>typeof row?.[0]==='string'&&Array.isArray(row?.[7]));
+      if(!authenticated)accountMessage='官方账号检查未取得有效模型目录，请检查页面权限';
+    })().catch(()=>{accountMessage='已检测浏览器现有账号，但目录检查连接失败；请检查浏览器代理或刷新页面'}).finally(()=>{clearTimeout(timeout);accountChecking=false;accountChecked=true});
+  }
   function state() {
-    discover();
+    discover();checkExistingAccount();
     if(invalidated)return {status:'waiting',message:initializationMessage};
     if(bootstrap)return {status:'initializing',message:'正在连接来源会话'};
-    const ready=(observedSuccess||initialized) && (ais ? Boolean(snapshot && service && headers['x-goog-api-key']) : Boolean(template && captcha));
-    let message=ready?'会话已连接，尚未验证实际推理':initializationMessage;
+    const ready=ais?Boolean(!sessionRejected&&snapshot&&service&&headers['x-goog-api-key']):Boolean((observedSuccess||initialized)&&template&&captcha);
+    let message=ready?'会话已连接，尚未验证实际推理':initializationMessage||accountMessage;
     const fields=promptFields(),dialogs=blockingDialogs();
     const empty=fields.length===1&&!(promptValue(fields[0])||'').trim();
-    const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&(ais?empty&&!!snapshot&&runButtons().length===1:officialStudio()&&!!window.grecaptcha?.enterprise?.execute);
-    if(!message)message=dialogs.length?'官方页面检测到 '+dialogs.length+' 个阻塞窗口，请本人处理该窗口中的登录、条款或验证提示':ais&&fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?'正在等待 AIS 聊天页面和验证函数加载':!officialStudio()?'无头V：请进入 Agent Studio 的多模态页面':!window.grecaptcha?.enterprise?.execute?'无头V：等待官方 reCAPTCHA 脚本加载，请检查浏览器代理':'无头V：正在检查官方页面状态';
-    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key'],input:fields.length===1,blocking_dialog:dialogs.length>0}:{official_page:officialStudio(),verification_script:!!window.grecaptcha?.enterprise?.execute,blocking_dialog:dialogs.length>0,template:!!template,verification:!!captcha},version:'0.4.4'};
+    const canInitialize=!ready&&!initializationMessage&&!requests.size&&!dialogs.length&&(ais?empty&&!!snapshot&&runButtons().length===1:officialStudio());
+    if(!message)message=dialogs.length?'官方页面检测到 '+dialogs.length+' 个阻塞窗口，请本人处理该窗口中的登录、条款或验证提示':ais&&fields.length===1&&!empty?'请自行保存或清空官方页面的草稿，软件会继续连接':canInitialize?'正在自动连接会话':ais?(authenticated?'已登录；正在准备 AIS 请求协议（验证函数'+(snapshot?'已找到':'加载中')+'，输入框 '+fields.length+' 个，运行按钮 '+runButtons().length+' 个）':accountChecking?'已检测浏览器现有账号，正在检查会话':'正在加载 AIS 请求协议，不代表需要重新登录或处理人机验证'):!officialStudio()?'无头V：请进入 Agent Studio 的多模态页面':!window.grecaptcha?.enterprise?.execute?'无头V：等待官方 reCAPTCHA 脚本加载，请检查浏览器代理':'无头V：正在检查官方页面状态';
+    return {status:ready?'ready':'waiting',message,can_initialize:canInitialize,checks:ais?{authenticated,snapshot:!!snapshot,service:!!service,headers:!!headers['x-goog-api-key'],input:fields.length===1,blocking_dialog:dialogs.length>0}:{official_page:officialStudio(),verification_script:!!window.grecaptcha?.enterprise?.execute,blocking_dialog:dialogs.length>0,template:!!template,verification:!!captcha},version:'0.4.5'};
   }
   function initializeAPS(){
-    const enterprise=window.grecaptcha?.enterprise;
-    if(!enterprise?.execute)return unavailable('无头V：官方验证脚本尚未加载，请检查浏览器代理能否访问 Google / reCAPTCHA，再刷新来源页面');
+    const sdk=window.grecaptcha?.enterprise;
+    const verification=sdk?.execute?Promise.resolve(sdk):new Promise((resolve,reject)=>{
+      const script=document.createElement('script');script.async=true;
+      script.src='https://www.google.com/recaptcha/enterprise.js?render='+encodeURIComponent(apsSiteKey);
+      script.onload=()=>window.grecaptcha?.enterprise?.execute?resolve(window.grecaptcha.enterprise):reject(Error('verification_script'));
+      script.onerror=()=>reject(Error('verification_script'));
+      document.head.append(script);
+    });
     // The signed-in UI sends project operations. It does not need to send an
     // anonymous generation just to construct the anonymous protocol envelope.
-    const execute=enterprise.execute.bind(enterprise);
+    let execute;
     const pending={timer:setTimeout(()=>{initializationMessage='无头V：官方验证接口超时，请检查来源页面及浏览器代理';cancelInitialize()},30000)};
     bootstrap=pending;
-    Promise.resolve().then(()=>typeof enterprise.ready==='function'?new Promise(resolve=>enterprise.ready(resolve)):undefined).then(()=>{
+    verification.then(enterprise=>{execute=enterprise.execute.bind(enterprise);return typeof enterprise.ready==='function'?new Promise(resolve=>enterprise.ready(resolve)):undefined}).then(()=>{
       if(bootstrap!==pending)throw Error('cancelled');return execute(apsSiteKey,{});
     }).then(token=>{
       if(bootstrap!==pending)return;
@@ -198,7 +227,7 @@
       template={operationName:'StreamGenerateContentAnonymous',querySignature:apsQuery,requestContext:{clientVersion:'boq_cloud-boq-clientweb-vertexaistudio_20260630.00_p0',pagePath:'/agent-platform/studio/multimodal',pageViewId,trackingId:'d'+pageViewId,clientSessionId:crypto.randomUUID().toUpperCase(),backendOverrides:{},selectedPurview:{},jurisdiction:'global',localizationData:{locale:typeof navigator==='object'?navigator.language:'en',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}}};
       graphURL=graphHost+graphPath+'?key='+apsPublicKey+'&prettyPrint=false';
       initialized=true;initializationMessage='';cancelInitialize(true);
-    }).catch(error=>{if(bootstrap!==pending)return;cancelInitialize(true);initializationMessage=/invalid site key|not loaded|invalid.*client/i.test(String(error?.message))?'无头V：官方页面未注册匿名验证 site key，请重新打开来源页面；此错误发生在验证初始化，尚未发送生成请求':'无头V：官方验证接口未返回有效结果，请查看来源页面验证提示或浏览器代理；尚未发送生成请求'});
+    }).catch(error=>{if(bootstrap!==pending)return;cancelInitialize(true);initializationMessage=error?.message==='verification_script'?'无头V：官方验证脚本加载失败，请检查浏览器代理或页面网络限制；不是等待本人处理验证':/invalid site key|not loaded|invalid.*client/i.test(String(error?.message))?'无头V：官方页面未注册匿名验证 site key，请重新打开来源页面；此错误发生在验证初始化，尚未发送生成请求':'无头V：官方验证接口未返回有效结果，请查看来源页面验证提示或浏览器代理；尚未发送生成请求'});
     return state();
   }
   function initialize() {
@@ -245,7 +274,7 @@
   async function authHeaders() {
     const h={...headers,'content-type':'application/json+protobuf'};
     const cookies=Object.fromEntries(document.cookie.split(/;\s*/).map(v=>{const i=v.indexOf('=');return [v.slice(0,i),v.slice(i+1)]}));
-    const sid=cookies.SAPISID || cookies['__Secure-3PAPISID'];
+    const sid=cookies.SAPISID || cookies['__Secure-1PAPISID'] || cookies['__Secure-3PAPISID'];
     if (sid) {const now=Math.floor(Date.now()/1000);const bytes=await crypto.subtle.digest('SHA-1',new TextEncoder().encode(now+' '+sid+' '+location.origin));h.authorization='SAPISIDHASH '+now+'_'+[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('')}
     return h;
   }
@@ -279,7 +308,7 @@
       (async()=>{try{
         const q=await request(op);if(s.controller.signal.aborted)throw Error('cancelled');s.preparing=false;
         const response=await originalFetch(q.url,{method:'POST',headers:q.headers,body:q.body,credentials:q.credentials||'include',redirect:'error',signal:s.controller.signal});
-        s.status=response.status;if(s.status===401||s.status===403){observedSuccess=false;initialized=false;initializationMessage="来源拒绝请求，请检查本人授权与权限";}for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
+        s.status=response.status;if(s.status===401||s.status===403){sessionRejected=true;observedSuccess=false;initialized=false;initializationMessage="来源拒绝请求，请检查本人授权与权限";}for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)s.headers[k]=v}
         if(!response.body)return;
         const reader=response.body.getReader();
         for(;;){const {value,done}=await reader.read();if(done)break;

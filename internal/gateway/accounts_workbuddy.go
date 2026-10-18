@@ -19,6 +19,16 @@ func workbuddyAnonymousHeaders(h http.Header) {
 }
 func workbuddyIdentity(c accountCredential) map[string]string {
 	h := map[string]string{"X-Product-Code": "codebuddy"}
+	if c.Domain == "" {
+		id := c.Site
+		if id == "" {
+			id = "workbuddy"
+		}
+		if isWorkBuddyAccount(id) {
+			u, _ := url.Parse(accountEndpoint(id))
+			c.Domain = u.Hostname()
+		}
+	}
 	for key, value := range map[string]string{"X-Domain": c.Domain, "X-User-Id": c.UserID, "X-Enterprise-Id": c.EnterpriseID, "X-Tenant-Id": c.EnterpriseID, "X-Department-Info": c.Department} {
 		if value != "" {
 			h[key] = value
@@ -63,8 +73,9 @@ func workbuddyTokens(data map[string]any, c accountCredential) (accountCredentia
 	}
 	return c, nil
 }
-func (s *Server) workbuddyAccount(ctx context.Context, state string, c accountCredential) (accountCredential, error) {
-	r, _ := http.NewRequestWithContext(ctx, "GET", "https://copilot.tencent.com/v2/plugin/login/account?state="+url.QueryEscape(state), nil)
+func (s *Server) workbuddyAccount(ctx context.Context, id, state string, c accountCredential) (accountCredential, error) {
+	c.Site = id
+	r, _ := http.NewRequestWithContext(ctx, "GET", accountEndpoint(id)+"/plugin/login/account?state="+url.QueryEscape(state), nil)
 	workbuddyAnonymousHeaders(r.Header)
 	r.Header.Del("X-No-Authorization")
 	r.Header.Set("Authorization", "Bearer "+c.AccessToken)

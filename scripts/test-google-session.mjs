@@ -109,7 +109,7 @@ signedSession.cancel(id);
 // Cloud Console has visible nonmodal panels with role=dialog. Anonymous
 // verification does not type in the UI and must not depend on a chat input.
 let blocking=false,verificationRuns=0;
-const nonModal={getClientRects:()=>[1],getAttribute:()=>null,closest:()=>null,contains:()=>false,tagName:'DIV',textContent:'Help panel'};
+const nonModal={getClientRects:()=>[1],getAttribute:()=>null,closest:()=>null,contains:()=>false,tagName:'DIV',textContent:'Verification help panel'};
 const actualModal={...nonModal,getAttribute:name=>name==='aria-modal'?'true':null};
 const panelWindow={grecaptcha:{enterprise:{execute:async()=>{verificationRuns++;return 'proof'}}},fetch:async()=>{throw Error('unexpected generation')}};
 runInNewContext(script,{...globals,window:panelWindow,XMLHttpRequest:class extends FakeXHR{},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:{cookie:'',querySelectorAll:s=>s.includes('aria-modal')?[nonModal,...(blocking?[actualModal]:[])]:[]}});
@@ -119,6 +119,28 @@ blocking=true;assert.equal(panelSession.state().can_initialize,false,'real modal
 assert.equal(panelSession.initialize().status,'waiting');assert.equal(verificationRuns,0);
 blocking=false;panelSession.initialize();await delay(30);
 assert.equal(panelSession.state().status,'ready');assert.equal(verificationRuns,1);
+// Signed-in Agent Studio may never load the anonymous verification library.
+// Load the ordinary official SDK instead of waiting for a human challenge.
+let loadedScript;
+const lazyWindow={fetch:async()=>{throw Error('unexpected generation')}};
+const lazyDocument={cookie:'',querySelectorAll:()=>[],createElement:tag=>({tagName:tag}),head:{append(node){loadedScript=node.src;lazyWindow.grecaptcha={enterprise:{execute:async()=> 'loaded-proof'}};node.onload()}}};
+runInNewContext(script,{...globals,window:lazyWindow,XMLHttpRequest:class extends FakeXHR{},location:{origin:'https://console.cloud.google.com',href:'https://console.cloud.google.com/agent-platform/studio/multimodal'},document:lazyDocument});
+const lazySession=lazyWindow.__mixedGoogleWeb;
+assert.equal(lazySession.state().can_initialize,true,'signed-in page waited forever for a script it never loads');
+lazySession.initialize();await delay(30);assert.equal(lazySession.state().status,'ready');
+assert(loadedScript.startsWith('https://www.google.com/recaptcha/enterprise.js?render='));
+// An already signed-in browser can verify its account with ListModels and
+// reuse protocol material; no forced logout, challenge or test generation.
+const existingCalls=[];
+const existingWindow={default_MakerSuite:{async native(service,hash){/* Promise .snapshot) */return 'proof'}},fetch:async(url,options)=>{existingCalls.push({url,options});return new Response('[[["models/gemini-test",null,null,null,null,null,null,["generateContent"]]]]')}};
+runInNewContext(script,{...globals,window:existingWindow,XMLHttpRequest:class extends FakeXHR{},document:{cookie:'SAPISID=existing-private-session',querySelectorAll:()=>[]}});
+const existingSession=existingWindow.__mixedGoogleWeb;
+existingSession.state();await delay(30);
+assert.equal(existingSession.state().checks.authenticated,true,'existing account was left waiting for human verification');
+await existingWindow.default_MakerSuite.native({},'captured');
+assert.equal(existingSession.state().status,'ready','existing protocol material required a second bootstrap');
+assert.equal(existingCalls.length,1);assert(existingCalls[0].url.endsWith('/ListModels'));
+assert(!JSON.stringify(existingSession.state()).includes('existing-private-session'));
 let releaseProof,lateSent=0;
 const proofWait=new Promise(resolve=>releaseProof=resolve);
 const lateWindow={default_MakerSuite:{async native(service,hash){/* yield .snapshot({ content */await proofWait;return 'proof'}},fetch:async()=>{lateSent++;return new Response(valid)}};

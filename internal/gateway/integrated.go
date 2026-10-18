@@ -26,13 +26,13 @@ func (s *Server) integratedModels(ctx context.Context, b Backend) ([]string, err
 			return nil, errors.New("请填写 Express API Key")
 		}
 		if b.ID == "workbuddy" {
-			if _, err := s.freshCredential(ctx, b.ID, ""); err != nil {
+			if _, err := s.freshCredential(ctx, workbuddyAccountID(b), ""); err != nil {
 				return nil, err
 			}
 		}
 		var catalogs map[string][]string
 		_ = json.Unmarshal(builtinModelsJSON, &catalogs)
-		return catalogs[b.ID], nil
+		return catalogs[workbuddyAccountID(b)], nil
 	}
 	if b.ID == "opencode" {
 		r, err := http.NewRequestWithContext(ctx, "GET", builtinBase(b.ID)+"/models", nil)

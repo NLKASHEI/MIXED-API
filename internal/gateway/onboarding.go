@@ -28,7 +28,7 @@ func (s *Server) activateBackend(ctx context.Context, id string) error {
 			return errors.New("请填写 Express API Key")
 		}
 		if id == "workbuddy" || id == "codex" {
-			if _, err := s.credential(id); err != nil {
+			if _, err := s.credential(workbuddyAccountID(b)); err != nil {
 				return err
 			}
 		}

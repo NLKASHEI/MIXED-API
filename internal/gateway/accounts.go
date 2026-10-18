@@ -14,6 +14,7 @@ import (
 )
 
 type accountCredential struct {
+	Site         string `json:"site,omitempty"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	AccountID    string `json:"account_id,omitempty"`
@@ -25,6 +26,7 @@ type accountCredential struct {
 	NeedsLogin   bool   `json:"needs_login,omitempty"`
 }
 type loginAttempt struct {
+	Site    string `json:"site,omitempty"`
 	Status  string `json:"status"`
 	URL     string `json:"url,omitempty"`
 	Code    string `json:"code,omitempty"`
@@ -32,7 +34,7 @@ type loginAttempt struct {
 	cancel  context.CancelFunc
 }
 
-func accountProvider(id string) bool { return id == "workbuddy" || id == "codex" }
+func accountProvider(id string) bool { return isWorkBuddyAccount(id) || id == "codex" }
 func validCredential(c accountCredential) bool {
 	if strings.TrimSpace(c.AccessToken) == "" {
 		return false
@@ -68,12 +70,18 @@ func (s *Server) credential(id string) (accountCredential, error) {
 		return accountCredential{}, err
 	}
 	var c accountCredential
-	if json.Unmarshal(raw, &c) != nil || !validCredential(c) || c.NeedsLogin {
+	if json.Unmarshal(raw, &c) != nil || !validCredential(c) || c.NeedsLogin || isWorkBuddyAccount(id) && c.Site != id && !(id == "workbuddy" && c.Site == "") {
 		return c, errors.New("账号凭证无效，请重新授权")
 	}
 	return c, nil
 }
 func (s *Server) storeCredential(id string, c accountCredential) error {
+	if isWorkBuddyAccount(id) {
+		if c.Site != "" && c.Site != id {
+			return errors.New("账号所属站点不匹配")
+		}
+		c.Site = id
+	}
 	if !accountProvider(id) || !validCredential(c) {
 		return errors.New("账号凭证无效")
 	}
@@ -130,12 +138,17 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		s.handleGoogleAccount(w, r, id, action)
 		return
 	}
-	if !accountProvider(id) {
+	if id != "workbuddy" && id != "codex" {
 		jsonError(w, 404, "来源没有此账号接口")
 		return
 	}
+	id = s.activeAccountID(id)
 	if r.Method == "GET" && action == "" {
-		jsonResult(w, 200, s.accountState(id))
+		state := s.accountState(id)
+		if isWorkBuddyAccount(id) {
+			state.Site = id
+		}
+		jsonResult(w, 200, state)
 		return
 	}
 	if r.Method == "POST" && action == "login" {
@@ -143,6 +156,9 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			jsonError(w, 400, err.Error())
 			return
+		}
+		if isWorkBuddyAccount(id) {
+			state.Site = id
 		}
 		jsonResult(w, 200, state)
 		return
@@ -193,12 +209,12 @@ func (s *Server) beginAccountLogin(ctx context.Context, id string) (loginAttempt
 	if id == "codex" {
 		return s.beginCodexLogin(ctx)
 	}
-	if id != "workbuddy" {
+	if !isWorkBuddyAccount(id) {
 		return loginAttempt{}, errors.New("该来源的内置授权流程尚未完成")
 	}
 	probe, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	r, _ := http.NewRequestWithContext(probe, "POST", "https://copilot.tencent.com/v2/plugin/auth/state?platform=workbuddy", strings.NewReader("{}"))
+	r, _ := http.NewRequestWithContext(probe, "POST", accountEndpoint(id)+"/plugin/auth/state?platform="+workbuddyPlatform(id), strings.NewReader("{}"))
 	r.Header.Set("Content-Type", "application/json")
 	workbuddyAnonymousHeaders(r.Header)
 	resp, err := providerDo(s.client, r)
@@ -216,7 +232,7 @@ func (s *Server) beginAccountLogin(ctx context.Context, id string) (loginAttempt
 	link, _ := data["authUrl"].(string)
 	state, _ := data["state"].(string)
 	u, err := url.Parse(link)
-	if err != nil || u.User != nil || u.Scheme != "https" || (u.Host != "copilot.tencent.com" && u.Host != "www.codebuddy.cn") || state == "" {
+	if err != nil || u.User != nil || u.Scheme != "https" || !workbuddyAuthHost(id, u.Host) || state == "" {
 		return loginAttempt{}, errors.New("WorkBuddy 返回无效授权地址")
 	}
 	flowCtx, stop := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -231,7 +247,7 @@ func (s *Server) beginAccountLogin(ctx context.Context, id string) (loginAttempt
 	s.logins[id] = flow
 	result := loginAttempt{Status: flow.Status, URL: flow.URL, Message: flow.Message}
 	s.accountMu.Unlock()
-	go s.pollWorkBuddyLogin(flowCtx, flow, state)
+	go s.pollWorkBuddyLogin(flowCtx, id, flow, state)
 	return result, nil
 }
 
@@ -271,9 +287,9 @@ func (s *Server) finishLogin(id string, flow *loginAttempt, c accountCredential,
 		flow.Message = "已授权"
 	}
 }
-func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, state string) {
+func (s *Server) pollWorkBuddyLogin(ctx context.Context, id string, flow *loginAttempt, state string) {
 	for {
-		r, _ := http.NewRequestWithContext(ctx, "GET", "https://copilot.tencent.com/v2/plugin/auth/token?state="+url.QueryEscape(state), nil)
+		r, _ := http.NewRequestWithContext(ctx, "GET", accountEndpoint(id)+"/plugin/auth/token?state="+url.QueryEscape(state), nil)
 		workbuddyAnonymousHeaders(r.Header)
 		resp, err := providerDo(s.client, r)
 		if err == nil {
@@ -284,9 +300,9 @@ func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, sta
 				if token != "" {
 					c, parseErr := workbuddyTokens(data, accountCredential{})
 					if parseErr == nil {
-						c, parseErr = s.workbuddyAccount(ctx, state, c)
+						c, parseErr = s.workbuddyAccount(ctx, id, state, c)
 						if parseErr == nil {
-							s.finishLogin("workbuddy", flow, c, nil)
+							s.finishLogin(id, flow, c, nil)
 							return
 						}
 					}
@@ -295,7 +311,7 @@ func (s *Server) pollWorkBuddyLogin(ctx context.Context, flow *loginAttempt, sta
 		}
 		select {
 		case <-ctx.Done():
-			s.finishLogin("workbuddy", flow, accountCredential{}, ctx.Err())
+			s.finishLogin(id, flow, accountCredential{}, ctx.Err())
 			return
 		case <-time.After(2 * time.Second):
 		}

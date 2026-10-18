@@ -8,13 +8,15 @@ import (
 )
 
 type engineSettings struct {
+	ResumableEnabled      bool `json:"resumable_enabled,omitempty"`
+	ResumableTTLSeconds   int  `json:"resumable_ttl_seconds,omitempty"`
 	MaxRetries            int  `json:"max_retries"`
 	RequestTimeoutSeconds int  `json:"request_timeout_seconds"`
 	AggregateStream       bool `json:"aggregate_stream"`
 }
 
 func (e engineSettings) valid() bool {
-	return e.MaxRetries >= 0 && e.MaxRetries <= 10 && e.RequestTimeoutSeconds >= 10 && e.RequestTimeoutSeconds <= 600
+	return (e.ResumableTTLSeconds == 0 || e.ResumableTTLSeconds >= 30 && e.ResumableTTLSeconds <= 1800) && e.MaxRetries >= 0 && e.MaxRetries <= 10 && e.RequestTimeoutSeconds >= 10 && e.RequestTimeoutSeconds <= 600
 }
 func (s *Server) sourceSettings(id string) engineSettings {
 	s.mu.RLock()
@@ -45,7 +47,7 @@ func (s *Server) handleEngineSettings(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var value engineSettings
 	var extra any
-	if dec.Decode(&value) != nil || !value.valid() || id == "vertex" && value.AggregateStream || dec.Decode(&extra) != io.EOF {
+	if dec.Decode(&value) != nil || !value.valid() || id != "vertex" && (value.ResumableEnabled || value.ResumableTTLSeconds != 0) || dec.Decode(&extra) != io.EOF {
 		jsonError(w, 400, "重试需为 0–10，超时需为 10–600 秒")
 		return
 	}

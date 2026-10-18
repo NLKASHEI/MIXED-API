@@ -15,6 +15,7 @@ import (
 )
 
 type Backend struct {
+	WorkBuddyRegion string `json:"workbuddy_region,omitempty"`
 	ExpressProject  string `json:"express_project,omitempty"`
 	ExpressLocation string `json:"express_location,omitempty"`
 	ID              string `json:"id"`
@@ -87,6 +88,9 @@ func Validate(c Config) error {
 			return fmt.Errorf("duplicate backend id %q", b.ID)
 		}
 		ids[b.ID] = true
+		if b.WorkBuddyRegion != "" && (b.ID != "workbuddy" || b.WorkBuddyRegion != "domestic" && b.WorkBuddyRegion != "global" && b.WorkBuddyRegion != "intl") {
+			return errors.New("WorkBuddy 站点只能选择 domestic、intl 或 global")
+		}
 		if b.ExpressProject != "" || b.ExpressLocation != "" {
 			if b.ID != "vertex" || b.Kind != "builtin" || !expressResourcePart.MatchString(b.ExpressProject) || !expressResourcePart.MatchString(b.ExpressLocation) {
 				return errors.New("快速V的项目 ID 和区域须同时填写，仅限字母、数字和连字符")
@@ -112,7 +116,7 @@ func Validate(c Config) error {
 		}
 	}
 	for id, settings := range c.EngineSettings {
-		if id != "aps" && id != "vertex" || !settings.valid() || id == "vertex" && settings.AggregateStream {
+		if id != "aps" && id != "vertex" || !settings.valid() || id != "vertex" && (settings.ResumableEnabled || settings.ResumableTTLSeconds != 0) {
 			return errors.New("invalid native source settings")
 		}
 	}

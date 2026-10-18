@@ -18,11 +18,11 @@ f.calls[0].resolve({max_retries:9,request_timeout_seconds:500,aggregate_stream:t
 assert.equal(f.$('#engine-retries').value,'');assert(f.$('#engine-settings-form').classList.contains('hide'));assert(!f.$('#engine-source').disabled);
 p=f.load();f.calls[1].resolve({max_retries:2,request_timeout_seconds:300,aggregate_stream:false});await p;
 assert.equal(f.calls[1].path,'/api/engine-settings/vertex');assert.equal(f.$('#engine-retries').value,2);
-assert(f.$('#engine-aggregate-label').classList.contains('hide'));
+assert(!f.$('#engine-aggregate-label').classList.contains('hide'));assert(!f.$('#engine-resume-fields').classList.contains('hide'));
 p=f.load();f.calls[2].reject(Error('fixture failure'));await p;assert(!f.$('#engine-source').disabled);
 f=fixture();f.$('#engine-source').value='aps';f.$('#engine-retries').value='4';f.$('#engine-timeout').value='120';f.$('#engine-aggregate').checked=true;
 p=f.save();f.$('#engine-source').value='vertex';f.$('#engine-retries').value='2';
 assert.equal(f.calls[0].path,'/api/engine-settings/aps');assert.equal(JSON.stringify(f.calls[0].body),JSON.stringify({max_retries:4,request_timeout_seconds:120,aggregate_stream:true}));
 f.calls[0].resolve({saved:true});await p;
-p=f.save();assert.equal(f.calls[1].path,'/api/engine-settings/vertex');assert(!f.calls[1].body.aggregate_stream);f.calls[1].resolve({saved:true});await p;
+p=f.save();assert.equal(f.calls[1].path,'/api/engine-settings/vertex');assert.equal(f.calls[1].body.aggregate_stream,true);f.calls[1].resolve({saved:true});await p;
 console.log('Engine settings retain their source during delayed reads and saves.');

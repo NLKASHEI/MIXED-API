@@ -149,15 +149,15 @@ func (s *Server) refreshAccount(ctx context.Context, id string, old accountCrede
 func (s *Server) exchangeRefresh(ctx context.Context, id string, old accountCredential) (accountCredential, bool, error) {
 	endpoint := codexIssuer + "/oauth/token"
 	body := map[string]string{"grant_type": "refresh_token", "client_id": codexOAuthClient, "refresh_token": old.RefreshToken}
-	if id == "workbuddy" {
-		endpoint = "https://copilot.tencent.com/v2/plugin/auth/token/refresh"
+	if isWorkBuddyAccount(id) {
+		endpoint = accountEndpoint(id) + "/plugin/auth/token/refresh"
 		body = map[string]string{}
 	}
 	raw, _ := json.Marshal(body)
 	r, _ := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(string(raw)))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("User-Agent", "MIXED-API/"+BuildVersion)
-	if id == "workbuddy" {
+	if isWorkBuddyAccount(id) {
 		r.Header.Set("X-Refresh-Token", old.RefreshToken)
 		r.Header.Set("X-Auth-Refresh-Source", "plugin")
 		r.Header.Set("X-Product-Code", "codebuddy")
@@ -196,7 +196,7 @@ func (s *Server) exchangeRefresh(ctx context.Context, id string, old accountCred
 	}
 	next := old
 	next.Expires, next.NeedsLogin = 0, false
-	if id == "workbuddy" {
+	if isWorkBuddyAccount(id) {
 		values, err := decodeAccountResponse(strings.NewReader(string(data)))
 		if err != nil {
 			return accountCredential{}, false, failure
@@ -244,14 +244,14 @@ func (s *Server) accountJSON(r *http.Request, id, path string, body any) (*http.
 		if id == "codex" {
 			headers["ChatGPT-Account-ID"] = c.AccountID
 		}
-		if id == "workbuddy" {
+		if isWorkBuddyAccount(id) {
 			for key, value := range workbuddyIdentity(c) {
 				headers[key] = value
 			}
 		}
 		var resp *http.Response
 		if body == nil {
-			request, buildErr := http.NewRequestWithContext(r.Context(), "GET", builtinBase(id)+path, nil)
+			request, buildErr := http.NewRequestWithContext(r.Context(), "GET", accountEndpoint(id)+path, nil)
 			if buildErr != nil {
 				return nil, buildErr
 			}
@@ -261,7 +261,7 @@ func (s *Server) accountJSON(r *http.Request, id, path string, body any) (*http.
 			request.Header.Set("Accept", "application/json")
 			resp, err = s.client.Do(request)
 		} else {
-			resp, err = providerJSON(s.client, r, builtinBase(id)+path, body, headers)
+			resp, err = providerJSON(s.client, r, accountEndpoint(id)+path, body, headers)
 		}
 		// Only an explicit pre-generation authentication rejection is replayable.
 		// A transport error or any started stream is returned without replay.

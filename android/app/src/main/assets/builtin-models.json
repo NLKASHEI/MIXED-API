@@ -1,5 +1,6 @@
 {
   "vertex": [
+    "gemini-4-argon",
     "gemini-3.8-flash",
     "gemini-3.7-flash",
     "gemini-3.6-flash",
@@ -36,5 +37,35 @@
     "hunyuan-2.0-thinking",
     "hunyuan-chat",
     "hunyuan-image-v3.0"
+  ],
+  "workbuddy-global": [
+    "auto",
+    "claude-3.7",
+    "claude-4.0",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "o4-mini",
+    "chat-1.0",
+    "enhance-1.0",
+    "completion-1.0",
+    "completion-1.2",
+    "nes-1.0",
+    "nes-1.1",
+    "nes-1.2",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "auto-chat",
+    "nes-v1-14b"
+  ],
+  "workbuddy-intl": [
+    "auto",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.3-codex",
+    "gemini-3.5-flash"
   ]
 }

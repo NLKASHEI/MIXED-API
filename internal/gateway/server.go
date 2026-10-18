@@ -27,6 +27,7 @@ var static embed.FS
 const maxBody = 32 << 20
 
 type Server struct {
+	resumes           resumeStore
 	mu                sync.RWMutex
 	cfg               Config
 	path              string
@@ -164,7 +165,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 401, "Invalid MIXED-API key")
 		return
 	}
+	r = r.WithContext(context.WithValue(r.Context(), resumeOwnerKey{}, resumeOwner(cfg.APIKey)))
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/v1/resumable/"):
+		s.handleResumable(w, r, cfg)
 	case r.URL.Path == "/v1/models" && r.Method == "GET":
 		s.listModels(w, r, cfg)
 	case (r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/audio/speech" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/embeddings" || r.URL.Path == "/v1/messages" || r.URL.Path == "/v1/messages/count_tokens") && r.Method == "POST":

@@ -20,7 +20,7 @@ func (s *Server) serveWorkBuddy(w http.ResponseWriter, r *http.Request, b Backen
 	body["model"] = model
 	stream, _ := body["stream"].(bool)
 	body["stream"] = true
-	resp, err := s.accountJSON(r, "workbuddy", "/chat/completions", body)
+	resp, err := s.accountJSON(r, workbuddyAccountID(b), "/chat/completions", body)
 	if err != nil {
 		writeAccountError(w, err)
 		return
