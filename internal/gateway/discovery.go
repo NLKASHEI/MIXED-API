@@ -10,20 +10,22 @@ import (
 )
 
 type catalogModel struct {
-	ID       string `json:"id"`
-	Object   string `json:"object"`
-	OwnedBy  string `json:"owned_by"`
-	Original string `json:"original_id"`
+	ID       string       `json:"id"`
+	Object   string       `json:"object"`
+	OwnedBy  string       `json:"owned_by"`
+	Original string       `json:"original_id"`
+	Access   *modelAccess `json:"access,omitempty"`
 }
 
 type backendDiscovery struct {
-	ID         string `json:"id"`
-	State      string `json:"state"`
-	Code       string `json:"code,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Next       string `json:"next"`
-	ModelCount int    `json:"model_count"`
-	DurationMs int64  `json:"duration_ms"`
+	Details    *RequestDetails `json:"details,omitempty"`
+	ID         string          `json:"id"`
+	State      string          `json:"state"`
+	Code       string          `json:"code,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	Next       string          `json:"next"`
+	ModelCount int             `json:"model_count"`
+	DurationMs int64           `json:"duration_ms"`
 	models     []catalogModel
 }
 
@@ -51,8 +53,18 @@ func (s *Server) discover(ctx context.Context, cfg Config) []backendDiscovery {
 	return results
 }
 
-func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
-	result := backendDiscovery{ID: b.ID, State: "disabled", Next: "启用来源后检查模型；Windows 可点击一键接入。"}
+func (s *Server) probeBackend(ctx context.Context, b Backend) (result backendDiscovery) {
+	detail := &requestDiagnostic{}
+	ctx = context.WithValue(ctx, diagnosticKey{}, detail)
+	defer func() {
+		detail.mu.Lock()
+		snapshot := detail.details
+		detail.mu.Unlock()
+		if snapshot.Target != "" {
+			result.Details = &snapshot
+		}
+	}()
+	result = backendDiscovery{ID: b.ID, State: "disabled", Next: "启用来源后检查模型；Windows 可点击一键接入。"}
 	if !b.Enabled {
 		return result
 	}
@@ -66,18 +78,24 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 		return result
 	}
 	var ids []string
-	if b.Kind == "codex_cli" {
-		probe, cancel := context.WithTimeout(ctx, 45*time.Second)
+	var workbuddyModels []catalogModel
+	if b.Kind == "builtin" {
+		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
-		cli, err := openCodex(probe)
-		if err != nil {
-			return fail("codex_auth", safeDiagnostic([]byte(err.Error())), "在官方 Codex CLI 完成本人登录，检查工具隔离设置后重试。")
+		var err error
+		if b.ID == "workbuddy" {
+			workbuddyModels, err = s.workbuddyCatalog(probe, b)
+			for _, m := range workbuddyModels {
+				ids = append(ids, m.Original)
+			}
+		} else {
+			ids, err = s.integratedModels(probe, b)
 		}
-		defer cli.close()
-		ids, err = cli.models(probe)
 		if err != nil {
-			return fail("codex_models", safeDiagnostic([]byte(err.Error())), "检查 Codex 登录、网络和 CLI 版本。")
+			return fail("builtin_auth", err.Error(), "检查该来源的账号授权和网络。")
 		}
+	} else if b.Kind == "codex_cli" {
+		return fail("legacy_cli", "旧 CLI 接入已停用", "在来源配置中准备内置 Codex，完成本人授权。")
 	} else {
 		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
@@ -85,7 +103,7 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 		if err != nil {
 			return fail("invalid_url", "上游地址无效", "填写上游 API Base URL，例如 http://127.0.0.1:8080/v1。")
 		}
-		resp, err := s.client.Do(req)
+		resp, err := providerDo(s.client, req)
 		if err != nil {
 			return fail("unreachable", "无法连接上游或请求超时", "确认上游已启动、端口正确且可访问，再检查网络。")
 		}
@@ -118,7 +136,22 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 			continue
 		}
 		seen[id] = true
-		result.models = append(result.models, catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id})
+		model := catalogModel{ID: b.ID + "/" + id, Object: "model", OwnedBy: b.ID, Original: id}
+		if b.ID == "workbuddy" && b.Kind == "builtin" {
+			for _, current := range workbuddyModels {
+				if current.Original == id {
+					model = current
+					break
+				}
+			}
+		}
+		if b.ID == "opencode" {
+			model.Access = openCodeAccess(id)
+			if model.Access.Kind != "free_candidate" {
+				continue
+			}
+		}
+		result.models = append(result.models, model)
 	}
 	if len(result.models) == 0 {
 		return fail("empty_models", "上游返回空模型列表", "检查账号授权与上游模型配置；模型为空不能算接入成功。")
@@ -127,5 +160,8 @@ func (s *Server) probeBackend(ctx context.Context, b Backend) backendDiscovery {
 	result.ModelCount = len(result.models)
 	result.DurationMs = time.Since(begin).Milliseconds()
 	result.Next = "已读取模型目录。复制完整模型 ID 到客户端，发送一次消息验证实际推理权限。"
+	if b.Kind == "builtin" && b.ID == "vertex" {
+		result.Next = "内置模型目录；请发送消息验证实际权限。"
+	}
 	return result
 }

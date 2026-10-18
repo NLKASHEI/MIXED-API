@@ -1,0 +1,8 @@
+{
+  "version": "155.0.4283.60",
+  "architecture": "x64",
+  "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/ad24dc89-9edc-4b7b-b15a-0d63f8f6ea1d/Microsoft.WebView2.FixedVersionRuntime.155.0.4283.60.x64.cab",
+  "sha256": "5c5b38df347b2d05b51ef01640ed5ba48511499e4310e71e679e620aaff2ad40",
+  "executable_sha256": "a479cf008576c987fa50eaa648c1f40cc77c474bb61d84e7b11f155050d34026",
+  "source": "https://developer.microsoft.com/en-us/microsoft-edge/webview2/"
+}

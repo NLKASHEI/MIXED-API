@@ -1,0 +1,19 @@
+# ADR-0005：账号刷新与跨协议一致性
+
+状态：Accepted，2026-10-17。扩展 ADR-0003/0004；不改变本人登录和最终发布验收要求。
+
+用户要求补齐高级协议、账号刷新和 Android 内置适配。测试继续使用 AGENTS 约定的公共 HTTP 接口，平台渲染器生命周期沿用已确认的原生接口测试。需要账号的真实验证由用户决定何时进行。
+
+账号刷新由应用核心实现：Codex 使用官方 OAuth refresh_token grant，WorkBuddy 使用已核对源码的 v2/plugin 账号接口。临近过期主动刷新；只有服务端在生成前明确返回 401 时允许刷新后重试一次。网络错误、403、429、已开始的流及工具执行不触发认证重放。
+
+同一来源的并发刷新合并，调用者取消不打断其他等待者的令牌轮换。刷新有独立时限，结果原子保存；注销、重新导入或新授权完成会撤销旧刷新。旧结果不得恢复被注销的账号。临时失败保留凭证并短暂退避，明确撤销的授权要求重新登录。刷新令牌、访问令牌和服务方错误原文不进入公开响应、后台状态或日志。
+
+协议转换以共享消息、工具、媒体和结束状态为基础，分别编码 Chat Completions、Responses、Messages 与受支持的 Gemini 请求。保留来源命名空间和流取消。无法等价表达的状态或选项必须明确报错，不删除参数后假装成功，不因上游新增回退策略而自动从 Build 改投 Playground。可由同一协议核心实现的能力优先复用，不创建新的来源或运行版本菜单。
+
+Android 继续纯 Java：六个来源逐项内置，复用同一份协议样例、模型协议目录、配置和 HTML；电脑桥接为用户显式选择的可选来源。系统 WebView、通知与服务生命周期须单独测试。源码/模拟协议通过、CI 构建通过、设备验收通过和本人账号推理通过是不同结论。
+
+Android 网络取消的真实 HTTP 回归证明 HttpURLConnection 在挂起读取中调用 disconnect 可能仍等待读取锁。原生来源传输改用随 APK 打包的 OkHttp Java API，应用协议和账号实现仍为 Java；该依赖含 Kotlin 标准库，不引入 Kotlin 应用源码或外部程序。Call.cancel 中止网络交换；总时限覆盖响应读取，取消监测使用 fixed-delay 调度。禁止跟随重定向和连接自动重试，生成请求体标记 one-shot，避免 HTTP 状态跟进重复提交。凭证和响应原文不进入网络日志。
+
+电脑共享和显式外部 HTTP 来源共用该传输。停止监听器同时关闭全部已接受客户端连接（含线程池排队连接），解除阻塞读写；注销和关闭分别撤销账号刷新任务。Codex 刷新若返回不匹配的账号声明，要求重新授权，不带旧账号标识继续生成。
+
+Android targetSdk 35。持续本机 API 监听使用 specialUse 前台服务，manifest 说明用户启动的本机监听用途，通知提供停止按钮；它不是有完成时点的数据同步任务。上架商店仍需对应前台服务审核，本仓库构建不代表审核通过。两类窗口共享系统栏/刘海/软键盘 inset 处理，敏感配置与页面会话排除云端备份及设备迁移。依据 [前台服务类型](https://developer.android.com/develop/background-work/services/fgs/service-types)、[边到边窗口](https://developer.android.com/develop/ui/views/layout/edge-to-edge)、[备份规则](https://developer.android.com/identity/data/autobackup)。
